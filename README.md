@@ -2,10 +2,18 @@
 
 A sophisticated movie and TV show recommendation platform powered by **LangGraph multi-agent AI system**, featuring intelligent RAG (Retrieval-Augmented Generation), real-time streaming responses, and comprehensive media discovery.
 
+![FrameIQ Interface](images/FrameIQ-Intelligent-Entertainment-Discovery.jpg)
+
+![FrameIQ Architecture](images/Gemini_Generated_Image_xoiv4uxoiv4uxoiv.png)
+
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Latest-purple.svg)
 ![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)
+
+## 🌐 Live Demo
+
+Check out the live demo on Google Cloud Run: [FrameIQ](https://frameiq-344233295407.asia-south1.run.app/)
 
 ---
 
