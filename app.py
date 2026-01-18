@@ -67,12 +67,14 @@ from routes.chat import chat
 from routes.details import details
 from routes.auth import auth
 from routes.oauth import oauth
+from src.api.flask_integration import agent_chat  # NEW: LangGraph agent system
 
 app.register_blueprint(auth)
 app.register_blueprint(main)
 app.register_blueprint(chat)
 app.register_blueprint(details)
 app.register_blueprint(oauth)
+app.register_blueprint(agent_chat)  # NEW: Register agent endpoints
 
 # Initialize database after blueprints to avoid circular imports
 from models import db, User
