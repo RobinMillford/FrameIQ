@@ -146,6 +146,64 @@ Visit `http://localhost:5000`
 
 ---
 
+## 🚀 Deployment
+
+### Local Development
+
+```bash
+# Run with Flask development server
+python app.py
+
+# Or use uv (recommended)
+uv run app.py
+```
+
+### Production Deployment (Google Cloud Run)
+
+FrameIQ is deployed on Google Cloud Run with automatic CI/CD via GitHub Actions.
+
+**Live App**: https://frameiq-344233295407.asia-south1.run.app
+
+#### Quick Deploy
+
+```bash
+# Install Google Cloud CLI
+sudo snap install google-cloud-cli
+
+# Authenticate
+gcloud auth login
+gcloud config set project your-project-id
+
+# Deploy
+gcloud run deploy frameiq \
+  --source . \
+  --region asia-south1 \
+  --platform managed \
+  --allow-unauthenticated
+```
+
+#### Automated CI/CD
+
+Every push to `main` branch automatically deploys to Cloud Run via GitHub Actions.
+
+**Setup Steps**:
+
+1. Create service account with required permissions
+2. Add GitHub secrets (API keys, credentials)
+3. Push to GitHub - automatic deployment in ~9 minutes
+
+**For detailed deployment instructions**, see [cloud_run_deployment.md](cloud_run_deployment.md)
+
+**Features**:
+
+- ✅ Automatic builds on every push
+- ✅ Zero-downtime deployments
+- ✅ Auto-scaling (0-10 instances)
+- ✅ HTTPS enabled by default
+- ✅ Environment variables managed securely
+
+---
+
 ## 🤖 AI Agent System
 
 ### Model Configuration
