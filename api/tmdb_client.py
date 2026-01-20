@@ -213,7 +213,7 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
                 raise Exception(f"Failed to fetch movie details after {max_retries} retries: {e}")
             time.sleep(retry_delay)
     
-    print(f"Movie {movie_id} credits: {data.get('credits', {}).get('cast', [])[:12]}")  # Debug cast data
+    print(f"Movie {movie_id} fetching {len(data.get('credits', {}).get('cast', []))} total cast members, returning first 30")
     
     movie = {
         'id': data.get('id'),
@@ -261,7 +261,7 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
             'name': cast_member.get('name'),
             'character': cast_member.get('character'),
             'profile_path': f"https://image.tmdb.org/t/p/w185{cast_member.get('profile_path')}" if cast_member.get('profile_path') else "https://via.placeholder.com/185x278?text=No+Image"
-        } for cast_member in credits.get('cast', [])[:12]
+        } for cast_member in credits.get('cast', [])[:30]
     ]
     
     videos = data.get('videos', {}).get('results', [])
@@ -286,7 +286,7 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
             'created_at': review.get('created_at'),
             'rating': round(review.get('author_details', {}).get('rating', 0) / 2) if review.get('author_details', {}).get('rating') is not None else 0,
             'author_avatar': f"https://www.gravatar.com/avatar/{hashlib.md5(review.get('author', '').lower().encode()).hexdigest()}?s=100&d=identicon"
-        } for review in data.get('reviews', {}).get('results', [])[:4]
+        } for review in data.get('reviews', {}).get('results', [])[:10]
     ]
     
     return movie
@@ -339,7 +339,7 @@ def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
             'name': cast_member.get('name'),
             'character': cast_member.get('character'),
             'profile_path': f"https://image.tmdb.org/t/p/w185{cast_member.get('profile_path')}" if cast_member.get('profile_path') else "https://via.placeholder.com/185x278?text=No+Image"
-        } for cast_member in credits.get('cast', [])[:12]
+        } for cast_member in credits.get('cast', [])[:30]
     ]
     
     show['seasons'] = [
@@ -375,7 +375,7 @@ def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
             'created_at': review.get('created_at'),
             'rating': round(review.get('author_details', {}).get('rating', 0) / 2) if review.get('author_details', {}).get('rating') is not None else 0,
             'author_avatar': f"https://www.gravatar.com/avatar/{hashlib.md5(review.get('author', '').lower().encode()).hexdigest()}?s=100&d=identicon"
-        } for review in data.get('reviews', {}).get('results', [])[:4]
+        } for review in data.get('reviews', {}).get('results', [])[:10]
     ]
     
     return show

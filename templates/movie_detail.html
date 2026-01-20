@@ -646,6 +646,57 @@
                 });
             }
             
+            // Trailer functionality
+            const trailerButton = document.getElementById('trailer-button');
+            const trailerModal = document.getElementById('trailer-modal');
+            const trailerIframe = document.getElementById('trailer-iframe');
+            const closeModal = document.getElementById('close-modal');
+            
+            if (trailerButton) {
+                trailerButton.addEventListener('click', function() {
+                    // Get trailer URL from template variable
+                    const trailerUrl = '{{ movie.trailer_url }}';
+                    
+                    if (trailerUrl && trailerUrl !== 'None' && trailerUrl !== '' && trailerUrl !== 'null') {
+                        // Load YouTube trailer with autoplay
+                        trailerIframe.src = trailerUrl + '?autoplay=1';
+                        trailerModal.classList.remove('hidden');
+                        trailerModal.classList.add('active');
+                    } else {
+                        alert('Sorry, no trailer is available for this movie.');
+                    }
+                });
+            }
+            
+            if (closeModal) {
+                closeModal.addEventListener('click', function() {
+                    trailerModal.classList.add('hidden');
+                    trailerModal.classList.remove('active');
+                    trailerIframe.src = ''; // Stop video
+                });
+            }
+            
+            // Close modal when clicking outside
+            if (trailerModal) {
+                trailerModal.addEventListener('click', function(e) {
+                    if (e.target === trailerModal) {
+                        trailerModal.classList.add('hidden');
+                        trailerModal.classList.remove('active');
+                        trailerIframe.src = ''; // Stop video
+                    }
+                });
+                
+                // Close modal with Escape key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && !trailerModal.classList.contains('hidden')) {
+                        trailerModal.classList.add('hidden');
+                        trailerModal.classList.remove('active');
+                        trailerIframe.src = ''; // Stop video
+                    }
+                });
+            }
+            
+            
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
@@ -687,7 +738,7 @@
             const heroBackdrop = document.getElementById('dynamic-hero-backdrop');
 
             function rotateBackdropImage() {
-                if (trendingBackdrops.length > 1) {
+                if (typeof trendingBackdrops !== 'undefined' && trendingBackdrops.length > 1) {
                     currentBackdropIndex = (currentBackdropIndex + 1) % trendingBackdrops.length;
                     const nextImage = new Image();
                     nextImage.onload = function() {
@@ -698,7 +749,7 @@
             }
             
             // Change backdrop every 8 seconds if we have multiple backdrops
-            if (trendingBackdrops.length > 1) {
+            if (typeof trendingBackdrops !== 'undefined' && trendingBackdrops.length > 1) {
                 setInterval(rotateBackdropImage, 8000);
             }
 
@@ -706,7 +757,8 @@
             const searchInput = document.getElementById('search-input');
             const autocompleteItems = document.getElementById('autocomplete-items');
 
-            searchInput.addEventListener('input', async function() {
+            if (searchInput && autocompleteItems) {
+                searchInput.addEventListener('input', async function() {
                 const query = this.value.trim();
                 if (query.length < 2) {
                     autocompleteItems.classList.add('hidden');
@@ -785,13 +837,60 @@
                     autocompleteItems.classList.add('hidden');
                 }
             });
-
-            // Hide autocomplete when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!searchInput.contains(e.target) && !autocompleteItems.contains(e.target)) {
-                    autocompleteItems.classList.add('hidden');
-                }
-            });
+            
+                // Hide autocomplete when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!searchInput.contains(e.target) && !autocompleteItems.contains(e.target)) {
+                        autocompleteItems.classList.add('hidden');
+                    }
+                });
+            }
+            
+            // View Full Cast functionality
+            const viewFullCastButton = document.getElementById('view-full-cast');
+            const fullCastGrid = document.getElementById('full-cast-grid');
+            
+            console.log('View Full Cast Button:', viewFullCastButton);
+            console.log('Full Cast Grid:', fullCastGrid);
+            
+            if (viewFullCastButton && fullCastGrid) {
+                viewFullCastButton.addEventListener('click', () => {
+                    console.log('View Full Cast button clicked!');
+                    if (fullCastGrid.classList.contains('hidden')) {
+                        fullCastGrid.classList.remove('hidden');
+                        viewFullCastButton.textContent = 'Show Less';
+                    } else {
+                        fullCastGrid.classList.add('hidden');
+                        viewFullCastButton.textContent = 'View Full Cast & Crew';
+                    }
+                });
+                console.log('View Full Cast event listener attached');
+            } else {
+                console.error('View Full Cast elements not found!');
+            }
+            
+            // Read All Reviews functionality
+            const readAllReviewsButton = document.getElementById('read-all-reviews');
+            const fullReviewsGrid = document.getElementById('full-reviews-grid');
+            
+            console.log('Read All Reviews Button:', readAllReviewsButton);
+            console.log('Full Reviews Grid:', fullReviewsGrid);
+            
+            if (readAllReviewsButton && fullReviewsGrid) {
+                readAllReviewsButton.addEventListener('click', () => {
+                    console.log('Read All Reviews button clicked!');
+                    if (fullReviewsGrid.classList.contains('hidden')) {
+                        fullReviewsGrid.classList.remove('hidden');
+                        readAllReviewsButton.textContent = 'Show Less';
+                    } else {
+                        fullReviewsGrid.classList.add('hidden');
+                        readAllReviewsButton.textContent = 'Read All Reviews';
+                    }
+                });
+                console.log('Read All Reviews event listener attached');
+            } else {
+                console.error('Read All Reviews elements not found!');
+            }
         });
     </script>
 </body>

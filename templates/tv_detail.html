@@ -676,6 +676,57 @@
                 });
             }
             
+            // Trailer functionality
+            const trailerButton = document.getElementById('trailer-button');
+            const trailerModal = document.getElementById('trailer-modal');
+            const trailerIframe = document.getElementById('trailer-iframe');
+            const closeModal = document.getElementById('close-modal');
+            
+            if (trailerButton) {
+                trailerButton.addEventListener('click', function() {
+                    // Get trailer key from template variable
+                    const trailerKey = '{{ show.trailer_key }}';
+                    
+                    if (trailerKey && trailerKey !== 'None' && trailerKey !== '') {
+                        // Load YouTube trailer
+                        trailerIframe.src = `https://www.youtube.com/embed/${trailerKey}?autoplay=1`;
+                        trailerModal.classList.remove('hidden');
+                        trailerModal.classList.add('active');
+                    } else {
+                        alert('Sorry, no trailer is available for this TV show.');
+                    }
+                });
+            }
+            
+            if (closeModal) {
+                closeModal.addEventListener('click', function() {
+                    trailerModal.classList.add('hidden');
+                    trailerModal.classList.remove('active');
+                    trailerIframe.src = ''; // Stop video
+                });
+            }
+            
+            // Close modal when clicking outside
+            if (trailerModal) {
+                trailerModal.addEventListener('click', function(e) {
+                    if (e.target === trailerModal) {
+                        trailerModal.classList.add('hidden');
+                        trailerModal.classList.remove('active');
+                        trailerIframe.src = ''; // Stop video
+                    }
+                });
+                
+                // Close modal with Escape key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && !trailerModal.classList.contains('hidden')) {
+                        trailerModal.classList.add('hidden');
+                        trailerModal.classList.remove('active');
+                        trailerIframe.src = ''; // Stop video
+                    }
+                });
+            }
+            
+            
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
@@ -694,35 +745,6 @@
                 mobileMenu.classList.toggle('hidden');
             });
 
-            // Trailer modal
-            const trailerButton = document.getElementById('trailer-button');
-            const trailerModal = document.getElementById('trailer-modal');
-            const closeModal = document.getElementById('close-modal');
-            const trailerIframe = document.getElementById('trailer-iframe');
-            const trailerUrl = "{{ show.trailer_url }}";
-
-            trailerButton.addEventListener('click', () => {
-                trailerIframe.src = trailerUrl;
-                trailerModal.classList.remove('hidden');
-                trailerModal.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            });
-
-            closeModal.addEventListener('click', () => {
-                trailerModal.classList.add('hidden');
-                trailerModal.classList.remove('active');
-                trailerIframe.src = '';
-                document.body.style.overflow = '';
-            });
-
-            trailerModal.addEventListener('click', (e) => {
-                if (e.target === trailerModal) {
-                    trailerModal.classList.add('hidden');
-                    trailerModal.classList.remove('active');
-                    trailerIframe.src = '';
-                    document.body.style.overflow = '';
-                }
-            });
 
             // View Full Cast functionality
             const viewFullCastButton = document.getElementById('view-full-cast');
