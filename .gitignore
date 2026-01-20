@@ -18,4 +18,4 @@ chroma_db/
 chroma_db_test/
 *.json.gz
 *.sqlite3.gz
-hf_upload_temp/
+github-actions-key.json

@@ -1,0 +1,60 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main # Deploy when pushing to main branch
+      - master # Also deploy for master branch
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+env:
+  PROJECT_ID: movietvhub
+  SERVICE_NAME: frameiq
+  REGION: asia-south1
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 300 \
+            --max-instances 10 \
+            --min-instances 0 \
+            --port 8080 \
+            --set-env-vars GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},TMDB_API_KEY=${{ secrets.TMDB_API_KEY }},TMDB_API_KEY_2=${{ secrets.TMDB_API_KEY_2 }},CHROMA_API_KEY=${{ secrets.CHROMA_API_KEY }},CHROMA_TENANT=${{ secrets.CHROMA_TENANT }},CHROMA_DATABASE=${{ secrets.CHROMA_DATABASE }},SECRET_KEY=${{ secrets.SECRET_KEY }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},DATABASE_URL=${{ secrets.DATABASE_URL }},CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }},CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }},CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }},NEWS_API_KEY=${{ secrets.NEWS_API_KEY }}
+
+      - name: Show Deployment URL
+        run: |
+          echo "🚀 Deployment successful!"
+          echo "Service URL: https://frameiq-344233295407.asia-south1.run.app"
