@@ -1,7 +1,7 @@
 # File: routes/auth.py
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from models import db, User
+from models import db, User, Review
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -137,7 +137,9 @@ def logout():
 @auth.route('/profile')
 @login_required
 def profile():
-    return render_template('profile.html')
+    # Fetch recent reviews for the authenticated user
+    recent_reviews = current_user.user_reviews.order_by(db.desc(Review.created_at)).all()
+    return render_template('profile.html', reviews=recent_reviews)
 
 @auth.route('/profile/recommendations')
 @login_required

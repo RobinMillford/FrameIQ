@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ user.username }}'s Profile - FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #111827;
+            color: white;
+        }
+        
+        .stat-card {
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .profile-image {
+            border: 3px solid #6366f1;
+        }
+
+        .glass-effect {
+            background: rgba(31, 41, 55, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="bg-gray-900 shadow-lg">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if current_user.is_authenticated %}
+                        <div class="relative" id="profile-dropdown">
+                            <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
+                                <i class="fas fa-user"></i>
+                                <span>{{ current_user.username }}</span>
+                                <i class="fas fa-caret-down"></i>
+                            </button>
+                            <!-- Dropdown menu items would go here, similar to profile.html -->
+                        </div>
+                    {% else %}
+                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
+                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-indigo-400">Register</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+            <div class="flex justify-between items-start mb-8">
+                <div class="flex items-center">
+                    <div class="relative">
+                        {% if user.profile_picture %}
+                            <img src="{{ user.profile_picture if user.profile_picture.startswith('http') else url_for('static', filename=user.profile_picture) }}" 
+                                 alt="{{ user.username }}" 
+                                 class="rounded-full w-32 h-32 object-cover profile-image">
+                        {% else %}
+                            <div class="bg-gray-600 rounded-full w-32 h-32 flex items-center justify-center profile-image">
+                                <span class="text-4xl font-bold">{{ user.username[0].upper() }}</span>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="ml-8">
+                        <h1 class="text-4xl font-bold mb-2">{{ user.username }}</h1>
+                        <p class="text-gray-400">Member since {{ user.date_joined.strftime('%B %Y') }}</p>
+                        
+                        <div class="flex space-x-6 mt-4">
+                            <button class="text-left group cursor-pointer" onclick="openFollowersModal({{ user.id }})">
+                                <span class="block text-2xl font-bold text-indigo-400 group-hover:text-indigo-300" id="follower-count-{{ user.id }}">{{ user.followers_count or 0 }}</span>
+                                <span class="text-sm text-gray-400 uppercase tracking-wider">Followers</span>
+                            </button>
+                            <button class="text-left group cursor-pointer" onclick="openFollowingModal({{ user.id }})">
+                                <span class="block text-2xl font-bold text-indigo-400 group-hover:text-indigo-300">{{ user.following_count or 0 }}</span>
+                                <span class="text-sm text-gray-400 uppercase tracking-wider">Following</span>
+                            </button>
+                            <div class="text-left">
+                                <span class="block text-2xl font-bold text-indigo-400">{{ user.user_reviews.count() }}</span>
+                                <span class="text-sm text-gray-400 uppercase tracking-wider">Reviews</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if current_user.is_authenticated and current_user.id != user.id %}
+                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg transition duration-300 flex items-center gap-2 shadow-lg" 
+                            data-follow-button 
+                            data-user-id="{{ user.id }}" 
+                            data-following="{{ 'true' if is_following else 'false' }}"
+                            data-authenticated="true">
+                        {% if is_following %}
+                            <i class="fas fa-user-check"></i> Following
+                        {% else %}
+                            <i class="fas fa-user-plus"></i> Follow
+                        {% endif %}
+                    </button>
+                {% elif current_user.is_authenticated and current_user.id == user.id %}
+                    <a href="{{ url_for('auth.edit_profile') }}" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-lg transition duration-300">
+                        Edit Profile
+                    </a>
+                {% endif %}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Left Column: Bio & Info -->
+                <div class="md:col-span-1">
+                    <div class="glass-effect rounded-xl p-6 mb-6">
+                        <h3 class="text-xl font-semibold mb-4 text-indigo-400">About</h3>
+                        <p class="text-gray-300 leading-relaxed">
+                            {{ user.bio or 'No bio available yet.' }}
+                        </p>
+                    </div>
+                    
+                    <div class="glass-effect rounded-xl p-6">
+                        <h3 class="text-xl font-semibold mb-4 text-indigo-400">Statistics</h3>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-gray-400">Movies Watched</span>
+                                <span class="font-bold text-indigo-300">{{ user.viewed_media|length }}</span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-gray-400">Reviews Written</span>
+                                <span class="font-bold text-indigo-300">{{ user.user_reviews.count() }}</span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-gray-400">Total Likes Received</span>
+                                <span class="font-bold text-indigo-300">{{ user.total_likes_received or 0 }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Recent Activity/Reviews & Insights -->
+                <div class="md:col-span-2">
+                    <div class="flex border-b border-gray-700 mb-6">
+                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-indigo-500 text-indigo-400 font-semibold focus:outline-none">
+                            Reviews
+                        </button>
+                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none">
+                            Insights
+                        </button>
+                    </div>
+
+                    <div id="reviews-content">
+                        <h3 class="text-2xl font-bold mb-6 text-indigo-400">Recent Reviews</h3>
+                        <div class="space-y-6" id="user-reviews-container">
+                        {% if reviews %}
+                            {% for review in reviews %}
+                                <div class="glass-effect rounded-xl p-6">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="flex items-center gap-4">
+                                            {% set poster_url = review.media.poster_path %}
+                                            {% if poster_url and not poster_url.startswith('http') %}
+                                                {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
+                                            {% endif %}
+                                            <img src="{{ poster_url or 'https://via.placeholder.com/100x150?text=No+Poster' }}" 
+                                                 alt="{{ review.media.title }}" 
+                                                 class="w-16 h-24 rounded border border-gray-700 object-cover"
+                                                 onerror="this.src='https://via.placeholder.com/100x150?text=No+Poster'">
+                                            <div>
+                                                <h4 class="text-lg font-bold">
+                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">
+                                                        {{ review.media.title }}
+                                                    </a>
+                                                </h4>
+                                                <div class="flex items-center gap-2 mt-1">
+                                                    <div class="flex text-yellow-400 text-sm">
+                                                        {% for i in range(5) %}
+                                                            <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
+                                                        {% endfor %}
+                                                    </div>
+                                                    <span class="text-gray-400 text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-gray-300">{{ review.content or 'No written review.' }}</p>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-12 glass-effect rounded-xl">
+                                <i class="fas fa-film text-4xl text-gray-600 mb-4"></i>
+                                <p class="text-gray-400">No reviews yet.</p>
+                            </div>
+                        {% endif %}
+                        </div>
+                    </div>
+
+                    <div id="insights-content" class="hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            <!-- Genre Distribution -->
+                            <div class="glass-effect rounded-xl p-6">
+                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Genre Distribution</h4>
+                                <div class="h-64 relative">
+                                    <canvas id="genre-chart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Rating Distribution -->
+                            <div class="glass-effect rounded-xl p-6">
+                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Rating Distribution</h4>
+                                <div class="h-64 relative">
+                                    <canvas id="rating-dist-chart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Media Mix -->
+                            <div class="glass-effect rounded-xl p-6">
+                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Media Mix</h4>
+                                <div class="h-64 relative">
+                                    <canvas id="media-mix-chart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Monthly Activity -->
+                            <div class="glass-effect rounded-xl p-6">
+                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Review Activity</h4>
+                                <div class="h-64 relative">
+                                    <canvas id="activity-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Statistics Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Total Watched</div>
+                                <div id="stat-total-watched" class="text-2xl font-bold text-indigo-400">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1" id="stat-movie-tv-split">- / -</div>
+                            </div>
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Avg Rating</div>
+                                <div id="stat-avg-rating" class="text-2xl font-bold text-pink-400">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1">out of 5.0</div>
+                            </div>
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Reviews</div>
+                                <div id="stat-total-reviews" class="text-2xl font-bold text-purple-400">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1">total written</div>
+                            </div>
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Watchlist Progress</div>
+                                <div id="stat-watchlist-completion" class="text-2xl font-bold text-green-400">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1">completion rate</div>
+                            </div>
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Top Genre (Rank)</div>
+                                <div id="stat-top-genre" class="text-xl font-bold text-yellow-500">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1">by count</div>
+                            </div>
+                            <div class="glass-effect rounded-xl p-4 text-center">
+                                <div class="text-gray-400 text-xs mb-1">Highest Rated</div>
+                                <div id="stat-best-genre" class="text-xl font-bold text-orange-500">-</div>
+                                <div class="text-[10px] text-gray-500 mt-1">avg performance</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals (Placeholder for upcoming followers/following lists) -->
+    <div id="social-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden flex items-center justify-center">
+        <div class="bg-gray-800 rounded-xl max-w-lg w-full max-h-[80vh] flex flex-col shadow-2xl border border-gray-700">
+            <div class="p-6 border-b border-gray-700 flex justify-between items-center">
+                <h3 id="modal-title" class="text-xl font-bold text-indigo-400">Followers</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="modal-content" class="p-6 overflow-y-auto flex-grow">
+                <!-- Content loaded via JS -->
+                <div class="flex justify-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/stats-dashboard.js') }}"></script>
+    <script>
+        function openFollowersModal(userId) {
+            document.getElementById('modal-title').textContent = 'Followers';
+            document.getElementById('social-modal').classList.remove('hidden');
+            loadSocialList(`/api/users/${userId}/followers`);
+        }
+
+        function openFollowingModal(userId) {
+            document.getElementById('modal-title').textContent = 'Following';
+            document.getElementById('social-modal').classList.remove('hidden');
+            loadSocialList(`/api/users/${userId}/following`);
+        }
+
+        function closeModal() {
+            document.getElementById('social-modal').classList.add('hidden');
+        }
+
+        async function loadSocialList(url) {
+            const container = document.getElementById('modal-content');
+            container.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i></div>';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const list = data.followers || data.following || [];
+                
+                if (list.length === 0) {
+                    container.innerHTML = `<div class="text-center py-8 text-gray-400">No users found.</div>`;
+                    return;
+                }
+                
+                let html = '<div class="space-y-4">';
+                list.forEach(item => {
+                    let profilePic = item.profile_picture;
+                    if (profilePic && !profilePic.startsWith('http')) {
+                        profilePic = '/static/' + profilePic;
+                    } else if (!profilePic) {
+                        profilePic = `https://via.placeholder.com/100x100?text=${item.username[0].toUpperCase()}`;
+                    }
+                    html += `
+                        <div class="flex items-center justify-between p-2 rounded hover:bg-gray-700 transition-colors">
+                            <a href="/user/${item.id}" class="flex items-center gap-3 group">
+                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                                <div>
+                                    <div class="font-bold group-hover:text-indigo-400 transition-colors">${item.username}</div>
+                                    <div class="text-xs text-gray-400">${item.total_reviews} reviews • ${item.followers_count} followers</div>
+                                </div>
+                            </a>
+                            ${data.current_user_id != item.id ? `
+                                <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded transition-all" 
+                                        data-follow-button 
+                                        data-user-id="${item.id}" 
+                                        data-following="${item.is_following}"
+                                        data-authenticated="true">
+                                    ${item.is_following ? '<i class="fas fa-user-check mr-1"></i> Following' : '<i class="fas fa-user-plus mr-1"></i> Follow'}
+                                </button>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                container.innerHTML = html;
+                
+                // Initialize new follow buttons
+                const newButtons = container.querySelectorAll('[data-follow-button]');
+                newButtons.forEach(btn => new FollowButton(parseInt(btn.dataset.userId), btn));
+                
+            } catch (error) {
+                container.innerHTML = `<div class="text-center py-8 text-red-400">Failed to load list.</div>`;
+            }
+        }
+        
+        // Initialize follow buttons
+        document.querySelectorAll('[data-follow-button]').forEach(btn => {
+            new FollowButton(parseInt(btn.dataset.userId), btn);
+        });
+
+        // Tab switching logic for Reviews/Insights
+        const tabReviews = document.getElementById('tab-reviews');
+        const tabInsights = document.getElementById('tab-insights');
+        const reviewsContent = document.getElementById('reviews-content');
+        const insightsContent = document.getElementById('insights-content');
+        
+        if (tabReviews && tabInsights) {
+            tabReviews.addEventListener('click', () => {
+                tabReviews.classList.add('border-indigo-500', 'text-indigo-400');
+                tabReviews.classList.remove('border-transparent', 'text-gray-400');
+                tabInsights.classList.add('border-transparent', 'text-gray-400');
+                tabInsights.classList.remove('border-indigo-500', 'text-indigo-400');
+                reviewsContent.classList.remove('hidden');
+                insightsContent.classList.add('hidden');
+            });
+            
+            tabInsights.addEventListener('click', () => {
+                tabInsights.classList.add('border-indigo-500', 'text-indigo-400');
+                tabInsights.classList.remove('border-transparent', 'text-gray-400');
+                tabReviews.classList.add('border-transparent', 'text-gray-400');
+                tabReviews.classList.remove('border-indigo-500', 'text-indigo-400');
+                insightsContent.classList.remove('hidden');
+                reviewsContent.classList.add('hidden');
+                
+                // Initialize dashboard if not already done
+                if (!window.statsDashboard) {
+                    window.statsDashboard = new StatsDashboard({{ user.id }});
+                }
+            });
+        }
+    </script>
+</body>
+</html>

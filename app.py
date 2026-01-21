@@ -67,6 +67,9 @@ from routes.chat import chat
 from routes.details import details
 from routes.auth import auth
 from routes.oauth import oauth
+from routes.reviews import reviews  # NEW: Review system
+from routes.social import social  # NEW: Following system
+from routes.analytics import analytics  # NEW: Statistics system
 from src.api.flask_integration import agent_chat  # NEW: LangGraph agent system
 
 app.register_blueprint(auth)
@@ -74,6 +77,9 @@ app.register_blueprint(main)
 app.register_blueprint(chat)
 app.register_blueprint(details)
 app.register_blueprint(oauth)
+app.register_blueprint(reviews)  # NEW: Register review endpoints
+app.register_blueprint(social)  # NEW: Register social endpoints
+app.register_blueprint(analytics)  # NEW: Register stats endpoints
 app.register_blueprint(agent_chat)  # NEW: Register agent endpoints
 
 # Initialize database after blueprints to avoid circular imports

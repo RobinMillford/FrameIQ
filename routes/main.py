@@ -11,7 +11,7 @@ from api.tmdb_client import (
     fetch_shows_by_genre, fetch_poster, fetch_tmdb_recommendations
 )
 from flask_login import login_required, current_user
-from models import db, MediaItem, user_watchlist, user_wishlist, user_viewed
+from models import db, MediaItem, user_watchlist, user_wishlist, user_viewed, User, UserFollow, Review
 
 # Get environment variables
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
@@ -664,3 +664,26 @@ def remove_from_viewed(media_id, media_type):
         flash('Item not found!')
     
     return redirect(request.referrer or url_for('main.viewed'))
+@main.route('/user/<int:user_id>')
+@login_required
+def user_profile(user_id):
+    """View another user's public profile"""
+    user = User.query.get_or_404(user_id)
+    
+    # Check if current user follows this user
+    is_following = False
+    if current_user.is_authenticated:
+        follow = UserFollow.query.filter_by(
+            follower_id=current_user.id,
+            following_id=user_id,
+            is_active=True
+        ).first()
+        is_following = follow is not None
+    
+    # Get user reviews
+    recent_reviews = user.user_reviews.order_by(db.desc(Review.created_at)).limit(5).all()
+    
+    return render_template('user_profile.html', 
+                         user=user, 
+                         is_following=is_following,
+                         reviews=recent_reviews)

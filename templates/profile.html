@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile - MovieHub</title>
+    <title>Profile - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             font-family: 'Poppins', sans-serif;
@@ -42,7 +43,7 @@
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">MovieHub</a>
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
@@ -112,6 +113,11 @@
                             <h2 class="text-xl font-bold">{{ current_user.username }}</h2>
                             <p class="text-gray-400">{{ current_user.email }}</p>
                             <p class="text-gray-400 text-sm mt-2">Member since {{ current_user.date_joined.strftime('%B %d, %Y') }}</p>
+                            <div class="mt-4">
+                                <a href="{{ url_for('main.user_profile', user_id=current_user.id) }}" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded transition duration-300">
+                                    View Public Profile
+                                </a>
+                            </div>
                         </div>
                         
                         <div class="mt-6">
@@ -126,70 +132,218 @@
                 </div>
                 
                 <div class="md:col-span-2">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                        <div class="stat-card bg-gray-700 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold mb-4 text-indigo-400">Watchlist</h3>
-                            <p class="text-gray-400">Movies and shows you want to watch</p>
-                            <div class="mt-4">
-                                <a href="{{ url_for('main.watchlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.watchlist|length }})</a>
+                    <!-- Tabs -->
+                    <div class="flex border-b border-gray-700 mb-6">
+                        <button id="tab-overview" class="px-6 py-2 border-b-2 border-indigo-500 text-indigo-400 font-semibold focus:outline-none">
+                            Overview
+                        </button>
+                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none">
+                            Reviews
+                        </button>
+                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none">
+                            Insights
+                        </button>
+                    </div>
+
+                    <div id="overview-content">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Watchlist</h3>
+                                <p class="text-gray-400">Movies and shows you want to watch</p>
+                                <div class="mt-4">
+                                    <a href="{{ url_for('main.watchlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.watchlist|length }})</a>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Wishlist</h3>
+                                <p class="text-gray-400">Your favorite movies and shows</p>
+                                <div class="mt-4">
+                                    <a href="{{ url_for('main.wishlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.wishlist|length }})</a>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Viewing History</h3>
+                                <p class="text-gray-400">Movies and shows you've watched</p>
+                                <div class="mt-4">
+                                    <a href="{{ url_for('main.viewed') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.viewed_media|length }})</a>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Recommendations</h3>
+                                <p class="text-gray-400">Personalized suggestions</p>
+                                <div class="mt-4">
+                                    <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300">View all</a>
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="stat-card bg-gray-700 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold mb-4 text-indigo-400">Wishlist</h3>
-                            <p class="text-gray-400">Your favorite movies and shows</p>
-                            <div class="mt-4">
-                                <a href="{{ url_for('main.wishlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.wishlist|length }})</a>
+                        <!-- Personal Stats -->
+                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
+                            <h3 class="text-xl font-semibold mb-4 text-indigo-400">Your Stats</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                                <div>
+                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.watchlist|length }}</div>
+                                    <div class="text-gray-400 text-sm">Watchlist</div>
+                                </div>
+                                <div>
+                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.wishlist|length }}</div>
+                                    <div class="text-gray-400 text-sm">Wishlist</div>
+                                </div>
+                                <div>
+                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.viewed_media|length }}</div>
+                                    <div class="text-gray-400 text-sm">Viewed</div>
+                                </div>
+                                <div>
+                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.followers_count or 0 }}</div>
+                                    <div class="text-gray-400 text-sm">Followers</div>
+                                </div>
+                                <div>
+                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.following_count or 0 }}</div>
+                                    <div class="text-gray-400 text-sm">Following</div>
+                                </div>
                             </div>
                         </div>
-                        
-                        <div class="stat-card bg-gray-700 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold mb-4 text-indigo-400">Viewing History</h3>
-                            <p class="text-gray-400">Movies and shows you've watched</p>
-                            <div class="mt-4">
-                                <a href="{{ url_for('main.viewed') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.viewed_media|length }})</a>
+
+                        <!-- Quick Recommendations Preview -->
+                        <div class="bg-gray-700 rounded-lg p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-indigo-400">Recommended for You</h3>
+                                <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View all</a>
                             </div>
-                        </div>
-                        
-                        <div class="stat-card bg-gray-700 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold mb-4 text-indigo-400">Recommendations</h3>
-                            <p class="text-gray-400">Personalized suggestions</p>
-                            <div class="mt-4">
-                                <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300">View all</a>
+                            <p class="text-gray-400 mb-4">Based on your watchlist, wishlist, and viewing history</p>
+                            
+                            <!-- Preview of recommendations -->
+                            <div class="text-center py-4" id="recommendations-preview">
+                                <p class="text-gray-400">Loading personalized recommendations...</p>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- Personal Stats -->
-                    <div class="bg-gray-700 rounded-lg p-6 mb-6">
-                        <h3 class="text-xl font-semibold mb-4 text-indigo-400">Your Stats</h3>
-                        <div class="grid grid-cols-3 gap-4 text-center">
-                            <div>
-                                <div class="text-2xl font-bold text-indigo-400">{{ current_user.watchlist|length }}</div>
-                                <div class="text-gray-400">Watchlist</div>
+
+                    <div id="reviews-content" class="hidden">
+                        <h3 class="text-2xl font-bold mb-6 text-indigo-400">Your Reviews</h3>
+                        <div class="space-y-6">
+                        {% if reviews %}
+                            {% for review in reviews %}
+                                <div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="flex items-center gap-4">
+                                            {% set poster_url = review.media.poster_path %}
+                                            {% if poster_url and not poster_url.startswith('http') %}
+                                                {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
+                                            {% endif %}
+                                            <img src="{{ poster_url or 'https://via.placeholder.com/100x150?text=No+Poster' }}" 
+                                                 alt="{{ review.media.title }}" 
+                                                 class="w-16 h-24 rounded border border-gray-600 object-cover"
+                                                 onerror="this.src='https://via.placeholder.com/100x150?text=No+Poster'">
+                                            <div>
+                                                <h4 class="text-lg font-bold">
+                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">
+                                                        {{ review.media.title }}
+                                                    </a>
+                                                </h4>
+                                                <div class="flex items-center gap-2 mt-1">
+                                                    <div class="flex text-yellow-400 text-sm">
+                                                        {% for i in range(5) %}
+                                                            <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
+                                                        {% endfor %}
+                                                    </div>
+                                                    <span class="text-gray-400 text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}#review-{{ review.id }}" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                                <i class="fas fa-edit"></i> Edit
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <p class="text-gray-300">{{ review.content or 'No written review.' }}</p>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-12 bg-gray-700 rounded-xl border border-gray-600">
+                                <i class="fas fa-comment-slash text-4xl text-gray-600 mb-4"></i>
+                                <p class="text-gray-400">You haven't written any reviews yet.</p>
+                                <a href="{{ url_for('main.index') }}" class="mt-4 inline-block text-indigo-400 hover:text-indigo-300">Browse movies and shows</a>
                             </div>
-                            <div>
-                                <div class="text-2xl font-bold text-indigo-400">{{ current_user.wishlist|length }}</div>
-                                <div class="text-gray-400">Wishlist</div>
-                            </div>
-                            <div>
-                                <div class="text-2xl font-bold text-indigo-400">{{ current_user.viewed_media|length }}</div>
-                                <div class="text-gray-400">Viewed</div>
-                            </div>
+                        {% endif %}
                         </div>
                     </div>
-                    
-                    <!-- Quick Recommendations Preview -->
-                    <div class="bg-gray-700 rounded-lg p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-xl font-semibold text-indigo-400">Recommended for You</h3>
-                            <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View all</a>
-                        </div>
-                        <p class="text-gray-400 mb-4">Based on your watchlist, wishlist, and viewing history</p>
-                        
-                        <!-- Preview of recommendations -->
-                        <div class="text-center py-4" id="recommendations-preview">
-                            <p class="text-gray-400">Loading personalized recommendations...</p>
+
+                    <div id="insights-content" class="hidden">
+                        <!-- Insights Dashboard -->
+                        <div class="bg-gray-700 rounded-lg p-6 mb-6 border border-gray-600">
+                            <h3 class="text-xl font-semibold mb-6 text-indigo-400">Visual Insights</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <!-- Genre Distribution -->
+                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Genre DNA</h4>
+                                    <div class="h-64 relative">
+                                        <canvas id="genre-chart"></canvas>
+                                    </div>
+                                </div>
+                                
+                                <!-- Rating Distribution -->
+                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Rating Distribution</h4>
+                                    <div class="h-64 relative">
+                                        <canvas id="rating-dist-chart"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Media Mix -->
+                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Media Mix</h4>
+                                    <div class="h-64 relative">
+                                        <canvas id="media-mix-chart"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Monthly Activity -->
+                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Recent Activity</h4>
+                                    <div class="h-64 relative">
+                                        <canvas id="activity-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Statistics Grid Extension -->
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Total Watched</div>
+                                    <div id="stat-total-watched" class="text-xl font-bold text-indigo-400">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1" id="stat-movie-tv-split">- / -</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Avg Rating</div>
+                                    <div id="stat-avg-rating" class="text-xl font-bold text-pink-400">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1">out of 5.0</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Reviews</div>
+                                    <div id="stat-total-reviews" class="text-xl font-bold text-purple-400">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1">total written</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Watchlist Progress</div>
+                                    <div id="stat-watchlist-completion" class="text-xl font-bold text-green-400">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1">completion rate</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Top Genre (Rank)</div>
+                                    <div id="stat-top-genre" class="text-lg font-bold text-yellow-500">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1">by count</div>
+                                </div>
+                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-gray-400 text-xs mb-1">Highest Rated</div>
+                                    <div id="stat-best-genre" class="text-lg font-bold text-orange-500">-</div>
+                                    <div class="text-[10px] text-gray-500 mt-1">avg performance</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -197,6 +351,7 @@
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/stats-dashboard.js') }}"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Profile dropdown
@@ -226,6 +381,50 @@
             
             // Load recommendations preview
             loadRecommendationsPreview();
+
+            // Tab switching logic
+            const tabOverview = document.getElementById('tab-overview');
+            const tabReviews = document.getElementById('tab-reviews');
+            const tabInsights = document.getElementById('tab-insights');
+            const overviewContent = document.getElementById('overview-content');
+            const reviewsContent = document.getElementById('reviews-content');
+            const insightsContent = document.getElementById('insights-content');
+            
+            function switchTab(activeTab, activeContent) {
+                [tabOverview, tabReviews, tabInsights].forEach(tab => {
+                    if (tab) {
+                        tab.classList.remove('border-indigo-500', 'text-indigo-400');
+                        tab.classList.add('border-transparent', 'text-gray-400');
+                    }
+                });
+                [overviewContent, reviewsContent, insightsContent].forEach(content => {
+                    if (content) content.classList.add('hidden');
+                });
+                
+                if (activeTab) {
+                    activeTab.classList.add('border-indigo-500', 'text-indigo-400');
+                    activeTab.classList.remove('border-transparent', 'text-gray-400');
+                }
+                if (activeContent) activeContent.classList.remove('hidden');
+            }
+            
+            if (tabOverview) {
+                tabOverview.addEventListener('click', () => switchTab(tabOverview, overviewContent));
+            }
+            
+            if (tabReviews) {
+                tabReviews.addEventListener('click', () => switchTab(tabReviews, reviewsContent));
+            }
+                
+            if (tabInsights) {
+                tabInsights.addEventListener('click', () => {
+                    switchTab(tabInsights, insightsContent);
+                    // Initialize dashboard if not already done
+                    if (!window.statsDashboard) {
+                        window.statsDashboard = new StatsDashboard({{ current_user.id }});
+                    }
+                });
+            }
         });
         
         function loadRecommendationsPreview() {
