@@ -226,6 +226,7 @@
                     <a href="/movies" class="nav-link hover:text-blue-400 transition-colors">Movies</a>
                     <a href="/tv_shows" class="nav-link hover:text-blue-400 transition-colors">TV Shows</a>
                     <a href="/news" class="nav-link hover:text-blue-400 transition-colors">News</a>
+                    <a href="/feed" class="nav-link hover:text-blue-400 transition-colors">Social Feed</a>
                     <a href="/model_selection" class="nav-link hover:text-blue-400 transition-colors">AI Chat</a>
                 </div>
                 <div class="flex items-center space-x-4">
@@ -241,6 +242,7 @@
                                 <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
                                 <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
                                 <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
+                                <a href="/diary" class="block px-4 py-2 text-sm hover:bg-gray-700">Diary</a>
                                 <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
                             </div>
                         </div>
@@ -342,6 +344,27 @@
                         </span>
                         {% endif %}
                         
+                        <!-- NEW: Lists and Diary Status Indicators -->
+                        {% if user_lists_with_show %}
+                        {% for list in user_lists_with_show %}
+                        <span class="text-sm bg-purple-600 text-white px-3 py-1 rounded flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            In "{{ list.title }}"
+                        </span>
+                        {% endfor %}
+                        {% endif %}
+                        
+                        {% if diary_entries %}
+                        <span class="text-sm bg-cyan-600 text-white px-3 py-1 rounded flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            In Diary ({{ diary_entries|length }}x)
+                        </span>
+                        {% endif %}
+                        
                         <!-- Action buttons - allow adding to multiple lists -->
                         <div class="flex flex-wrap gap-2">
                             {% if (show.id, 'tv') not in user_watchlist_ids %}
@@ -368,6 +391,21 @@
                                 Mark as Viewed
                             </a>
                             {% endif %}
+                            
+                            <!-- NEW: Diary and Lists buttons -->
+                            <button onclick="openDiaryModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-cyan-600 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                Log to Diary
+                            </button>
+                            
+                            <button onclick="openListModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-purple-600 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                                </svg>
+                                {% if user_lists_with_show %}Manage Lists{% else %}Add to List{% endif %}
+                            </button>
                         </div>
                     </div>
                     {% endif %}
@@ -537,7 +575,6 @@
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
-                                WL
                             </a>
                             {% endif %}
                             {% if (rec.id, 'tv') not in user_wishlist_ids %}
@@ -545,7 +582,6 @@
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
                                 </svg>
-                                Wish
                             </a>
                             {% endif %}
                             {% if (rec.id, 'tv') not in user_viewed_ids %}
@@ -1145,7 +1181,198 @@
 
             loadUserReviews();
         });
+        
+        // TV Show Data for modals
+        const SHOW_DATA = {
+            id: {{ show.id|tojson }},
+            name: {{ show.name|tojson }}
+        };
+        const CURRENT_USER = {
+            isAuthenticated: {{ current_user.is_authenticated|tojson }},
+            id: {{ current_user.id|tojson if current_user.is_authenticated else 'null' }}
+        };
+        
+        // Diary Modal Functions
+        function openDiaryModal() {
+            {% if not current_user.is_authenticated %}
+            alert('Please login to log to your diary');
+            return;
+            {% endif %}
+            
+            document.getElementById('diary-modal').classList.remove('hidden');
+            document.getElementById('diary-date').valueAsDate = new Date();
+        }
+        
+        function closeDiaryModal() {
+            document.getElementById('diary-modal').classList.add('hidden');
+        }
+        
+        async function submitDiaryEntry() {
+            const date = document.getElementById('diary-date').value;
+            const rating = document.getElementById('diary-rating').value;
+            
+            if (!date) {
+                alert('Please select a date');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/diary/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        media_id: SHOW_DATA.id,
+                        media_type: 'tv',
+                        watched_date: date,
+                        rating: rating || null
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    closeDiaryModal();
+                } else {
+                    alert(data.error || 'Failed to log to diary');
+                }
+            } catch (error) {
+                console.error('Error logging to diary:', error);
+                alert('An error occurred');
+            }
+        }
+        
+        // List Modal Functions
+        async function openListModal() {
+            {% if not current_user.is_authenticated %}
+            alert('Please login to add to lists');
+            return;
+            {% endif %}
+            
+            document.getElementById('list-modal').classList.remove('hidden');
+            await loadUserLists();
+        }
+        
+        function closeListModal() {
+            document.getElementById('list-modal').classList.add('hidden');
+        }
+        
+        async function loadUserLists() {
+            try {
+                const response = await fetch(`/api/users/${CURRENT_USER.id}/lists`);
+                const data = await response.json();
+                
+                const listSelect = document.getElementById('list-select');
+                listSelect.innerHTML = '<option value="">Select a list...</option>';
+                
+                data.lists.forEach(list => {
+                    const option = document.createElement('option');
+                    option.value = list.id;
+                    option.textContent = list.title;
+                    listSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading lists:', error);
+            }
+        }
+        
+        async function addToSelectedList() {
+            const listId = document.getElementById('list-select').value;
+            
+            if (!listId) {
+                alert('Please select a list');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/lists/${listId}/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        media_id: SHOW_DATA.id,
+                        media_type: 'tv'
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    closeListModal();
+                } else {
+                    alert(data.error || 'Failed to add to list');
+                }
+            } catch (error) {
+                console.error('Error adding to list:', error);
+                alert('An error occurred');
+            }
+        }
     </script>
+    
+    <!-- Diary Modal -->
+    <div id="diary-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
+        <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6">Log to Diary</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="diary-date" class="block text-sm font-semibold mb-2">Watched Date *</label>
+                    <input type="date" id="diary-date" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                </div>
+                
+                <div>
+                    <label for="diary-rating" class="block text-sm font-semibold mb-2">Rating (Optional)</label>
+                    <select id="diary-rating" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <option value="">No rating</option>
+                        <option value="0.5">★ 0.5</option>
+                        <option value="1.0">★ 1.0</option>
+                        <option value="1.5">★ 1.5</option>
+                        <option value="2.0">★★ 2.0</option>
+                        <option value="2.5">★★ 2.5</option>
+                        <option value="3.0">★★★ 3.0</option>
+                        <option value="3.5">★★★ 3.5</option>
+                        <option value="4.0">★★★★ 4.0</option>
+                        <option value="4.5">★★★★ 4.5</option>
+                        <option value="5.0">★★★★★ 5.0</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex space-x-4 mt-6">
+                <button onclick="submitDiaryEntry()" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    Log Entry
+                </button>
+                <button onclick="closeDiaryModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- List Modal -->
+    <div id="list-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
+        <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6">Add to List</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="list-select" class="block text-sm font-semibold mb-2">Select List *</label>
+                    <select id="list-select" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                
+                <p class="text-sm text-gray-400">Don't have a list yet? Create one from your profile page.</p>
+            </div>
+            
+            <div class="flex space-x-4 mt-6">
+                <button onclick="addToSelectedList()" class="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    Add to List
+                </button>
+                <button onclick="closeListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

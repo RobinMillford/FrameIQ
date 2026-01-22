@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>My Diary - FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #0a2f35;
+            color: #f5f6f5;
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .diary-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="pt-24 pb-12">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <a href="/" class="flex items-center group">
+                    <span class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent group-hover:from-cyan-300 group-hover:to-blue-400 transition-all">FrameIQ</span>
+                </a>
+                <div class="hidden md:flex space-x-8">
+                    <a href="/" class="hover:text-cyan-400 transition-colors">Home</a>
+                    <a href="/movies" class="hover:text-cyan-400 transition-colors">Movies</a>
+                    <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
+                    <a href="/diary" class="text-cyan-400 font-medium">Diary</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if current_user.is_authenticated %}
+                        <a href="/profile" class="flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
+                            <i class="fas fa-user-circle text-gray-400"></i>
+                            <span class="text-sm font-medium">{{ current_user.username }}</span>
+                        </a>
+                    {% else %}
+                        <a href="/login" class="text-sm font-medium hover:text-cyan-400">Login</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4">
+        <div class="diary-container">
+            <div class="mb-8">
+                <h1 class="text-4xl font-bold mb-2">My Diary</h1>
+                <p class="text-gray-400">Your chronological watch history</p>
+            </div>
+
+            <!-- Filter Options -->
+            <div class="glass-effect rounded-lg p-4 mb-6 flex gap-4">
+                <select id="year-filter" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700">
+                    <option value="">All Years</option>
+                </select>
+                <select id="month-filter" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700">
+                    <option value="">All Months</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                </select>
+            </div>
+
+            <!-- Diary Entries -->
+            <div id="diary-entries" class="space-y-4">
+                <!-- Entries will be loaded here via JavaScript -->
+                <div class="flex justify-center py-20">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+                </div>
+            </div>
+
+            <!-- Load More -->
+            <div class="text-center mt-8">
+                <button id="load-more" class="bg-transparent border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-white px-8 py-3 rounded-xl transition-all duration-300 hidden">
+                    Load More
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let hasMore = true;
+
+        async function loadDiaryEntries(page = 1, year = null, month = null) {
+            try {
+                let url = `/api/diary?page=${page}&per_page=20`;
+                if (year) url += `&year=${year}`;
+                if (month) url += `&month=${month}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (page === 1) {
+                    document.getElementById('diary-entries').innerHTML = '';
+                }
+
+                if (data.entries.length === 0 && page === 1) {
+                    document.getElementById('diary-entries').innerHTML = `
+                        <div class="text-center py-20">
+                            <i class="fas fa-book-open text-6xl text-gray-600 mb-4"></i>
+                            <p class="text-gray-400 text-lg">Your diary is empty. Start logging your watches!</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                data.entries.forEach(entry => {
+                    const entryHtml = `
+                        <div class="glass-effect rounded-lg p-4 flex gap-4 hover:bg-white/10 transition-all">
+                            <img src="https://image.tmdb.org/t/p/w200${entry.media.poster_path}" 
+                                 alt="${entry.media.title}" 
+                                 class="w-20 h-30 object-cover rounded">
+                            <div class="flex-1">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="text-lg font-semibold">${entry.media.title}</h3>
+                                        <p class="text-sm text-gray-400">Watched on ${new Date(entry.watched_date).toLocaleDateString()}</p>
+                                        ${entry.is_rewatch ? '<span class="text-xs bg-yellow-600 text-white px-2 py-1 rounded mt-1 inline-block">Rewatch</span>' : ''}
+                                    </div>
+                                    ${entry.rating ? `<div class="text-yellow-400 text-lg">★ ${entry.rating}</div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('diary-entries').insertAdjacentHTML('beforeend', entryHtml);
+                });
+
+                hasMore = data.has_next;
+                document.getElementById('load-more').classList.toggle('hidden', !hasMore);
+
+            } catch (error) {
+                console.error('Error loading diary entries:', error);
+                document.getElementById('diary-entries').innerHTML = `
+                    <div class="text-center py-20 text-red-400">
+                        <p>Error loading diary entries. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Load initial entries
+        loadDiaryEntries();
+
+        // Filter handlers
+        document.getElementById('year-filter').addEventListener('change', (e) => {
+            currentPage = 1;
+            const year = e.target.value;
+            const month = document.getElementById('month-filter').value;
+            loadDiaryEntries(1, year || null, month || null);
+        });
+
+        document.getElementById('month-filter').addEventListener('change', (e) => {
+            currentPage = 1;
+            const year = document.getElementById('year-filter').value;
+            const month = e.target.value;
+            loadDiaryEntries(1, year || null, month || null);
+        });
+
+        // Load more handler
+        document.getElementById('load-more').addEventListener('click', () => {
+            currentPage++;
+            const year = document.getElementById('year-filter').value;
+            const month = document.getElementById('month-filter').value;
+            loadDiaryEntries(currentPage, year || null, month || null);
+        });
+    </script>
+</body>
+</html>

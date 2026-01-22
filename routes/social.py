@@ -2,7 +2,7 @@
 Social API Routes
 Handles user following/follower relationships
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review
 from sqlalchemy.exc import IntegrityError
@@ -260,6 +260,12 @@ def get_activity_feed():
     }), 200
 
 
+@social.route('/feed')
+def feed():
+    """Render the social activity feed page"""
+    return render_template('feed.html')
+
+
 @social.route('/api/social/global-feed', methods=['GET'])
 def get_global_feed():
     """Get recent reviews from all users"""
@@ -279,4 +285,99 @@ def get_global_feed():
         'current_page': page,
         'has_next': pagination.has_next,
         'has_prev': pagination.has_prev
+    }), 200
+
+@social.route('/api/social/suggested-follows', methods=['GET'])
+@login_required
+def get_suggested_follows():
+    """Get user recommendations based on shared movie tastes"""
+    limit = request.args.get('limit', 5, type=int)
+    
+    # Get all media IDs the current user has interacted with
+    watchlist_ids = {item.id for item in current_user.watchlist}
+    wishlist_ids = {item.id for item in current_user.wishlist}
+    viewed_ids = {item.id for item in current_user.viewed_media}
+    
+    all_current_user_media = watchlist_ids | wishlist_ids | viewed_ids
+    
+    # Get IDs of users already being followed
+    following_ids = {f.following_id for f in current_user.following if f.is_active}
+    following_ids.add(current_user.id)  # Exclude self
+    
+    # Taste matching logic:
+    # 1. Find users who have these same movies in their lists
+    # we'll look across watchlist, wishlist, and viewed for other users
+    from models import user_watchlist, user_wishlist, user_viewed
+    from sqlalchemy import union_all, select, literal_column
+    
+    # Create a subquery for all media interactions by all users
+    interactions = union_all(
+        select(user_watchlist.c.user_id, user_watchlist.c.media_id),
+        select(user_wishlist.c.user_id, user_wishlist.c.media_id),
+        select(user_viewed.c.user_id, user_viewed.c.media_id)
+    ).alias('all_interactions')
+    
+    from sqlalchemy import text
+    
+    # Query for user IDs with shared media items
+    shared_counts_query = db.session.query(
+        User.id, 
+        db.func.count(interactions.c.media_id).label('shared_count')
+    ).join(
+        interactions, User.id == interactions.c.user_id
+    ).filter(
+        interactions.c.media_id.in_(all_current_user_media) if all_current_user_media else db.false(),
+        User.id.notin_(following_ids)
+    ).group_by(User.id).order_by(db.desc('shared_count')).limit(limit)
+    
+    # Store ID and count pairs
+    shared_media_results = shared_counts_query.all()
+    user_ids = [r[0] for r in shared_media_results]
+    counts_map = {r[0]: r[1] for r in shared_media_results}
+    
+    # Fetch full user objects for these IDs
+    matched_users = []
+    if user_ids:
+        users_lookup = {u.id: u for u in User.query.filter(User.id.in_(user_ids)).all()}
+        # Maintain order from shared_media_results
+        matched_users = [(users_lookup[uid], counts_map[uid]) for uid in user_ids if uid in users_lookup]
+    
+    # If not enough results based on shared media, fill with active community members
+    suggestions = []
+    for u, count in matched_users:
+        suggestions.append({
+            'id': u.id,
+            'username': u.username,
+            'profile_picture': u.profile_picture,
+            'bio': u.bio,
+            'followers_count': u.followers_count or 0,
+            'total_reviews': u.total_reviews or 0,
+            'shared_count': count,
+            'reason': f'Shared {count} movie{"s" if count > 1 else ""} with you'
+        })
+        
+    if len(suggestions) < limit:
+        already_suggested = {u.id for u, count in matched_users}
+        remaining_limit = limit - len(suggestions)
+        
+        fallback_users = User.query.filter(
+            User.id.notin_(following_ids),
+            User.id.notin_(already_suggested)
+        ).order_by(User.total_reviews.desc()).limit(remaining_limit).all()
+        
+        for u in fallback_users:
+            suggestions.append({
+                'id': u.id,
+                'username': u.username,
+                'profile_picture': u.profile_picture,
+                'bio': u.bio,
+                'followers_count': u.followers_count or 0,
+                'total_reviews': u.total_reviews or 0,
+                'shared_count': 0,
+                'reason': 'Active in the community'
+            })
+            
+    return jsonify({
+        'suggestions': suggestions,
+        'count': len(suggestions)
     }), 200

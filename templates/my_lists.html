@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Lists - FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #111827;
+            color: white;
+        }
+        
+        .list-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .list-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="bg-gray-900 shadow-lg">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-indigo-400">
+                            <i class="fas fa-user"></i> {{ current_user.username }}
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-4xl font-bold text-indigo-400 mb-2">My Lists</h1>
+                <p class="text-gray-400">Manage your custom curated collections</p>
+            </div>
+            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all flex items-center gap-2">
+                <i class="fas fa-plus"></i> Create New List
+            </button>
+        </div>
+
+        {% if user_lists %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for list in user_lists %}
+            <a href="/lists/{{ list.id }}" class="list-card bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-indigo-500 block">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-xl font-bold text-white">{{ list.title }}</h3>
+                    {% if not list.is_public %}
+                    <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
+                        <i class="fas fa-lock"></i> Private
+                    </span>
+                    {% endif %}
+                </div>
+                
+                {% if list.description %}
+                <p class="text-gray-400 text-sm mb-4 line-clamp-2">{{ list.description }}</p>
+                {% endif %}
+                
+                <div class="flex items-center justify-between text-sm text-gray-500">
+                    <span>
+                        <i class="fas fa-film"></i> {{ list.items.count() }} items
+                    </span>
+                    <span>
+                        <i class="fas fa-clock"></i> {{ list.created_at.strftime('%b %d, %Y') }}
+                    </span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+            <i class="fas fa-list text-6xl text-gray-600 mb-4"></i>
+            <h3 class="text-2xl font-bold text-gray-400 mb-2">No Lists Yet</h3>
+            <p class="text-gray-500 mb-6">Create your first custom list to organize your favorite movies and TV shows</p>
+            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                <i class="fas fa-plus"></i> Create Your First List
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Create List Modal -->
+    <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
+        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6 text-indigo-400">Create New List</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="list-title" class="block text-sm font-semibold mb-2">List Title *</label>
+                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                
+                <div>
+                    <label for="list-description" class="block text-sm font-semibold mb-2">Description (Optional)</label>
+                    <textarea id="list-description" rows="3" placeholder="Describe your list..." class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
+                    <label for="list-public" class="ml-2 text-sm text-gray-300">Make this list public</label>
+                </div>
+            </div>
+            
+            <div class="flex space-x-4 mt-6">
+                <button onclick="createList()" class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    Create List
+                </button>
+                <button onclick="closeCreateListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openCreateListModal() {
+            document.getElementById('create-list-modal').classList.remove('hidden');
+        }
+        
+        function closeCreateListModal() {
+            document.getElementById('create-list-modal').classList.add('hidden');
+            document.getElementById('list-title').value = '';
+            document.getElementById('list-description').value = '';
+            document.getElementById('list-public').checked = true;
+        }
+        
+        async function createList() {
+            const title = document.getElementById('list-title').value;
+            const description = document.getElementById('list-description').value;
+            const isPublic = document.getElementById('list-public').checked;
+            
+            if (!title.trim()) {
+                alert('Please enter a list title');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/lists/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        description: description,
+                        is_public: isPublic
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('List created successfully!');
+                    window.location.reload();
+                } else {
+                    alert(data.error || 'Failed to create list');
+                }
+            } catch (error) {
+                console.error('Error creating list:', error);
+                alert('An error occurred');
+            }
+        }
+    </script>
+</body>
+</html>

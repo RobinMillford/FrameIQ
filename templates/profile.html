@@ -58,6 +58,7 @@
                                 <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
                                 <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
                                 <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
+                                <a href="/diary" class="block px-4 py-2 text-sm hover:bg-gray-700">Diary</a>
                                 <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
                             </div>
                         </div>
@@ -168,6 +169,32 @@
                                 <p class="text-gray-400">Movies and shows you've watched</p>
                                 <div class="mt-4">
                                     <a href="{{ url_for('main.viewed') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.viewed_media|length }})</a>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">My Lists</h3>
+                                <p class="text-gray-400">Custom curated collections</p>
+                                <div class="mt-4 flex gap-2">
+                                    <button onclick="openCreateListModal()" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                        <i class="fas fa-plus"></i> Create New
+                                    </button>
+                                    <span class="text-gray-500">•</span>
+                                    <a href="/lists" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                        <i class="fas fa-list"></i> View All
+                                    </a>
+                                    <span class="text-gray-500">•</span>
+                                    <span class="text-gray-400 text-sm" id="lists-count">Loading...</span>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card bg-gray-700 rounded-lg p-6">
+                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Diary</h3>
+                                <p class="text-gray-400">Your watch history</p>
+                                <div class="mt-4">
+                                    <a href="/diary" class="text-indigo-400 hover:text-indigo-300 text-sm">View Diary</a>
+                                    <span class="text-gray-500 mx-2">•</span>
+                                    <span class="text-gray-400 text-sm" id="diary-count">Loading...</span>
                                 </div>
                             </div>
                             
@@ -456,6 +483,108 @@
                     document.getElementById('recommendations-preview').innerHTML = '<p class="text-gray-400">Unable to load recommendations at this time.</p>';
                 });
         }
+        
+        // Load lists and diary counts
+        async function loadListsAndDiaryCounts() {
+            try {
+                // Load lists count
+                const listsResponse = await fetch(`/api/users/{{ current_user.id }}/lists`);
+                const listsData = await listsResponse.json();
+                document.getElementById('lists-count').textContent = `${listsData.count || 0} lists`;
+                
+                // Load diary count
+                const diaryResponse = await fetch(`/api/diary?per_page=1`);
+                const diaryData = await diaryResponse.json();
+                document.getElementById('diary-count').textContent = `${diaryData.total || 0} entries`;
+            } catch (error) {
+                console.error('Error loading counts:', error);
+                document.getElementById('lists-count').textContent = '0 lists';
+                document.getElementById('diary-count').textContent = '0 entries';
+            }
+        }
+        
+        // Create List Modal Functions
+        function openCreateListModal() {
+            document.getElementById('create-list-modal').classList.remove('hidden');
+        }
+        
+        function closeCreateListModal() {
+            document.getElementById('create-list-modal').classList.add('hidden');
+            document.getElementById('list-title').value = '';
+            document.getElementById('list-description').value = '';
+            document.getElementById('list-public').checked = true;
+        }
+        
+        async function createList() {
+            const title = document.getElementById('list-title').value;
+            const description = document.getElementById('list-description').value;
+            const isPublic = document.getElementById('list-public').checked;
+            
+            if (!title.trim()) {
+                alert('Please enter a list title');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/lists/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        description: description,
+                        is_public: isPublic
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('List created successfully!');
+                    closeCreateListModal();
+                    loadListsAndDiaryCounts(); // Refresh count
+                } else {
+                    alert(data.error || 'Failed to create list');
+                }
+            } catch (error) {
+                console.error('Error creating list:', error);
+                alert('An error occurred');
+            }
+        }
+        
+        // Load counts on page load
+        loadListsAndDiaryCounts();
     </script>
+    
+    <!-- Create List Modal -->
+    <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
+        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6 text-indigo-400">Create New List</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="list-title" class="block text-sm font-semibold mb-2">List Title *</label>
+                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                
+                <div>
+                    <label for="list-description" class="block text-sm font-semibold mb-2">Description (Optional)</label>
+                    <textarea id="list-description" rows="3" placeholder="Describe your list..." class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
+                    <label for="list-public" class="ml-2 text-sm text-gray-300">Make this list public</label>
+                </div>
+            </div>
+            
+            <div class="flex space-x-4 mt-6">
+                <button onclick="createList()" class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    Create List
+                </button>
+                <button onclick="closeCreateListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

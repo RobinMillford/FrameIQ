@@ -258,3 +258,131 @@ class UserFollow(db.Model):
     
     def __repr__(self):
         return f'<UserFollow {self.follower_id} -> {self.following_id}>'
+
+
+class UserList(db.Model):
+    """User-created custom lists of movies/TV shows"""
+    __tablename__ = 'user_list'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    is_public = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('lists', lazy='dynamic'))
+    items = db.relationship('UserListItem', backref='list', cascade='all, delete-orphan', lazy='dynamic')
+    
+    def to_dict(self):
+        """Convert list to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'user': {
+                'id': self.user.id,
+                'username': self.user.username,
+                'profile_picture': self.user.profile_picture
+            },
+            'title': self.title,
+            'description': self.description,
+            'is_public': self.is_public,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'item_count': self.items.count(),
+            'is_owner': current_user.is_authenticated and self.user_id == current_user.id
+        }
+    
+    def __repr__(self):
+        return f'<UserList {self.id}: {self.title}>'
+
+
+class UserListItem(db.Model):
+    """Items in a user's custom list"""
+    __tablename__ = 'user_list_item'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
+    media_id = db.Column(db.Integer, db.ForeignKey('media_item.id'), nullable=False, index=True)
+    media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
+    position = db.Column(db.Integer)  # For ordering items in the list
+    note = db.Column(db.Text)  # Optional note about why this item is in the list
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    media = db.relationship('MediaItem', backref=db.backref('list_appearances', lazy='dynamic'))
+    
+    # Constraints
+    __table_args__ = (
+        db.UniqueConstraint('list_id', 'media_id', 'media_type', name='unique_list_media'),
+    )
+    
+    def to_dict(self):
+        """Convert list item to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'list_id': self.list_id,
+            'media': {
+                'id': self.media.tmdb_id,
+                'title': self.media.title,
+                'poster_path': self.media.poster_path,
+                'media_type': self.media_type
+            },
+            'position': self.position,
+            'note': self.note,
+            'added_at': self.added_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<UserListItem {self.id} in List {self.list_id}>'
+
+
+class DiaryEntry(db.Model):
+    """User's diary of watched movies/shows (supports re-watches)"""
+    __tablename__ = 'diary_entry'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    media_id = db.Column(db.Integer, db.ForeignKey('media_item.id'), nullable=False, index=True)
+    media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
+    watched_date = db.Column(db.Date, nullable=False, index=True)
+    rating = db.Column(db.Float)  # Optional rating 0.5 to 5.0
+    review_id = db.Column(db.Integer, db.ForeignKey('review.id'), nullable=True)  # Optional linked review
+    is_rewatch = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('diary_entries', lazy='dynamic'))
+    media = db.relationship('MediaItem', backref=db.backref('diary_entries', lazy='dynamic'))
+    review = db.relationship('Review', backref=db.backref('diary_entry', uselist=False))
+    
+    # Constraints
+    __table_args__ = (
+        db.CheckConstraint('rating IS NULL OR (rating >= 0.5 AND rating <= 5.0)', name='valid_diary_rating'),
+    )
+    
+    def to_dict(self):
+        """Convert diary entry to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'user': {
+                'id': self.user.id,
+                'username': self.user.username,
+                'profile_picture': self.user.profile_picture
+            },
+            'media': {
+                'id': self.media.tmdb_id,
+                'title': self.media.title,
+                'poster_path': self.media.poster_path,
+                'media_type': self.media_type
+            },
+            'watched_date': self.watched_date.isoformat(),
+            'rating': self.rating,
+            'review_id': self.review_id,
+            'is_rewatch': self.is_rewatch,
+            'created_at': self.created_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<DiaryEntry {self.id}: {self.user.username} watched {self.media.title}>'

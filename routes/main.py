@@ -58,9 +58,10 @@ def index():
         user_viewed_ids=user_viewed_ids
     )
 
-@main.route('/search', methods=['POST'])
+@main.route('/search', methods=['GET', 'POST'])
 def search():
-    query = request.form.get('query')
+    # Support both form data (POST) and query parameters (GET)
+    query = request.form.get('query') or request.args.get('query') or request.args.get('q')
     if not query:
         return render_template('index.html', error="Please enter a search term.")
 
@@ -74,10 +75,13 @@ def search():
     tv_response = requests.get(tv_url)
     tv_data = tv_response.json().get('results', [])
 
-    # Search people
+    # Search people (TMDB)
     person_url = f"https://api.themoviedb.org/3/search/person?api_key={TMDB_API_KEY}&language=en-US&query={query}&page=1"
     person_response = requests.get(person_url)
     person_data = person_response.json().get('results', [])
+
+    # Search community members (Local DB)
+    community_members = User.query.filter(User.username.ilike(f'%{query}%')).all()
 
     # Format all results, filtering out items without images
     movies = [
@@ -109,14 +113,18 @@ def search():
     user_watchlist_ids = set()
     user_wishlist_ids = set()
     user_viewed_ids = set()
+    following_ids = set()
     
     if current_user.is_authenticated:
         user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
         user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
         user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
+        following_ids = {f.following_id for f in current_user.following if f.is_active}
 
     return render_template('search_results.html', query=query, movies=movies, shows=shows, people=people,
-                          user_watchlist_ids=user_watchlist_ids, user_wishlist_ids=user_wishlist_ids, user_viewed_ids=user_viewed_ids)
+                          community_members=community_members,
+                          user_watchlist_ids=user_watchlist_ids, user_wishlist_ids=user_wishlist_ids, user_viewed_ids=user_viewed_ids,
+                          following_ids=following_ids)
 
 @main.route('/autocomplete')
 def autocomplete():

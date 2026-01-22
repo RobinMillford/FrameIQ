@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>Social Feed - FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #0a2f35;
+            color: #f5f6f5;
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .feed-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="pt-24 pb-12">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <a href="/" class="flex items-center group">
+                    <span class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent group-hover:from-cyan-300 group-hover:to-blue-400 transition-all">FrameIQ</span>
+                </a>
+                <div class="hidden md:flex space-x-8">
+                    <a href="/" class="hover:text-cyan-400 transition-colors">Home</a>
+                    <a href="/movies" class="hover:text-cyan-400 transition-colors">Movies</a>
+                    <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
+                    <a href="/feed" class="text-cyan-400 font-medium">Social Feed</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if current_user.is_authenticated %}
+                        <a href="/profile" class="flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
+                            <i class="fas fa-user-circle text-gray-400"></i>
+                            <span class="text-sm font-medium">{{ current_user.username }}</span>
+                        </a>
+                    {% else %}
+                        <a href="/login" class="text-sm font-medium hover:text-cyan-400">Login</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4">
+        <div class="feed-container">
+            <div class="flex justify-between items-end mb-8">
+                <div>
+                    <h1 class="text-4xl font-bold mb-2">Social Feed</h1>
+                    <p class="text-gray-400">Stay updated with the latest reviews and activity</p>
+                </div>
+                
+                {% if current_user.is_authenticated %}
+                <div class="flex bg-gray-900/50 rounded-lg p-1 border border-cyan-500/30">
+                    <button id="feed-btn-following" class="px-6 py-2 rounded-md transition-all duration-300 text-sm font-medium bg-cyan-600 text-white shadow-lg" data-target="following">
+                        Following
+                    </button>
+                    <button id="feed-btn-global" class="px-6 py-2 rounded-md transition-all duration-300 text-sm font-medium text-gray-400 hover:text-white" data-target="global">
+                        Global
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
+            <div id="activity-feed-container" class="space-y-6">
+                <!-- Feed items will be loaded here via JS -->
+                <div class="flex justify-center py-20">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+                </div>
+            </div>
+
+            <div class="text-center mt-12">
+                <button id="load-more-feed" class="bg-transparent border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-white px-8 py-3 rounded-xl transition-all duration-300 hidden">
+                    Load More Activity
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/activity-feed.js') }}"></script>
+    <script>
+        // Use the existing activity-feed.js which handles both following and global feeds
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof ActivityFeed !== 'undefined') {
+                // The activity-feed.js script should automatically initialize if it finds the containers
+                // But we can ensure it's set up for the feed page specifically if needed.
+            }
+        });
+    </script>
+</body>
+</html>
