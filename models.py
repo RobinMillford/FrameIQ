@@ -11,7 +11,8 @@ user_watchlist = db.Table('user_watchlist',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('media_id', db.Integer, db.ForeignKey('media_item.id'), primary_key=True),
     db.Column('media_type', db.String(20), primary_key=True),  # 'movie' or 'tv'
-    db.Column('date_added', db.DateTime, default=datetime.utcnow)
+    db.Column('date_added', db.DateTime, default=datetime.utcnow),
+    db.Column('priority', db.String(10), default='medium')  # 'high', 'medium', 'low'
 )
 
 # Association table for many-to-many relationship between users and movies in wishlist
@@ -269,6 +270,8 @@ class UserList(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     is_public = db.Column(db.Boolean, default=True)
+    cover_image = db.Column(db.String(500))  # Week 2: Cover image URL
+    slug = db.Column(db.String(250), unique=True, index=True)  # Week 2: Shareable URL slug
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -278,6 +281,19 @@ class UserList(db.Model):
     
     def to_dict(self):
         """Convert list to dictionary for JSON responses"""
+        # Week 2b: Get collaborators and categories
+        collaborators = []
+        if hasattr(self, 'collaborators'):
+            collaborators = [c.to_dict() for c in self.collaborators.all()]
+        
+        categories = []
+        if hasattr(self, 'list_categories'):
+            categories = [lc.category.to_dict() for lc in self.list_categories.all()]
+        
+        analytics_data = None
+        if hasattr(self, 'analytics') and self.analytics:
+            analytics_data = self.analytics.to_dict()
+        
         return {
             'id': self.id,
             'user': {
@@ -288,6 +304,11 @@ class UserList(db.Model):
             'title': self.title,
             'description': self.description,
             'is_public': self.is_public,
+            'cover_image': self.cover_image,  # Week 2
+            'slug': self.slug,  # Week 2
+            'collaborators': collaborators,  # Week 2b
+            'categories': categories,  # Week 2b
+            'analytics': analytics_data,  # Week 2b
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'item_count': self.items.count(),
@@ -296,6 +317,135 @@ class UserList(db.Model):
     
     def __repr__(self):
         return f'<UserList {self.id}: {self.title}>'
+
+
+class ListCollaborator(db.Model):
+    """Week 2b: Collaborators on a list (multiple people can edit)"""
+    __tablename__ = 'list_collaborator'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    role = db.Column(db.String(20), default='editor')  # 'owner', 'editor', 'viewer'
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # Who added this collaborator
+    
+    # Relationships
+    list = db.relationship('UserList', backref=db.backref('collaborators', lazy='dynamic', cascade='all, delete-orphan'))
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('collaborated_lists', lazy='dynamic'))
+    inviter = db.relationship('User', foreign_keys=[added_by])
+    
+    # Constraints
+    __table_args__ = (
+        db.UniqueConstraint('list_id', 'user_id', name='unique_list_collaborator'),
+    )
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'list_id': self.list_id,
+            'user': {
+                'id': self.user.id,
+                'username': self.user.username,
+                'profile_picture': self.user.profile_picture
+            },
+            'role': self.role,
+            'added_at': self.added_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<ListCollaborator {self.user_id} on List {self.list_id}>'
+
+
+class ListCategory(db.Model):
+    """Week 2b: Categories/themes for lists (e.g., 'Best of 2024', 'Horror', 'Oscar Winners')"""
+    __tablename__ = 'list_category'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    icon = db.Column(db.String(50))  # Font Awesome icon class
+    color = db.Column(db.String(20))  # Hex color code
+    usage_count = db.Column(db.Integer, default=0)  # How many lists use this category
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'icon': self.icon,
+            'color': self.color,
+            'usage_count': self.usage_count
+        }
+    
+    def __repr__(self):
+        return f'<ListCategory {self.id}: {self.name}>'
+
+
+class UserListCategory(db.Model):
+    """Week 2b: Junction table for lists and categories (many-to-many)"""
+    __tablename__ = 'user_list_category'
+    
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('list_category.id'), primary_key=True)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    list = db.relationship('UserList', backref=db.backref('list_categories', lazy='dynamic', cascade='all, delete-orphan'))
+    category = db.relationship('ListCategory', backref=db.backref('categorized_lists', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<UserListCategory list={self.list_id} category={self.category_id}>'
+
+
+class ListAnalytics(db.Model):
+    """Week 2b: Analytics for lists (views, likes, shares)"""
+    __tablename__ = 'list_analytics'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, unique=True, index=True)
+    view_count = db.Column(db.Integer, default=0)
+    unique_viewers = db.Column(db.Integer, default=0)
+    share_count = db.Column(db.Integer, default=0)
+    fork_count = db.Column(db.Integer, default=0)  # How many times list was cloned
+    last_viewed = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    list = db.relationship('UserList', backref=db.backref('analytics', uselist=False, cascade='all, delete-orphan'))
+    
+    def to_dict(self):
+        return {
+            'list_id': self.list_id,
+            'view_count': self.view_count,
+            'unique_viewers': self.unique_viewers,
+            'share_count': self.share_count,
+            'fork_count': self.fork_count,
+            'last_viewed': self.last_viewed.isoformat() if self.last_viewed else None
+        }
+    
+    def __repr__(self):
+        return f'<ListAnalytics list={self.list_id} views={self.view_count}>'
+
+
+class ListView(db.Model):
+    """Week 2b: Track individual list views for unique viewer counting"""
+    __tablename__ = 'list_view'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)  # Null for anonymous
+    ip_address = db.Column(db.String(45))  # IPv4 or IPv6
+    viewed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    list = db.relationship('UserList', backref=db.backref('views', lazy='dynamic'))
+    user = db.relationship('User', backref=db.backref('list_views', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<ListView list={self.list_id} user={self.user_id}>'
 
 
 class UserListItem(db.Model):
@@ -386,3 +536,147 @@ class DiaryEntry(db.Model):
     
     def __repr__(self):
         return f'<DiaryEntry {self.id}: {self.user.username} watched {self.media.title}>'
+
+
+class Tag(db.Model):
+    """Tags that can be applied to movies/TV shows (like Letterboxd)"""
+    __tablename__ = 'tag'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(30), unique=True, nullable=False, index=True)  # lowercase, max 30 chars
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    usage_count = db.Column(db.Integer, default=0)  # For tracking popular tags
+    
+    # Relationships
+    user_media_tags = db.relationship('UserMediaTag', backref='tag', cascade='all, delete-orphan', lazy='dynamic')
+    
+    def __init__(self, **kwargs):
+        """Initialize Tag with keyword arguments"""
+        super(Tag, self).__init__(**kwargs)
+    
+    def to_dict(self):
+        """Convert tag to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'usage_count': self.usage_count,
+            'created_at': self.created_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<Tag {self.name}>'
+
+
+class UserMediaTag(db.Model):
+    """Junction table for user-applied tags to media (supports same tag by multiple users)"""
+    __tablename__ = 'user_media_tag'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    media_id = db.Column(db.Integer, nullable=False, index=True)  # TMDB ID, not foreign key
+    media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
+    tag_id = db.Column(db.Integer, db.ForeignKey('tag.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('user_tags', lazy='dynamic'))
+    
+    # Constraints - each user can only tag a media with the same tag once
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'media_id', 'media_type', 'tag_id', name='unique_user_media_tag'),
+    )
+    
+    def __init__(self, **kwargs):
+        """Initialize UserMediaTag with keyword arguments"""
+        super(UserMediaTag, self).__init__(**kwargs)
+    
+    def to_dict(self):
+        """Convert user media tag to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'media_id': self.media_id,
+            'media_type': self.media_type,
+            'tag': self.tag.to_dict(),
+            'created_at': self.created_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<UserMediaTag User:{self.user_id} Media:{self.media_id} Tag:{self.tag.name}>'
+
+
+class MediaLike(db.Model):
+    """User likes (hearts) on movies/TV shows - quick appreciation without review"""
+    __tablename__ = 'media_like'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    media_id = db.Column(db.Integer, nullable=False, index=True)  # TMDB ID
+    media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('media_likes', lazy='dynamic'))
+    
+    # Constraints - one like per user per media
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'media_id', 'media_type', name='unique_user_media_like'),
+    )
+    
+    def __init__(self, **kwargs):
+        """Initialize MediaLike with keyword arguments"""
+        super(MediaLike, self).__init__(**kwargs)
+    
+    def to_dict(self):
+        """Convert like to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'media_id': self.media_id,
+            'media_type': self.media_type,
+            'created_at': self.created_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<MediaLike User:{self.user_id} Media:{self.media_id}>'
+
+
+class MediaComment(db.Model):
+    """General comments/discussion on movie/TV pages (not tied to reviews)"""
+    __tablename__ = 'media_comment'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    media_id = db.Column(db.Integer, nullable=False, index=True)  # TMDB ID
+    media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_deleted = db.Column(db.Boolean, default=False)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('media_comments', lazy='dynamic'))
+    
+    def __init__(self, **kwargs):
+        """Initialize MediaComment with keyword arguments"""
+        super(MediaComment, self).__init__(**kwargs)
+    
+    def to_dict(self):
+        """Convert comment to dictionary for JSON responses"""
+        return {
+            'id': self.id,
+            'user': {
+                'id': self.user.id,
+                'username': self.user.username,
+                'profile_picture': self.user.profile_picture
+            },
+            'media_id': self.media_id,
+            'media_type': self.media_type,
+            'content': self.content,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'is_author': current_user.is_authenticated and self.user_id == current_user.id
+        }
+    
+    def __repr__(self):
+        return f'<MediaComment {self.id} by User:{self.user_id} on {self.media_type}:{self.media_id}>'

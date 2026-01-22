@@ -9,10 +9,25 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import requests
 import os
+import re
 
 lists = Blueprint('lists', __name__)
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+
+
+def generate_slug(title, list_id=None):
+    """Generate a URL-friendly slug from list title"""
+    # Convert to lowercase and replace spaces/special chars with hyphens
+    slug = re.sub(r'[^\w\s-]', '', title.lower())
+    slug = re.sub(r'[-\s]+', '-', slug)
+    slug = slug.strip('-')
+    
+    # Add list ID if provided to ensure uniqueness
+    if list_id:
+        slug = f"{slug}-{list_id}"
+    
+    return slug
 
 
 @lists.route('/api/lists', methods=['GET'])
@@ -90,6 +105,11 @@ def create_list():
         )
         
         db.session.add(new_list)
+        db.session.flush()  # Get the ID before committing
+        
+        # Generate and set slug (Week 2)
+        new_list.slug = generate_slug(new_list.title, new_list.id)
+        
         db.session.commit()
         
         return jsonify({
@@ -265,6 +285,131 @@ def remove_from_list(list_id, item_id):
         return jsonify({'error': str(e)}), 500
 
 
+# ============================================================================
+# WEEK 2: Enhanced Lists Features
+# ============================================================================
+
+@lists.route('/api/lists/<int:list_id>/cover', methods=['PUT'])
+@login_required
+def update_list_cover(list_id):
+    """Update list cover image"""
+    user_list = UserList.query.get_or_404(list_id)
+    
+    # Check ownership
+    if user_list.user_id != current_user.id:
+        return jsonify({'error': 'You can only edit your own lists'}), 403
+    
+    data = request.get_json()
+    cover_url = data.get('cover_image')
+    
+    if not cover_url:
+        return jsonify({'error': 'cover_image URL is required'}), 400
+    
+    try:
+        user_list.cover_image = cover_url
+        user_list.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Cover image updated successfully',
+            'list': user_list.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@lists.route('/api/lists/<int:list_id>/reorder', methods=['PUT'])
+@login_required
+def reorder_list_items(list_id):
+    """Reorder items in a list (drag and drop)"""
+    user_list = UserList.query.get_or_404(list_id)
+    
+    # Check ownership
+    if user_list.user_id != current_user.id:
+        return jsonify({'error': 'You can only reorder your own lists'}), 403
+    
+    data = request.get_json()
+    item_order = data.get('item_order')  # Array of item IDs in new order
+    
+    if not item_order or not isinstance(item_order, list):
+        return jsonify({'error': 'item_order must be an array of item IDs'}), 400
+    
+    try:
+        # Update positions
+        for index, item_id in enumerate(item_order):
+            item = UserListItem.query.get(item_id)
+            if item and item.list_id == list_id:
+                item.position = index + 1
+        
+        user_list.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'List items reordered successfully',
+            'list': user_list.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@lists.route('/api/lists/slug/<slug>')
+def get_list_by_slug(slug):
+    """Get list by shareable slug"""
+    user_list = UserList.query.filter_by(slug=slug).first_or_404()
+    
+    # Check permissions
+    if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
+        return jsonify({'error': 'This list is private'}), 403
+    
+    # Get all items in the list
+    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
+    
+    list_data = user_list.to_dict()
+    list_data['items'] = [item.to_dict() for item in items]
+    
+    return jsonify(list_data), 200
+
+
+@lists.route('/api/lists/discover')
+def discover_lists():
+    """Discover popular and trending lists"""
+    sort = request.args.get('sort', 'recent')  # recent, popular, trending
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    # Base query - only public lists
+    query = UserList.query.filter_by(is_public=True)
+    
+    # Apply sorting
+    if sort == 'popular':
+        # Sort by item count (lists with more items are "popular")
+        query = query.outerjoin(UserListItem).group_by(UserList.id).order_by(
+            db.func.count(UserListItem.id).desc()
+        )
+    elif sort == 'trending':
+        # Sort by recently updated lists
+        query = query.order_by(UserList.updated_at.desc())
+    else:  # recent
+        query = query.order_by(UserList.created_at.desc())
+    
+    # Paginate
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    return jsonify({
+        'lists': [user_list.to_dict() for user_list in pagination.items],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev,
+        'sort': sort
+    }), 200
+
+
 # HTML Template Routes
 @lists.route('/lists')
 @login_required
@@ -287,3 +432,24 @@ def view_list(list_id):
     items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
     
     return render_template('list_detail.html', user_list=user_list, items=items)
+
+
+@lists.route('/lists/l/<slug>')
+def view_list_by_slug(slug):
+    """View a list by its shareable slug - Week 2 feature"""
+    user_list = UserList.query.filter_by(slug=slug).first_or_404()
+    
+    # Check permissions
+    if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
+        return render_template('error.html', message='This list is private'), 403
+    
+    # Get all items in the list with their media details
+    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
+    
+    return render_template('list_detail.html', user_list=user_list, items=items)
+
+
+@lists.route('/discover')
+def discover():
+    """List discovery page - Week 2 feature"""
+    return render_template('lists_discover.html')

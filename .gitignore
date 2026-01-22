@@ -19,3 +19,4 @@ chroma_db_test/
 *.json.gz
 *.sqlite3.gz
 github-actions-key.json
+extra

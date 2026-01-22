@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/priorities.css') }}">
     <style>
         body {
             font-family: 'Poppins', sans-serif;
@@ -78,8 +79,59 @@
         {% endwith %}
         
         {% if watchlist %}
-            <!-- Category Filter Buttons -->
-            <div class="flex flex-wrap gap-2 mb-6">
+            <!-- Priority Stats -->
+            <div class="mb-6">
+                <div id="priority-stats" class="mb-4">
+                    <!-- Populated by watchlist-priorities.js -->
+                </div>
+                <div id="priority-message" class="hidden"></div>
+            </div>
+            
+            <!-- Filters and Sort -->
+            <div class="flex flex-wrap gap-4 mb-6 items-center">
+                <!-- Category Filter Buttons -->
+                <div class="flex flex-wrap gap-2">
+                    <button class="category-btn bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded transition duration-300 active" data-category="all">
+                        All Items
+                    </button>
+                    <button class="category-btn bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded transition duration-300" data-category="movie">
+                        Movies
+                    </button>
+                    <button class="category-btn bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded transition duration-300" data-category="tv">
+                        TV Shows
+                    </button>
+                    <button class="category-btn bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded transition duration-300" data-category="anime">
+                        Anime
+                    </button>
+                </div>
+                
+                <!-- Priority Filters -->
+                <div class="flex flex-wrap gap-2 border-l border-gray-700 pl-4">
+                    <button class="priority-filter-btn active" data-priority="all">
+                        <i class="fas fa-list mr-1"></i> All
+                    </button>
+                    <button class="priority-filter-btn" data-priority="high">
+                        <i class="fas fa-fire mr-1"></i> High
+                    </button>
+                    <button class="priority-filter-btn" data-priority="medium">
+                        <i class="fas fa-circle mr-1"></i> Medium
+                    </button>
+                    <button class="priority-filter-btn" data-priority="low">
+                        <i class="fas fa-circle-dot mr-1"></i> Low
+                    </button>
+                </div>
+                
+                <!-- Sort Dropdown -->
+                <div class="ml-auto">
+                    <select id="watchlist-sort" class="priority-select">
+                        <option value="date_added">Sort by Date Added</option>
+                        <option value="priority">Sort by Priority</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Category Filter Buttons (old - will remove) -->
+            <div class="hidden">
                 <button class="category-btn bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded transition duration-300 active" data-category="all">
                     All Items
                 </button>
@@ -99,9 +151,9 @@
                 <!-- All Items Section -->
                 <div class="category-section" data-category="all">
                     <h2 class="text-2xl font-bold mb-4">All Items ({{ watchlist|length }})</h2>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 watchlist-grid">
                         {% for item in watchlist %}
-                            <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}">
+                            <div class="media-card watchlist-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}" data-media-id="{{ item.tmdb_id }}">
                                 <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                     {% if item.poster_path %}
                                         <img src="https://image.tmdb.org/t/p/w500{{ item.poster_path }}" alt="{{ item.title }}" class="w-full h-64 object-cover">
@@ -136,7 +188,18 @@
                                         <span class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Watchlist</span>
                                         {% endif %}
                                     </div>
-                                    <div class="flex justify-between items-center">
+                                    
+                                    <!-- Priority Selector -->
+                                    <div class="priority-container">
+                                        <span class="priority-badge priority-medium">MEDIUM</span>
+                                        <select class="priority-select flex-1" data-media-id="{{ item.tmdb_id }}" data-media-type="{{ item.media_type }}">
+                                            <option value="high">🔥 High Priority</option>
+                                            <option value="medium" selected>⭐ Medium Priority</option>
+                                            <option value="low">📋 Low Priority</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div class="flex justify-between items-center mt-3">
                                         <a href="/{{ item.media_type }}/{{ item.tmdb_id }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View Details</a>
                                         <div class="flex gap-1">
                                             {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
@@ -546,6 +609,11 @@
                 });
             });
         });
+    </script>
+    <script src="{{ url_for('static', filename='js/watchlist-priorities.js') }}"></script>
+    <script>
+        // Mark as watchlist page for priorities manager
+        document.body.classList.add('watchlist-page');
     </script>
 </body>
 </html>

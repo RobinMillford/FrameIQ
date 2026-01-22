@@ -22,15 +22,32 @@
             transform: translateY(-5px);
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
         }
+        
+        /* Week 2: Drag and drop styles */
+        .list-item {
+            cursor: move;
+        }
+        
+        .list-item.dragging {
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
+    <!-- Week 2: Hidden list data for JS -->
+    <div data-list-id="{{ user_list.id }}" style="display: none;">
+        <input type="hidden" id="list-slug" value="{{ user_list.slug }}">
+    </div>
+
     <!-- Navigation -->
     <nav class="bg-gray-900 shadow-lg">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
-                <div class="flex items-center">
+                <div class="flex items-center space-x-6">
                     <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+                    <a href="/discover" class="text-gray-300 hover:text-indigo-400 transition-colors">
+                        <i class="fas fa-compass"></i> Discover
+                    </a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
@@ -44,6 +61,15 @@
     </nav>
 
     <div class="container mx-auto px-4 py-8">
+        <!-- Week 2: Cover Image Section -->
+        {% if user_list.cover_image %}
+        <div class="mb-8 rounded-lg overflow-hidden relative">
+            <img id="list-cover" src="{{ user_list.cover_image }}" alt="{{ user_list.title }}" 
+                 class="w-full h-64 object-cover">
+            <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+        </div>
+        {% endif %}
+        
         <!-- List Header -->
         <div class="mb-8">
             <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
@@ -67,6 +93,11 @@
                     <p class="text-gray-400 mb-4">{{ user_list.description }}</p>
                     {% endif %}
                     
+                    <!-- Week 2b: Categories -->
+                    <div id="list-categories" class="flex flex-wrap gap-2 mb-4">
+                        <!-- Categories will be loaded by JavaScript -->
+                    </div>
+                    
                     <div class="flex items-center gap-4 text-sm text-gray-500">
                         <span><i class="fas fa-user"></i> {{ user_list.user.username }}</span>
                         <span><i class="fas fa-film"></i> {{ items|length }} items</span>
@@ -74,27 +105,76 @@
                     </div>
                 </div>
                 
-                {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
+                    <!-- Week 2: Share Button (for all users) -->
+                    <button id="share-list-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-share-alt"></i> Share
+                    </button>
+                    
+                    {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
+                    <!-- Week 2: Cover Upload Button -->
+                    <button id="upload-cover-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-image"></i> Cover
+                    </button>
+                    <input type="file" id="cover-image-input" accept="image/*" style="display: none;">
+                    
+                    <!-- Week 2b: Collaborators Button -->
+                    <button id="add-collaborator-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-users"></i> Collaborators
+                    </button>
+                    
+                    <!-- Week 2b: Categories Button -->
+                    <button id="add-category-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-tags"></i> Categories
+                    </button>
+                    
                     <button class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-edit"></i> Edit
                     </button>
                     <button class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-trash"></i> Delete
                     </button>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </div>
+        
+        <!-- Week 2b: Collaborators Section (owner only) -->
+        {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
+        <div class="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">
+                <i class="fas fa-users"></i> Collaborators
+            </h2>
+            <div id="collaborators-list" class="space-y-2">
+                <!-- Loaded by JavaScript -->
+                <p class="text-gray-500 text-sm">Loading...</p>
+            </div>
+        </div>
+        
+        <!-- Week 2b: Analytics Section (owner/collaborators only) -->
+        <div id="analytics-panel" class="mb-8">
+            <!-- Loaded by JavaScript if user has permission -->
+        </div>
+        {% endif %}
 
         <!-- List Items -->
         {% if items %}
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        <!-- Week 2: Drag-and-drop container (only for list owner) -->
+        <div id="list-items-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {% for item in items %}
             {% set media = item.media %}
-            <div class="media-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 relative group">
+            <div class="list-item media-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 relative group"
+                 data-item-id="{{ item.id }}"
+                 {% if current_user.is_authenticated and current_user.id == user_list.user_id %}draggable="true"{% endif %}>
                 <a href="/{{ item.media_type }}/{{ media.tmdb_id }}" class="block">
                     <div class="relative">
+                        {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
+                        <!-- Week 2: Drag handle -->
+                        <div class="absolute top-2 left-2 bg-gray-700 bg-opacity-75 text-gray-300 p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            <i class="fas fa-grip-vertical"></i>
+                        </div>
+                        {% endif %}
+                        
                         {% if media.poster_path %}
                         <img src="https://image.tmdb.org/t/p/w500{{ media.poster_path }}" 
                              alt="{{ media.title }}" 
@@ -124,7 +204,7 @@
                 <!-- Delete button (only show if user owns the list) -->
                 {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
                 <button onclick="removeFromList(event, {{ user_list.id }}, {{ item.id }}, '{{ media.title }}')" 
-                        class="absolute top-2 left-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        class="absolute bottom-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
                         title="Remove from list">
                     <i class="fas fa-times"></i>
                 </button>
@@ -144,6 +224,99 @@
         {% endif %}
     </div>
     
+    <!-- Week 2: Share Modal -->
+    <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-indigo-400">
+                    <i class="fas fa-share-alt"></i> Share List
+                </h2>
+                <button onclick="document.getElementById('share-modal').classList.add('hidden')" 
+                        class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-sm font-semibold mb-2 text-gray-300">Shareable Link</label>
+                <div class="flex gap-2">
+                    <input type="text" 
+                           id="share-url" 
+                           readonly
+                           class="flex-1 bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                           value="">
+                    <button id="copy-link-btn" 
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">
+                    <i class="fas fa-info-circle"></i> Anyone with this link can view this list
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Week 2b: Add Collaborator Modal -->
+    <div id="add-collaborator-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-green-400">
+                    <i class="fas fa-user-plus"></i> Add Collaborator
+                </h2>
+                <button onclick="listAdvancedManager.closeAddCollaboratorModal()" 
+                        class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold mb-2 text-gray-300">Username</label>
+                    <input type="text" 
+                           id="collaborator-username" 
+                           placeholder="Enter username"
+                           class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-semibold mb-2 text-gray-300">Role</label>
+                    <select id="collaborator-role" 
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <option value="editor">Editor (can add/remove items)</option>
+                        <option value="viewer">Viewer (can only view)</option>
+                    </select>
+                </div>
+                
+                <button onclick="listAdvancedManager.addCollaborator()" 
+                        class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
+                    <i class="fas fa-plus"></i> Add Collaborator
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Week 2b: Category Selection Modal -->
+    <div id="category-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 overflow-y-auto">
+        <div class="bg-gray-800 rounded-lg p-8 max-w-4xl w-full mx-4 my-8 border border-gray-700">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-yellow-400">
+                    <i class="fas fa-tags"></i> Add Categories
+                </h2>
+                <button onclick="listAdvancedManager.closeCategoryModal()" 
+                        class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div id="category-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Categories loaded by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/list-enhancements.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/list-advanced.js') }}"></script>
     <script>
         async function removeFromList(event, listId, itemId, title) {
             // Prevent the card click from navigating

@@ -1,0 +1,183 @@
+/* Tags System Styles - Letterboxd-inspired */
+
+/* Tag Pills */
+.tag-pill {
+    animation: fadeIn 0.3s ease-in;
+    cursor: pointer;
+}
+
+.tag-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Tag Input Container */
+.tag-input-container input:focus {
+    border-color: #4f46e5;
+}
+
+/* Tag Suggestions Dropdown */
+#tag-suggestions {
+    animation: slideDown 0.2s ease-out;
+    max-height: 300px;
+}
+
+#tag-suggestions button:first-child {
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+#tag-suggestions button:last-child {
+    border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Slide down animation */
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Remove button hover effect */
+.tag-pill button:hover {
+    transform: scale(1.2);
+}
+
+/* Empty state */
+#tags-display p {
+    animation: fadeIn 0.5s ease-in;
+}
+
+/* Success/Error messages */
+#tag-error,
+#tag-success {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Tag loading state */
+.tag-loading {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #4f46e5;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .tag-pill {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    #tag-suggestions {
+        max-height: 200px;
+    }
+}
+
+/* Dark mode enhancements */
+@media (prefers-color-scheme: dark) {
+    #tag-suggestions {
+        background-color: #1f2937;
+        border-color: #374151;
+    }
+    
+    #tag-suggestions button:hover {
+        background-color: #374151;
+    }
+}
+
+/* Tag cloud effect (for future tag cloud page) */
+.tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.tag-cloud-item {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 9999px;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.tag-cloud-item:hover {
+    transform: scale(1.1) translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Tag size variations for cloud */
+.tag-cloud-item.tag-size-1 { font-size: 0.75rem; }
+.tag-cloud-item.tag-size-2 { font-size: 0.875rem; }
+.tag-cloud-item.tag-size-3 { font-size: 1rem; }
+.tag-cloud-item.tag-size-4 { font-size: 1.125rem; }
+.tag-cloud-item.tag-size-5 { font-size: 1.25rem; }
+
+/* Suggested tag badge */
+.tag-suggested {
+    position: relative;
+}
+
+.tag-suggested::after {
+    content: '✨';
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 0.75rem;
+}
+
+/* Tag input focus state */
+#tag-input:focus {
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+}
+
+/* Placeholder animation */
+#tag-input::placeholder {
+    animation: fadeInOut 3s ease-in-out infinite;
+}
+
+@keyframes fadeInOut {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+}
