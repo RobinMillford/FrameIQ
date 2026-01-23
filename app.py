@@ -32,6 +32,10 @@ from routes.diary import diary
 # Local Imports - Social Features
 from routes.social import social
 from routes.analytics import analytics
+from routes.trending import trending
+from routes.activity_feed import activity_feed
+from routes.friends_activity import friends_activity
+from routes.profile_enhancements import profile_enhancements
 
 # Local Imports - Letterboxd-Style Features
 from routes.tags import tags_bp
@@ -42,6 +46,10 @@ from routes.lists_advanced import lists_advanced  # Week 2b
 
 # Local Imports - AI Agent
 from src.api.flask_integration import agent_chat
+from routes.reviews_enhanced import reviews_enhanced_bp
+
+# Week 3: Film Stats & Analytics
+from routes.stats import stats_bp
 
 
 # ============================================================================
@@ -143,13 +151,33 @@ app.register_blueprint(diary)
 # Social
 app.register_blueprint(social)
 app.register_blueprint(analytics)
+app.register_blueprint(trending)
+app.register_blueprint(activity_feed)
+app.register_blueprint(friends_activity)
+app.register_blueprint(profile_enhancements)
 
 # Letterboxd-Style
 app.register_blueprint(tags_bp)
 app.register_blueprint(likes_bp)
 app.register_blueprint(media_comments_bp)
 app.register_blueprint(priorities_bp)
-app.register_blueprint(lists_advanced)  # Week 2b
+app.register_blueprint(lists_advanced)
+app.register_blueprint(reviews_enhanced_bp)
+
+# Week 4: User Discovery
+from routes.user_discovery import user_discovery
+app.register_blueprint(user_discovery)
+
+# Week 3: Stats & Analytics
+app.register_blueprint(stats_bp)
+
+# Enhanced Features: Popular with Friends
+from routes.popular_with_friends import popular_bp
+app.register_blueprint(popular_bp)
+
+# Enhanced Features: More Like This Recommendations
+from routes.recommendations import recommendations_bp
+app.register_blueprint(recommendations_bp)
 
 # AI
 app.register_blueprint(agent_chat)

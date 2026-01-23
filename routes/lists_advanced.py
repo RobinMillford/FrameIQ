@@ -456,11 +456,11 @@ def discover_by_category(category_id):
     # Get lists with this category
     lists_query = db.session.query(UserList).join(UserListCategory).filter(
         UserListCategory.category_id == category_id,
-        UserList.is_public == True
+        UserList.is_public
     ).order_by(UserList.created_at.desc())
     
     # Paginate
-    pagination = lists_query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination = lists_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
     return jsonify({
         'category': category.to_dict(),

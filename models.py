@@ -76,6 +76,9 @@ class User(UserMixin, db.Model):
     followers_count = db.Column(db.Integer, default=0)
     following_count = db.Column(db.Integer, default=0)
     
+    def __init__(self, **kwargs):
+        super(User, self).__init__(**kwargs)
+    
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
     
@@ -96,6 +99,9 @@ class MediaItem(db.Model):
     overview = db.Column(db.Text)
     rating = db.Column(db.Float)
     
+    def __init__(self, **kwargs):
+        super(MediaItem, self).__init__(**kwargs)
+    
     def __repr__(self):
         return f'<MediaItem {self.title}>'
 
@@ -113,15 +119,19 @@ class Review(db.Model):
     content = db.Column(db.Text)  # Optional review text
     rating = db.Column(db.Float, nullable=False)  # 0.5 to 5.0 stars
     watched_date = db.Column(db.Date)  # When they watched it
+    title = db.Column(db.String(200))  # Optional review title (Week 3)
+    contains_spoilers = db.Column(db.Boolean, default=False)  # Week 3: spoiler flag
+    rewatch = db.Column(db.Boolean, default=False)  # Week 3: is this a rewatch?
     
     # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    contains_spoilers = db.Column(db.Boolean, default=False)
     is_deleted = db.Column(db.Boolean, default=False)  # Soft delete for statistics
     
     # Social metrics (denormalized for performance)
-    likes_count = db.Column(db.Integer, default=0)
+    likes_count = db.Column(db.Integer, default=0)  # Week 3: ReviewLikes count
+    helpful_count = db.Column(db.Integer, default=0)  # Week 3: helpful votes
+    not_helpful_count = db.Column(db.Integer, default=0)  # Week 3: not helpful votes
     comments_count = db.Column(db.Integer, default=0)
     
     # Relationships
@@ -129,6 +139,9 @@ class Review(db.Model):
     media = db.relationship('MediaItem', backref=db.backref('user_reviews', lazy='dynamic'))
     likes = db.relationship('ReviewLike', backref='review', cascade='all, delete-orphan', lazy='dynamic')
     comments = db.relationship('ReviewComment', backref='review', cascade='all, delete-orphan', lazy='dynamic')
+    
+    def __init__(self, **kwargs):
+        super(Review, self).__init__(**kwargs)
     
     # Constraints
     __table_args__ = (
@@ -185,6 +198,9 @@ class ReviewLike(db.Model):
         db.UniqueConstraint('user_id', 'review_id', name='unique_user_review_like'),
     )
     
+    def __init__(self, **kwargs):
+        super(ReviewLike, self).__init__(**kwargs)
+    
     def __repr__(self):
         return f'<ReviewLike {self.user.username} on Review {self.review_id}>'
 
@@ -205,6 +221,9 @@ class ReviewComment(db.Model):
     user = db.relationship('User', backref=db.backref('review_comments', lazy='dynamic'))
     replies = db.relationship('ReviewComment', backref=db.backref('parent_comment', remote_side=[id]), lazy='dynamic', cascade='all, delete-orphan')
     
+    def __init__(self, **kwargs):
+        super(ReviewComment, self).__init__(**kwargs)
+    
     def to_dict(self):
         """Convert comment to dictionary for JSON responses"""
         return {
@@ -223,6 +242,42 @@ class ReviewComment(db.Model):
     
     def __repr__(self):
         return f'<ReviewComment {self.id} by {self.user.username}>'
+
+
+class ReviewHelpful(db.Model):
+    """'Was this review helpful?' votes"""
+    __tablename__ = 'review_helpful'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    review_id = db.Column(db.Integer, db.ForeignKey('review.id'), nullable=False, index=True)
+    is_helpful = db.Column(db.Boolean, nullable=False)  # True = helpful, False = not helpful
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('review_helpful_votes', lazy='dynamic'))
+    review = db.relationship('Review', backref=db.backref('helpful_votes', lazy='dynamic'))
+    
+    def __init__(self, **kwargs):
+        super(ReviewHelpful, self).__init__(**kwargs)
+    
+    # Constraints
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'review_id', name='unique_user_review_helpful'),
+    )
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'review_id': self.review_id,
+            'is_helpful': self.is_helpful,
+            'created_at': self.created_at.isoformat()
+        }
+    
+    def __repr__(self):
+        return f'<ReviewHelpful User:{self.user_id} Review:{self.review_id} Helpful:{self.is_helpful}>'
+
 
 class UserFollow(db.Model):
     """User following relationships"""
@@ -335,6 +390,9 @@ class ListCollaborator(db.Model):
     user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('collaborated_lists', lazy='dynamic'))
     inviter = db.relationship('User', foreign_keys=[added_by])
     
+    def __init__(self, **kwargs):
+        super(ListCollaborator, self).__init__(**kwargs)
+    
     # Constraints
     __table_args__ = (
         db.UniqueConstraint('list_id', 'user_id', name='unique_list_collaborator'),
@@ -395,6 +453,9 @@ class UserListCategory(db.Model):
     list = db.relationship('UserList', backref=db.backref('list_categories', lazy='dynamic', cascade='all, delete-orphan'))
     category = db.relationship('ListCategory', backref=db.backref('categorized_lists', lazy='dynamic'))
     
+    def __init__(self, **kwargs):
+        super(UserListCategory, self).__init__(**kwargs)
+    
     def __repr__(self):
         return f'<UserListCategory list={self.list_id} category={self.category_id}>'
 
@@ -415,6 +476,9 @@ class ListAnalytics(db.Model):
     
     # Relationships
     list = db.relationship('UserList', backref=db.backref('analytics', uselist=False, cascade='all, delete-orphan'))
+    
+    def __init__(self, **kwargs):
+        super(ListAnalytics, self).__init__(**kwargs)
     
     def to_dict(self):
         return {
@@ -443,6 +507,9 @@ class ListView(db.Model):
     # Relationships
     list = db.relationship('UserList', backref=db.backref('views', lazy='dynamic'))
     user = db.relationship('User', backref=db.backref('list_views', lazy='dynamic'))
+    
+    def __init__(self, **kwargs):
+        super(ListView, self).__init__(**kwargs)
     
     def __repr__(self):
         return f'<ListView list={self.list_id} user={self.user_id}>'
@@ -511,6 +578,9 @@ class DiaryEntry(db.Model):
     __table_args__ = (
         db.CheckConstraint('rating IS NULL OR (rating >= 0.5 AND rating <= 5.0)', name='valid_diary_rating'),
     )
+    
+    def __init__(self, **kwargs):
+        super(DiaryEntry, self).__init__(**kwargs)
     
     def to_dict(self):
         """Convert diary entry to dictionary for JSON responses"""

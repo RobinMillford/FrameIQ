@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Feed - FrameIQ{% endblock %}
+
+{% block extra_css %}
+<style>
+    .feed-container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .feed-header {
+        margin-bottom: 30px;
+    }
+
+    .feed-header h1 {
+        color: #fff;
+        font-size: 2rem;
+        margin-bottom: 10px;
+    }
+
+    .feed-controls {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .control-group {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .control-label {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+    }
+
+    .feed-tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .feed-tab {
+        padding: 10px 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .feed-tab:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .feed-tab.active {
+        background: #e50914;
+        border-color: #e50914;
+    }
+
+    .filter-buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .filter-btn {
+        padding: 6px 15px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: 15px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+    }
+
+    .filter-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .filter-btn.active {
+        background: #e50914;
+        border-color: #e50914;
+    }
+
+    .activity-stream {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .activity-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 20px;
+        transition: all 0.3s;
+    }
+
+    .activity-card:hover {
+        background: rgba(255, 255, 255, 0.08);
+        transform: translateY(-2px);
+    }
+
+    .activity-header {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .activity-user-info {
+        flex: 1;
+    }
+
+    .activity-username {
+        color: #fff;
+        font-weight: 600;
+        margin-bottom: 3px;
+    }
+
+    .activity-time {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.85rem;
+    }
+
+    .activity-type-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-review {
+        background: #4caf50;
+        color: white;
+    }
+
+    .badge-like {
+        background: #f44336;
+        color: white;
+    }
+
+    .badge-comment {
+        background: #2196f3;
+        color: white;
+    }
+
+    .badge-tag {
+        background: #ff9800;
+        color: white;
+    }
+
+    .activity-content {
+        color: rgba(255, 255, 255, 0.9);
+        line-height: 1.6;
+    }
+
+    .activity-media {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .activity-media a {
+        color: #e50914;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .activity-media a:hover {
+        text-decoration: underline;
+    }
+
+    .rating-stars {
+        color: #ffd700;
+        margin-right: 5px;
+    }
+
+    .load-more {
+        text-align: center;
+        margin-top: 30px;
+    }
+
+    .load-more-btn {
+        padding: 12px 30px;
+        background: #e50914;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: background 0.3s;
+    }
+
+    .load-more-btn:hover {
+        background: #b20710;
+    }
+
+    .load-more-btn:disabled {
+        background: rgba(255, 255, 255, 0.3);
+        cursor: not-allowed;
+    }
+
+    .no-activities {
+        text-align: center;
+        padding: 60px 20px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .no-activities h3 {
+        font-size: 1.5rem;
+        margin-bottom: 10px;
+    }
+
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .stats-bar {
+        display: flex;
+        gap: 20px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+
+    .stat-item {
+        flex: 1;
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #e50914;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.7);
+        margin-top: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="feed-container">
+    <div class="feed-header">
+        <h1>📰 Activity Feed</h1>
+        <p style="color: rgba(255, 255, 255, 0.7);">Stay updated with the latest from the community</p>
+    </div>
+
+    <!-- Stats Bar -->
+    <div id="stats-bar" class="stats-bar" style="display: none;">
+        <div class="stat-item">
+            <div class="stat-value" id="stat-reviews">0</div>
+            <div class="stat-label">Reviews</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-comments">0</div>
+            <div class="stat-label">Comments</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-likes">0</div>
+            <div class="stat-label">Likes</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-tags">0</div>
+            <div class="stat-label">Tags</div>
+        </div>
+    </div>
+
+    <!-- Feed Type Tabs -->
+    <div class="feed-tabs">
+        <button class="feed-tab active" data-feed="following">Following</button>
+        <button class="feed-tab" data-feed="global">Global</button>
+        <button class="feed-tab" data-feed="personal">My Activity</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="feed-controls">
+        <div class="control-group">
+            <span class="control-label">Activity Types:</span>
+            <div class="filter-buttons">
+                <button class="filter-btn active" data-type="reviews">Reviews</button>
+                <button class="filter-btn active" data-type="likes">Likes</button>
+                <button class="filter-btn active" data-type="comments">Comments</button>
+                <button class="filter-btn active" data-type="tags">Tags</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <span class="control-label">Time:</span>
+            <div class="filter-buttons">
+                <button class="filter-btn active" data-time="all">All Time</button>
+                <button class="filter-btn" data-time="month">Month</button>
+                <button class="filter-btn" data-time="week">Week</button>
+                <button class="filter-btn" data-time="day">Day</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Stream -->
+    <div id="activity-stream" class="activity-stream">
+        <div class="loading">Loading activities...</div>
+    </div>
+
+    <!-- Load More -->
+    <div class="load-more" id="load-more-container" style="display: none;">
+        <button class="load-more-btn" id="load-more-btn">Load More</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let currentFeedType = 'following';
+let currentActivityTypes = ['reviews', 'likes', 'comments', 'tags'];
+let currentTimeRange = 'all';
+let hasMore = true;
+
+// Feed type tabs
+document.querySelectorAll('.feed-tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.feed-tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        currentFeedType = this.dataset.feed;
+        currentPage = 1;
+        loadFeed(true);
+        loadStats();
+    });
+});
+
+// Activity type filters
+document.querySelectorAll('.filter-btn[data-type]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        this.classList.toggle('active');
+        updateActivityTypes();
+        currentPage = 1;
+        loadFeed(true);
+    });
+});
+
+// Time range filters
+document.querySelectorAll('.filter-btn[data-time]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.filter-btn[data-time]').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentTimeRange = this.dataset.time;
+        currentPage = 1;
+        loadFeed(true);
+    });
+});
+
+function updateActivityTypes() {
+    currentActivityTypes = Array.from(document.querySelectorAll('.filter-btn[data-type].active'))
+        .map(btn => btn.dataset.type);
+}
+
+function loadFeed(reset = false) {
+    const container = document.getElementById('activity-stream');
+    if (reset) {
+        container.innerHTML = '<div class="loading">Loading activities...</div>';
+    }
+
+    const params = new URLSearchParams({
+        feed_type: currentFeedType,
+        activity_types: currentActivityTypes.join(','),
+        time_range: currentTimeRange,
+        page: currentPage,
+        per_page: 20
+    });
+
+    fetch(`/api/feed/enhanced?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (reset) {
+                    container.innerHTML = '';
+                }
+
+                if (data.activities.length === 0 && currentPage === 1) {
+                    container.innerHTML = `
+                        <div class="no-activities">
+                            <h3>No activities found</h3>
+                            <p>Try adjusting your filters or follow more users!</p>
+                        </div>
+                    `;
+                    document.getElementById('load-more-container').style.display = 'none';
+                    return;
+                }
+
+                data.activities.forEach(activity => {
+                    container.appendChild(createActivityCard(activity));
+                });
+
+                hasMore = data.has_next;
+                const loadMoreContainer = document.getElementById('load-more-container');
+                const loadMoreBtn = document.getElementById('load-more-btn');
+                
+                if (hasMore) {
+                    loadMoreContainer.style.display = 'block';
+                    loadMoreBtn.disabled = false;
+                } else {
+                    loadMoreBtn.disabled = true;
+                    loadMoreBtn.textContent = 'No more activities';
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading feed:', error);
+            container.innerHTML = '<div class="no-activities"><h3>Error loading feed</h3></div>';
+        });
+}
+
+function loadStats() {
+    fetch(`/api/feed/stats?feed_type=${currentFeedType}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('stat-reviews').textContent = data.stats.total_reviews;
+                document.getElementById('stat-comments').textContent = data.stats.total_comments;
+                document.getElementById('stat-likes').textContent = data.stats.total_likes;
+                document.getElementById('stat-tags').textContent = data.stats.total_tags;
+                document.getElementById('stats-bar').style.display = 'flex';
+            }
+        })
+        .catch(error => console.error('Error loading stats:', error));
+}
+
+function createActivityCard(activity) {
+    const card = document.createElement('div');
+    card.className = 'activity-card';
+
+    let badgeClass = '';
+    let badgeText = '';
+    let contentHtml = '';
+
+    switch (activity.type) {
+        case 'review':
+            badgeClass = 'badge-review';
+            badgeText = 'Review';
+            const stars = '★'.repeat(activity.rating || 0) + '☆'.repeat(10 - (activity.rating || 0));
+            contentHtml = `
+                <div class="activity-content">
+                    <div class="rating-stars">${stars}</div>
+                    <p>${activity.content || 'No review text provided.'}</p>
+                </div>
+                <div class="activity-media">
+                    <a href="/${activity.media_type}/${activity.media_id}">${activity.media_title}</a>
+                </div>
+            `;
+            break;
+        case 'like':
+            badgeClass = 'badge-like';
+            badgeText = 'Like';
+            contentHtml = `
+                <div class="activity-content">
+                    Liked a ${activity.media_type}
+                </div>
+                <div class="activity-media">
+                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
+                </div>
+            `;
+            break;
+        case 'comment':
+            badgeClass = 'badge-comment';
+            badgeText = 'Comment';
+            contentHtml = `
+                <div class="activity-content">
+                    <p>${activity.content}</p>
+                </div>
+                <div class="activity-media">
+                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
+                </div>
+            `;
+            break;
+        case 'tag':
+            badgeClass = 'badge-tag';
+            badgeText = 'Tag';
+            contentHtml = `
+                <div class="activity-content">
+                    Added tag: <strong>${activity.tag_name}</strong>
+                </div>
+                <div class="activity-media">
+                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
+                </div>
+            `;
+            break;
+    }
+
+    card.innerHTML = `
+        <div class="activity-header">
+            <img src="${activity.user_avatar || '/static/images/default-avatar.png'}" 
+                 alt="${activity.username}" 
+                 class="user-avatar">
+            <div class="activity-user-info">
+                <div class="activity-username">${activity.username}</div>
+                <div class="activity-time">${formatTimestamp(activity.timestamp)}</div>
+            </div>
+            <span class="activity-type-badge ${badgeClass}">${badgeText}</span>
+        </div>
+        ${contentHtml}
+    `;
+
+    return card;
+}
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return date.toLocaleDateString();
+}
+
+// Load more button
+document.getElementById('load-more-btn').addEventListener('click', () => {
+    if (hasMore) {
+        currentPage++;
+        loadFeed(false);
+    }
+});
+
+// Initial load
+loadFeed(true);
+loadStats();
+</script>
+{% endblock %}

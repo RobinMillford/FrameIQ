@@ -56,9 +56,9 @@ def toggle_follow(user_id):
             else:
                 # Create new follow
                 follow = UserFollow(
-                    follower_id=current_user.id,
-                    following_id=user_id
-                )
+                    follower_id=current_user.id,  # type: ignore
+                    following_id=user_id # type: ignore
+                )  # type: ignore
                 db.session.add(follow)
             
             # Update counts
@@ -104,7 +104,7 @@ def get_followers(user_id):
     ).order_by(UserFollow.created_at.desc())
     
     # Paginate
-    pagination = followers_query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination = followers_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
     # Build follower list with user details
     followers_data = []
@@ -162,7 +162,7 @@ def get_following(user_id):
     ).order_by(UserFollow.created_at.desc())
     
     # Paginate
-    pagination = following_query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination = following_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
     # Build following list with user details
     following_data = []
@@ -248,7 +248,7 @@ def get_activity_feed():
     ).order_by(Review.created_at.desc())
     
     # Paginate
-    pagination = feed_query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination = feed_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
     return jsonify({
         'reviews': [review.to_dict() for review in pagination.items],
@@ -276,7 +276,7 @@ def get_global_feed():
     feed_query = Review.query.filter_by(is_deleted=False).order_by(Review.created_at.desc())
     
     # Paginate
-    pagination = feed_query.paginate(page=page, per_page=per_page, error_out=False)
+    pagination = feed_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
     return jsonify({
         'reviews': [review.to_dict() for review in pagination.items],

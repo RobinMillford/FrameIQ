@@ -157,6 +157,11 @@ def autocomplete():
 
     return jsonify({'movies': movies, 'shows': shows, 'people': people})
 
+@main.route('/trending')
+def trending_page():
+    """Render the trending page"""
+    return render_template('trending.html')
+
 @main.route('/news')
 def news():
     # NewsAPI call with refined query
@@ -695,3 +700,20 @@ def user_profile(user_id):
                          user=user, 
                          is_following=is_following,
                          reviews=recent_reviews)
+
+
+@main.route('/stats')
+@login_required
+def stats_dashboard():
+    """View personal statistics dashboard"""
+    return render_template('stats_dashboard.html')
+
+
+@main.route('/stats/year-in-review')
+@main.route('/stats/year-in-review/<int:year>')
+@login_required
+def year_in_review(year=None):
+    """View Year in Review for a specific year"""
+    if year is None:
+        year = datetime.now().year
+    return render_template('year_in_review.html', year=year)

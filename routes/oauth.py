@@ -29,6 +29,8 @@ def record_oauth(setup_state):
 def google_login():
     """Initiate Google OAuth login"""
     google = oauth_app.create_client('google')
+    if not google:
+        return redirect(url_for('auth.login'))
     # Generate redirect URI manually to ensure it matches Google Console configuration
     redirect_uri = request.url_root.rstrip('/') + url_for('oauth.google_callback')
     return google.authorize_redirect(redirect_uri)
@@ -38,6 +40,8 @@ def google_callback():
     """Handle Google OAuth callback"""
     try:
         google = oauth_app.create_client('google')
+        if not google:
+            return redirect(url_for('auth.login'))
         token = google.authorize_access_token()
         user_info = token.get('userinfo')
         

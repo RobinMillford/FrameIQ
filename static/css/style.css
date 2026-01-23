@@ -37,13 +37,13 @@
 }
 
 /* Card Hover Effects */
-.movie-card {
+.movie-card, .tv-card, .show-card, .person-card {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
 }
 
-.movie-card::before {
+.movie-card::before, .tv-card::before, .show-card::before, .person-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -55,11 +55,11 @@
     transition: 0.5s;
 }
 
-.movie-card:hover::before {
+.movie-card:hover::before, .tv-card:hover::before, .show-card:hover::before, .person-card:hover::before {
     transform: translateX(100%);
 }
 
-.movie-card:hover {
+.movie-card:hover, .tv-card:hover, .show-card:hover, .person-card:hover {
     transform: translateY(-10px) scale(1.02);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }

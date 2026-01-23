@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -61,21 +62,21 @@
         }
 
         .search-icon {
-        position: absolute;
+            position: absolute;
             left: 1rem;
             top: 50%;
             transform: translateY(-50%);
             color: white;
-    }
-    
-    .category-button {
+        }
+        
+        .category-button {
             transition: all 0.3s ease;
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .category-button:hover {
+        }
+        
+        .category-button:hover {
             background: rgba(255, 255, 255, 0.1);
             transform: translateY(-2px);
         }
@@ -87,15 +88,15 @@
 
         .trending-slider::-webkit-scrollbar {
             display: none;
-}
+        }
 
-.nav-link a {
+        .nav-link a {
             position: relative;
         }
 
         .nav-link a::after {
             content: '';
-    position: absolute;
+            position: absolute;
             bottom: -2px;
             left: 0;
             width: 0;
@@ -105,7 +106,7 @@
         }
 
         .nav-link a:hover::after {
-    width: 100%;
+            width: 100%;
         }
 
         #chatbot-button {
@@ -135,71 +136,72 @@
             background: linear-gradient(to right, #3b82f6, #60a5fa);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-}
+        }
 
-/* Add these new styles */
-.slide {
-    min-width: 100%;
-    display: flex;
-    gap: 2rem;
-    padding: 1rem;
-}
+        /* Slideshow styles */
+        .slide {
+            min-width: 100%;
+            display: flex;
+            gap: 2rem;
+            padding: 1rem;
+        }
 
-.show-card {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-    border-radius: 1rem;
-    transition: transform 0.3s ease;
-}
+        .show-card {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            border-radius: 1rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
 
-.show-card:hover {
-    transform: translateY(-10px);
-}
+        .show-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
 
-.show-card img {
-    width: 100%;
-    height: 400px;
-    object-fit: cover;
-    border-radius: 1rem;
-}
+        .show-card img {
+            width: 100%;
+            height: 400px;
+            object-fit: cover;
+            border-radius: 1rem;
+        }
 
-.show-info {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 1.5rem;
-    background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-    color: white;
-}
+        .show-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1.5rem;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            color: white;
+        }
 
-.show-rating {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: rgba(0,0,0,0.8);
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
+        .show-rating {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(0,0,0,0.8);
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
 
-.indicator {
-    width: 2rem;
-    height: 0.5rem;
-    background: rgba(255,255,255,0.3);
-    border-radius: 1rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
+        .indicator {
+            width: 2rem;
+            height: 0.5rem;
+            background: rgba(255,255,255,0.3);
+            border-radius: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
 
-.indicator.active {
-    background: white;
-    width: 3rem;
-}
-</style>
+        .indicator.active {
+            background: white;
+            width: 3rem;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-gray-900 text-white font-['Poppins']">
     <!-- Navigation -->
@@ -211,7 +213,7 @@
                     <a href="/" class="nav-link hover:text-blue-400 transition-colors">Home</a>
                     <a href="/movies" class="nav-link hover:text-blue-400 transition-colors">Movies</a>
                     <a href="/news" class="nav-link hover:text-blue-400 transition-colors">News</a>
-                    <a href="/model_selection" class="nav-link hover:text-blue-400 transition-colors">AI Chat</a>
+                    <a href="/chat" class="nav-link hover:text-blue-400 transition-colors">AI Chat</a>
                 </div>
                 <button class="md:hidden" id="mobile-menu-button">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

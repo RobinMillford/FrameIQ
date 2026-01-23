@@ -32,6 +32,48 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
+        .badge-card {
+            transition: all 0.3s ease;
+        }
+
+        .badge-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .badge-earned {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+            border: 2px solid rgba(99, 102, 241, 0.5);
+        }
+
+        .badge-locked {
+            background: rgba(31, 41, 55, 0.5);
+            border: 2px solid rgba(75, 85, 99, 0.3);
+            opacity: 0.6;
+        }
+
+        .badge-icon {
+            font-size: 2rem;
+            filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5));
+        }
+
+        .badge-locked .badge-icon {
+            filter: grayscale(1) opacity(0.5);
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(75, 85, 99, 0.5);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -126,7 +168,7 @@
                         </p>
                     </div>
                     
-                    <div class="glass-effect rounded-xl p-6">
+                    <div class="glass-effect rounded-xl p-6 mb-6">
                         <h3 class="text-xl font-semibold mb-4 text-indigo-400">Statistics</h3>
                         <div class="space-y-4">
                             <div class="flex justify-between items-center text-sm">
@@ -140,6 +182,19 @@
                             <div class="flex justify-between items-center text-sm">
                                 <span class="text-gray-400">Total Likes Received</span>
                                 <span class="font-bold text-indigo-300">{{ user.total_likes_received or 0 }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Badges & Achievements Section -->
+                    <div class="glass-effect rounded-xl p-6">
+                        <h3 class="text-xl font-semibold mb-4 text-indigo-400 flex items-center justify-between">
+                            <span>🏆 Badges & Achievements</span>
+                            <span id="badges-count" class="text-sm text-gray-400">Loading...</span>
+                        </h3>
+                        <div id="badges-container" class="space-y-3">
+                            <div class="flex justify-center py-4">
+                                <i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i>
                             </div>
                         </div>
                     </div>
@@ -296,6 +351,91 @@
     <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
     <script src="{{ url_for('static', filename='js/stats-dashboard.js') }}"></script>
     <script>
+        // Badges Manager
+        class BadgesManager {
+            constructor(userId) {
+                this.userId = userId;
+                this.container = document.getElementById('badges-container');
+                this.countElement = document.getElementById('badges-count');
+                this.loadBadges();
+            }
+
+            async loadBadges() {
+                try {
+                    const response = await fetch(`/api/users/${this.userId}/badges`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.displayBadges(data.badges, data.total_earned);
+                    } else {
+                        this.showError();
+                    }
+                } catch (error) {
+                    console.error('Error loading badges:', error);
+                    this.showError();
+                }
+            }
+
+            displayBadges(badges, totalEarned) {
+                if (!badges || badges.length === 0) {
+                    this.container.innerHTML = `
+                        <div class="text-center py-6 text-gray-400">
+                            <i class="fas fa-award text-3xl mb-2 opacity-30"></i>
+                            <p class="text-sm">No badges earned yet</p>
+                        </div>
+                    `;
+                    this.countElement.textContent = '0 earned';
+                    return;
+                }
+
+                this.countElement.textContent = `${totalEarned} earned`;
+
+                const html = badges.map(badge => `
+                    <div class="badge-card ${badge.earned ? 'badge-earned' : 'badge-locked'} rounded-lg p-3 flex items-center gap-3">
+                        <div class="badge-icon">
+                            ${badge.icon}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-semibold text-sm ${badge.earned ? 'text-white' : 'text-gray-400'}">
+                                ${badge.name}
+                            </div>
+                            <div class="text-xs text-gray-400 truncate">
+                                ${badge.description}
+                            </div>
+                            ${badge.progress !== undefined ? `
+                                <div class="progress-bar mt-2">
+                                    <div class="progress-fill" style="width: ${badge.progress}%"></div>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1">
+                                    ${badge.current || 0} / ${badge.target || 0}
+                                </div>
+                            ` : ''}
+                        </div>
+                        ${badge.earned ? `
+                            <i class="fas fa-check-circle text-green-400 text-lg"></i>
+                        ` : `
+                            <i class="fas fa-lock text-gray-500 text-sm"></i>
+                        `}
+                    </div>
+                `).join('');
+
+                this.container.innerHTML = html;
+            }
+
+            showError() {
+                this.container.innerHTML = `
+                    <div class="text-center py-4 text-red-400 text-sm">
+                        <i class="fas fa-exclamation-circle mb-2"></i>
+                        <p>Failed to load badges</p>
+                    </div>
+                `;
+                this.countElement.textContent = 'Error';
+            }
+        }
+
+        // Initialize Badges Manager
+        const badgesManager = new BadgesManager({{ user.id }});
+
         function openFollowersModal(userId) {
             document.getElementById('modal-title').textContent = 'Followers';
             document.getElementById('social-modal').classList.remove('hidden');

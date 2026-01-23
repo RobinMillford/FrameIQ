@@ -1,0 +1,445 @@
+{% extends "base.html" %}
+
+{% block title %}Year in Review {{ year }} - FrameIQ{% endblock %}
+
+{% block extra_css %}
+<style>
+    .yir-hero {
+        background: linear-gradient(135deg, #ff6f61 0%, #ffb347 50%, #00c4cc 100%);
+        padding: 4rem 2rem;
+        border-radius: 20px;
+        text-align: center;
+        margin-bottom: 3rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .yir-hero::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><path d="M14 16H9v-2h5V9.87a4 4 0 1 1 2 0V14h5v2h-5v15.95A10 10 0 0 0 23.66 27l-3.46-2 8.2-2.2-2.9 5a12 12 0 0 1-21 0l-2.89-5 8.2 2.2-3.47 2A10 10 0 0 0 14 31.95V16zm40 40h-5v-2h5v-4.13a4 4 0 1 1 2 0V54h5v2h-5v15.95A10 10 0 0 0 63.66 67l-3.47-2 8.2-2.2-2.88 5a12 12 0 0 1-21.02 0l-2.88-5 8.2 2.2-3.47 2A10 10 0 0 0 54 71.95V56zm-39 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm40-40a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM15 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm40 40a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="%23ffffff" fill-opacity="0.1" fill-rule="evenodd"/></svg>') repeat;
+        opacity: 0.1;
+    }
+    
+    .yir-title {
+        font-size: 4rem;
+        font-weight: 900;
+        color: white;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        margin-bottom: 1rem;
+        position: relative;
+    }
+    
+    .yir-subtitle {
+        font-size: 1.5rem;
+        color: rgba(255, 255, 255, 0.9);
+        position: relative;
+    }
+    
+    .yir-stat-card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border: 2px solid rgba(255, 179, 71, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .yir-stat-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255, 179, 71, 0.1) 0%, transparent 70%);
+        animation: pulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 1; }
+    }
+    
+    .yir-stat-card:hover {
+        transform: translateY(-10px);
+        border-color: rgba(255, 179, 71, 0.6);
+        box-shadow: 0 20px 40px rgba(255, 111, 97, 0.3);
+    }
+    
+    .yir-big-number {
+        font-size: 4rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #ff6f61, #ffb347);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+        position: relative;
+    }
+    
+    .yir-label {
+        font-size: 1.1rem;
+        color: #a0aec0;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-weight: 600;
+    }
+    
+    .yir-section {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 179, 71, 0.2);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .yir-section-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        background: linear-gradient(to right, #00c4cc, #ffb347);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .top-rated-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        transition: all 0.3s ease;
+    }
+    
+    .top-rated-item:hover {
+        background: rgba(255, 179, 71, 0.1);
+        transform: translateX(5px);
+    }
+    
+    .rank-badge {
+        font-size: 1.5rem;
+        font-weight: 900;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #ff6f61, #ffb347);
+        border-radius: 50%;
+        color: white;
+        margin-right: 1rem;
+    }
+    
+    .rating-stars {
+        color: #ffb347;
+        font-size: 1.2rem;
+        margin-left: auto;
+    }
+    
+    .genre-pill {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(0, 196, 204, 0.2), rgba(255, 179, 71, 0.2));
+        border: 2px solid rgba(0, 196, 204, 0.5);
+        border-radius: 50px;
+        color: #00c4cc;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 0.5rem;
+        transition: all 0.3s ease;
+    }
+    
+    .genre-pill:hover {
+        transform: scale(1.1);
+        box-shadow: 0 5px 15px rgba(0, 196, 204, 0.3);
+    }
+    
+    .share-button {
+        background: linear-gradient(135deg, #00c4cc, #ffb347);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 50px;
+        font-weight: 700;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        font-size: 1.1rem;
+    }
+    
+    .share-button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(0, 196, 204, 0.4);
+    }
+    
+    .year-selector {
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid rgba(255, 179, 71, 0.3);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+    }
+    
+    .loading-state {
+        text-align: center;
+        padding: 4rem;
+    }
+    
+    .confetti-animation {
+        animation: confetti 5s ease-in-out;
+    }
+    
+    @keyframes confetti {
+        0% { transform: translateY(-100vh) rotate(0deg); }
+        100% { transform: translateY(100vh) rotate(720deg); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Year Selector -->
+    <div class="flex justify-between items-center mb-6">
+        <a href="/stats" class="text-gray-400 hover:text-white transition">
+            ← Back to Stats
+        </a>
+        <div>
+            <label class="text-gray-400 mr-2">Select Year:</label>
+            <select id="year-selector" class="year-selector">
+                <!-- Populated by JS -->
+            </select>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loading-state" class="loading-state">
+        <div class="text-6xl mb-4">📊</div>
+        <p class="text-xl text-gray-400">Generating your Year in Review...</p>
+    </div>
+    
+    <!-- Content -->
+    <div id="yir-content" style="display: none;">
+        <!-- Hero Section -->
+        <div class="yir-hero">
+            <div class="yir-title">🎬 <span id="yir-year">{{ year }}</span></div>
+            <div class="yir-subtitle">Your Year in Film & TV</div>
+        </div>
+        
+        <!-- Main Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="yir-stat-card">
+                <div class="yir-big-number" id="total-watched">0</div>
+                <div class="yir-label">Total Watched</div>
+            </div>
+            <div class="yir-stat-card">
+                <div class="yir-big-number" id="avg-rating">0</div>
+                <div class="yir-label">Average Rating</div>
+            </div>
+            <div class="yir-stat-card">
+                <div class="yir-big-number" id="movies-count">0</div>
+                <div class="yir-label">Movies</div>
+            </div>
+            <div class="yir-stat-card">
+                <div class="yir-big-number" id="tv-count">0</div>
+                <div class="yir-label">TV Shows</div>
+            </div>
+        </div>
+        
+        <!-- Busiest Month -->
+        <div class="yir-section">
+            <h2 class="yir-section-title">📆 Busiest Month</h2>
+            <div class="text-center">
+                <div class="text-5xl font-bold gradient-text" id="busiest-month">-</div>
+                <div class="text-xl text-gray-400 mt-2">
+                    You watched <span class="text-orange-400 font-bold" id="busiest-count">0</span> items
+                </div>
+            </div>
+        </div>
+        
+        <!-- Top Genres -->
+        <div class="yir-section">
+            <h2 class="yir-section-title">🎭 Your Top Genres</h2>
+            <div class="text-center" id="top-genres">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+        
+        <!-- Top Rated -->
+        <div class="yir-section">
+            <h2 class="yir-section-title">⭐ Your Top Rated</h2>
+            <div id="top-rated-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+        
+        <!-- Share Section -->
+        <div class="text-center mt-8">
+            <button class="share-button" onclick="shareYearInReview()">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                </svg>
+                Share Your Year in Review
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+class YearInReviewManager {
+    constructor(year) {
+        this.year = year;
+        this.init();
+    }
+    
+    async init() {
+        this.setupYearSelector();
+        await this.loadYearInReview();
+    }
+    
+    async loadYearInReview() {
+        try {
+            const response = await fetch(`/api/stats/year-in-review/${this.year}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                this.displayYearInReview(data.year_in_review);
+                this.hideLoading();
+                this.triggerConfetti();
+            }
+        } catch (error) {
+            console.error('Error loading Year in Review:', error);
+            this.showError();
+        }
+    }
+    
+    displayYearInReview(yir) {
+        // Update year
+        document.getElementById('yir-year').textContent = this.year;
+        
+        // Main stats
+        document.getElementById('total-watched').textContent = yir.total_watched;
+        document.getElementById('avg-rating').textContent = yir.average_rating;
+        document.getElementById('movies-count').textContent = yir.media_breakdown.movie || 0;
+        document.getElementById('tv-count').textContent = yir.media_breakdown.tv || 0;
+        
+        // Busiest month
+        document.getElementById('busiest-month').textContent = yir.busiest_month.month_name;
+        document.getElementById('busiest-count').textContent = yir.busiest_month.count;
+        
+        // Top genres
+        const genresHtml = yir.top_genres.map(genre => 
+            `<span class="genre-pill">${genre}</span>`
+        ).join('');
+        document.getElementById('top-genres').innerHTML = genresHtml || '<p class="text-gray-400">No genre data available</p>';
+        
+        // Top rated
+        const topRatedHtml = yir.top_rated.slice(0, 10).map((item, index) => `
+            <div class="top-rated-item">
+                <div class="rank-badge">${index + 1}</div>
+                <div class="flex-1">
+                    <div class="text-lg font-semibold">${item.title}</div>
+                </div>
+                <div class="rating-stars">
+                    ${'⭐'.repeat(Math.round(item.rating / 2))}
+                    <span class="text-gray-400 ml-2">${item.rating}/10</span>
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('top-rated-list').innerHTML = topRatedHtml || '<p class="text-gray-400">No ratings yet!</p>';
+    }
+    
+    setupYearSelector() {
+        const selector = document.getElementById('year-selector');
+        const currentYear = new Date().getFullYear();
+        
+        // Add years
+        for (let year = currentYear; year >= 2020; year--) {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            if (year === this.year) option.selected = true;
+            selector.appendChild(option);
+        }
+        
+        selector.addEventListener('change', (e) => {
+            const newYear = parseInt(e.target.value);
+            window.location.href = `/stats/year-in-review/${newYear}`;
+        });
+    }
+    
+    hideLoading() {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('yir-content').style.display = 'block';
+    }
+    
+    showError() {
+        document.getElementById('loading-state').innerHTML = `
+            <div class="text-6xl mb-4">😕</div>
+            <p class="text-xl text-gray-400">Couldn't load your Year in Review. Try again later!</p>
+        `;
+    }
+    
+    triggerConfetti() {
+        // Simple confetti effect
+        for (let i = 0; i < 50; i++) {
+            setTimeout(() => {
+                const confetti = document.createElement('div');
+                confetti.style.position = 'fixed';
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.top = '-10px';
+                confetti.style.width = '10px';
+                confetti.style.height = '10px';
+                confetti.style.background = ['#ff6f61', '#ffb347', '#00c4cc'][Math.floor(Math.random() * 3)];
+                confetti.style.opacity = '0.8';
+                confetti.style.borderRadius = '50%';
+                confetti.style.pointerEvents = 'none';
+                confetti.style.zIndex = '9999';
+                confetti.className = 'confetti-animation';
+                document.body.appendChild(confetti);
+                
+                setTimeout(() => confetti.remove(), 5000);
+            }, i * 50);
+        }
+    }
+}
+
+function shareYearInReview() {
+    const year = document.getElementById('yir-year').textContent;
+    const total = document.getElementById('total-watched').textContent;
+    const text = `I watched ${total} movies and TV shows in ${year} on FrameIQ! 🎬`;
+    
+    if (navigator.share) {
+        navigator.share({
+            title: `My ${year} Year in Review`,
+            text: text,
+            url: window.location.href
+        });
+    } else {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(text + ' ' + window.location.href);
+        alert('Link copied to clipboard!');
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const year = {{ year }};
+    new YearInReviewManager(year);
+});
+</script>
+{% endblock %}

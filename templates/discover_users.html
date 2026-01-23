@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Discover Users - FrameIQ{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/discover-users.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="discover-page">
+    <div class="page-header">
+        <h1>🔍 Discover Users</h1>
+        <p>Find people who share your taste in movies and TV shows</p>
+    </div>
+
+    <!-- Search Section -->
+    <div class="search-section">
+        <div class="search-box">
+            <input 
+                type="text" 
+                id="user-search-input" 
+                placeholder="Search users by name or username..."
+                autocomplete="off"
+            >
+            <span class="search-icon">🔎</span>
+        </div>
+        <div id="search-results" class="user-grid" style="display: none;"></div>
+    </div>
+
+    <!-- Suggested Follows Section -->
+    {% if current_user.is_authenticated %}
+    <div class="section">
+        <div class="section-header">
+            <h2>✨ Suggested For You</h2>
+            <p>Based on who you follow and your activity</p>
+        </div>
+        <div id="suggested-users" class="user-grid loading">
+            <div class="loading-spinner">Loading suggestions...</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Popular Users Section -->
+    <div class="section">
+        <div class="section-header">
+            <h2>🔥 Popular Users</h2>
+            <div class="timeframe-selector">
+                <button class="timeframe-btn active" data-timeframe="all">All Time</button>
+                <button class="timeframe-btn" data-timeframe="month">This Month</button>
+                <button class="timeframe-btn" data-timeframe="week">This Week</button>
+            </div>
+        </div>
+        <div id="popular-users" class="user-grid loading">
+            <div class="loading-spinner">Loading popular users...</div>
+        </div>
+        <div id="popular-pagination" class="pagination-controls"></div>
+    </div>
+
+    <!-- Empty States -->
+    <template id="empty-state-template">
+        <div class="empty-state">
+            <div class="empty-icon">👥</div>
+            <h3>No users found</h3>
+            <p>Try a different search or check back later</p>
+        </div>
+    </template>
+
+    <!-- User Card Template -->
+    <template id="user-card-template">
+        <div class="user-card" data-user-id="">
+            <div class="user-card-header">
+                <img class="user-avatar" src="" alt="">
+                <div class="user-info">
+                    <a href="" class="user-name"></a>
+                    <div class="user-username"></div>
+                </div>
+            </div>
+            <div class="user-bio"></div>
+            <div class="user-stats">
+                <div class="stat">
+                    <span class="stat-value followers-count">0</span>
+                    <span class="stat-label">Followers</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value reviews-count">0</span>
+                    <span class="stat-label">Reviews</span>
+                </div>
+            </div>
+            <div class="user-reason"></div>
+            <button class="follow-btn" data-user-id="">
+                <span class="follow-text">Follow</span>
+                <span class="following-text">Following</span>
+            </button>
+        </div>
+    </template>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/discover-users.js') }}"></script>
+{% endblock %}

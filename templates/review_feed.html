@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Review Feed - FrameIQ{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reviews.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="review-feed-page">
+    <div class="page-header">
+        <h1>📖 Latest Reviews</h1>
+        <p class="subtitle">Discover what the community is watching</p>
+    </div>
+
+    <div class="review-controls">
+        <div class="filter-section">
+            <label class="toggle-switch">
+                <input type="checkbox" id="friends-only-toggle">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Friends Only</span>
+            </label>
+        </div>
+
+        <div class="view-links">
+            <a href="/reviews/feed" class="view-link active">
+                <i class="fas fa-clock"></i> Latest
+            </a>
+            <a href="/reviews/popular" class="view-link">
+                <i class="fas fa-fire"></i> Popular
+            </a>
+        </div>
+    </div>
+
+    <div id="review-feed-container" class="reviews-container">
+        <!-- Reviews will be loaded here by JavaScript -->
+        <div class="loading-spinner">Loading reviews...</div>
+    </div>
+
+    <!-- Infinite scroll loading indicator -->
+    <div id="load-more-indicator" class="load-more-indicator" style="display: none;">
+        <div class="spinner"></div>
+        <p>Loading more reviews...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" style="display: none;">
+        <i class="fas fa-file-alt empty-icon"></i>
+        <h3>No reviews yet</h3>
+        <p>Be the first to share your thoughts on a movie or TV show!</p>
+        <a href="/movies" class="btn btn-primary">Browse Movies</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
+{% endblock %}

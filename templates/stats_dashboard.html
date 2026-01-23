@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+
+{% block title %}Your Stats - FrameIQ{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .stat-card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 179, 71, 0.2);
+        border-radius: 12px;
+        padding: 1.5rem;
+        transition: all 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        border-color: rgba(255, 179, 71, 0.5);
+        box-shadow: 0 10px 25px rgba(0, 196, 204, 0.2);
+    }
+    
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(to right, #ff6f61, #ffb347);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .stat-label {
+        font-size: 0.9rem;
+        color: #a0aec0;
+        margin-top: 0.5rem;
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 179, 71, 0.2);
+    }
+    
+    .section-title {
+        font-size: 1.8rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+        background: linear-gradient(to right, #00c4cc, #ffb347);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .year-selector {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 179, 71, 0.3);
+        color: #f5f6f5;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .year-selector:hover {
+        background: rgba(255, 179, 71, 0.2);
+        border-color: rgba(255, 179, 71, 0.5);
+    }
+    
+    .loading-spinner {
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .spinner {
+        border: 4px solid rgba(255, 179, 71, 0.1);
+        border-radius: 50%;
+        border-top: 4px solid #ffb347;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .yir-button {
+        background: linear-gradient(135deg, #ff6f61 0%, #ffb347 100%);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .yir-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(255, 111, 97, 0.3);
+    }
+    
+    .genre-badge {
+        background: rgba(0, 196, 204, 0.2);
+        border: 1px solid rgba(0, 196, 204, 0.5);
+        color: #00c4cc;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        display: inline-block;
+        margin: 0.25rem;
+        font-size: 0.9rem;
+    }
+    
+    .decade-badge {
+        background: rgba(255, 179, 71, 0.2);
+        border: 1px solid rgba(255, 179, 71, 0.5);
+        color: #ffb347;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        display: inline-block;
+        margin: 0.25rem;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-4xl font-bold gradient-text">📊 Your Stats</h1>
+            <p class="text-gray-400 mt-2">Dive into your viewing patterns and statistics</p>
+        </div>
+        <a href="/stats/year-in-review" class="yir-button">
+            🎉 Year in Review
+        </a>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loading-state" class="loading-spinner">
+        <div class="spinner"></div>
+        <p class="text-gray-400 mt-4">Loading your stats...</p>
+    </div>
+    
+    <!-- Main Content -->
+    <div id="stats-content" style="display: none;">
+        <!-- Overview Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="stat-card">
+                <div class="stat-value" id="total-watched">0</div>
+                <div class="stat-label">Total Watched</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-reviews">0</div>
+                <div class="stat-label">Reviews Written</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="average-rating">0</div>
+                <div class="stat-label">Average Rating</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="this-year-count">0</div>
+                <div class="stat-label">This Year</div>
+            </div>
+        </div>
+        
+        <!-- Viewing Streaks -->
+        <div class="mb-8">
+            <h2 class="section-title">🔥 Viewing Streaks</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="stat-card">
+                    <div class="stat-value" id="current-streak">0</div>
+                    <div class="stat-label">Current Streak (days)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="longest-streak">0</div>
+                    <div class="stat-label">Longest Streak (days)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="total-days">0</div>
+                    <div class="stat-label">Total Active Days</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- Ratings Distribution -->
+            <div>
+                <h2 class="section-title">⭐ Ratings Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="ratingsChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Viewing by Year -->
+            <div>
+                <h2 class="section-title">📅 Viewing by Year</h2>
+                <div class="chart-container">
+                    <canvas id="yearChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Monthly Activity -->
+        <div class="mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="section-title">📆 Monthly Activity</h2>
+                <select id="month-year-selector" class="year-selector">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+            <div class="chart-container" style="height: 400px;">
+                <canvas id="monthChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Genre & Decade Stats -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- Top Genres -->
+            <div>
+                <h2 class="section-title">🎭 Top Genres</h2>
+                <div class="stat-card">
+                    <div id="top-genres-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Decade Distribution -->
+            <div>
+                <h2 class="section-title">📼 Decades Watched</h2>
+                <div class="stat-card">
+                    <div id="decades-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+class StatsManager {
+    constructor() {
+        this.charts = {};
+        this.currentYear = new Date().getFullYear();
+        this.init();
+    }
+    
+    async init() {
+        try {
+            await this.loadOverviewStats();
+            await this.loadStreakStats();
+            await this.loadYearStats();
+            await this.loadMonthStats(this.currentYear);
+            await this.loadGenreStats();
+            await this.loadDecadeStats();
+            
+            this.setupYearSelector();
+            this.hideLoading();
+        } catch (error) {
+            console.error('Error loading stats:', error);
+            this.showError('Failed to load stats. Please try again.');
+        }
+    }
+    
+    async loadOverviewStats() {
+        const response = await fetch('/api/stats/overview');
+        const data = await response.json();
+        
+        if (data.success) {
+            const stats = data.stats;
+            document.getElementById('total-watched').textContent = stats.total_watched;
+            document.getElementById('total-reviews').textContent = stats.total_reviews;
+            document.getElementById('average-rating').textContent = stats.average_rating;
+            document.getElementById('this-year-count').textContent = stats.this_year_count;
+            
+            // Create ratings distribution chart
+            this.createRatingsChart(stats.ratings_distribution);
+        }
+    }
+    
+    async loadStreakStats() {
+        const response = await fetch('/api/stats/streaks');
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('current-streak').textContent = data.current_streak;
+            document.getElementById('longest-streak').textContent = data.longest_streak;
+            document.getElementById('total-days').textContent = data.total_days;
+        }
+    }
+    
+    async loadYearStats() {
+        const response = await fetch('/api/stats/by-year');
+        const data = await response.json();
+        
+        if (data.success) {
+            this.createYearChart(data.stats_by_year);
+        }
+    }
+    
+    async loadMonthStats(year) {
+        const response = await fetch(`/api/stats/by-month?year=${year}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            this.createMonthChart(data.stats_by_month);
+        }
+    }
+    
+    async loadGenreStats() {
+        const response = await fetch('/api/stats/genres');
+        const data = await response.json();
+        
+        if (data.success) {
+            const container = document.getElementById('top-genres-list');
+            if (data.top_genres.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No genre data yet. Start watching!</p>';
+            } else {
+                container.innerHTML = data.top_genres.map(g => 
+                    `<span class="genre-badge">${g.genre} (${g.count})</span>`
+                ).join('');
+            }
+        }
+    }
+    
+    async loadDecadeStats() {
+        const response = await fetch('/api/stats/decades');
+        const data = await response.json();
+        
+        if (data.success) {
+            const container = document.getElementById('decades-list');
+            if (data.decade_stats.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No decade data yet. Start watching!</p>';
+            } else {
+                container.innerHTML = data.decade_stats.map(d => 
+                    `<span class="decade-badge">${d.decade} (${d.count})</span>`
+                ).join('');
+            }
+        }
+    }
+    
+    createRatingsChart(distribution) {
+        const ctx = document.getElementById('ratingsChart');
+        
+        // Create data for all ratings 1-10
+        const labels = [];
+        const values = [];
+        for (let i = 1; i <= 10; i++) {
+            labels.push(i.toString());
+            values.push(distribution[i.toString()] || 0);
+        }
+        
+        this.charts.ratings = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Number of Ratings',
+                    data: values,
+                    backgroundColor: 'rgba(255, 179, 71, 0.6)',
+                    borderColor: 'rgba(255, 179, 71, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: false }
+                },
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        ticks: { color: '#a0aec0' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    },
+                    x: { 
+                        ticks: { color: '#a0aec0' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    createYearChart(yearStats) {
+        const ctx = document.getElementById('yearChart');
+        
+        const labels = yearStats.map(s => s.year.toString());
+        const values = yearStats.map(s => s.watched_count);
+        
+        this.charts.year = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Watched',
+                    data: values,
+                    backgroundColor: 'rgba(0, 196, 204, 0.2)',
+                    borderColor: 'rgba(0, 196, 204, 1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        ticks: { color: '#a0aec0' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    },
+                    x: { 
+                        ticks: { color: '#a0aec0' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    createMonthChart(monthStats) {
+        const ctx = document.getElementById('monthChart');
+        
+        const labels = monthStats.map(s => s.month_name);
+        const values = monthStats.map(s => s.count);
+        
+        if (this.charts.month) {
+            this.charts.month.destroy();
+        }
+        
+        this.charts.month = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Watched',
+                    data: values,
+                    backgroundColor: 'rgba(255, 111, 97, 0.6)',
+                    borderColor: 'rgba(255, 111, 97, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        ticks: { color: '#a0aec0' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    },
+                    x: { 
+                        ticks: { color: '#a0aec0', maxRotation: 45, minRotation: 45 },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    setupYearSelector() {
+        const selector = document.getElementById('month-year-selector');
+        const currentYear = new Date().getFullYear();
+        
+        // Add last 5 years
+        for (let year = currentYear; year >= currentYear - 4; year--) {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            if (year === currentYear) option.selected = true;
+            selector.appendChild(option);
+        }
+        
+        selector.addEventListener('change', (e) => {
+            this.loadMonthStats(parseInt(e.target.value));
+        });
+    }
+    
+    hideLoading() {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('stats-content').style.display = 'block';
+    }
+    
+    showError(message) {
+        document.getElementById('loading-state').innerHTML = `
+            <p class="text-red-400">${message}</p>
+        `;
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    new StatsManager();
+});
+</script>
+{% endblock %}

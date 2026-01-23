@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Popular Reviews - FrameIQ{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reviews.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="review-feed-page">
+    <div class="page-header">
+        <h1>🔥 Popular Reviews</h1>
+        <p class="subtitle">Most helpful reviews from the community</p>
+    </div>
+
+    <div class="review-controls">
+        <div class="timeframe-selector">
+            <label for="popular-timeframe">Timeframe:</label>
+            <select id="popular-timeframe" class="form-select">
+                <option value="week" selected>This Week</option>
+                <option value="month">This Month</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+            </select>
+        </div>
+
+        <div class="view-links">
+            <a href="/reviews/feed" class="view-link">
+                <i class="fas fa-clock"></i> Latest
+            </a>
+            <a href="/reviews/popular" class="view-link active">
+                <i class="fas fa-fire"></i> Popular
+            </a>
+        </div>
+    </div>
+
+    <div id="popular-reviews-container" class="reviews-container">
+        <!-- Popular reviews will be loaded here by JavaScript -->
+        <div class="loading-spinner">Loading popular reviews...</div>
+    </div>
+
+    <!-- Infinite scroll loading indicator -->
+    <div id="load-more-indicator" class="load-more-indicator" style="display: none;">
+        <div class="spinner"></div>
+        <p>Loading more reviews...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" style="display: none;">
+        <i class="fas fa-trophy empty-icon"></i>
+        <h3>No popular reviews yet</h3>
+        <p>Reviews with the most helpful votes will appear here</p>
+        <a href="/reviews/feed" class="btn btn-primary">View Latest Reviews</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
+{% endblock %}

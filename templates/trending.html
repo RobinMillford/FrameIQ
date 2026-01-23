@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Trending - FrameIQ{% endblock %}
+
+{% block extra_css %}
+<style>
+    .trending-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .trending-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .trending-header h1 {
+        font-size: 2.5rem;
+        color: #fff;
+        margin-bottom: 10px;
+    }
+
+    .period-selector {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 30px;
+    }
+
+    .period-btn {
+        padding: 8px 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .period-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .period-btn.active {
+        background: #e50914;
+        border-color: #e50914;
+    }
+
+    .trending-section {
+        margin-bottom: 50px;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .section-header h2 {
+        color: #fff;
+        font-size: 1.8rem;
+    }
+
+    .view-all-btn {
+        color: #e50914;
+        text-decoration: none;
+        font-size: 0.9rem;
+    }
+
+    .view-all-btn:hover {
+        text-decoration: underline;
+    }
+
+    /* Media Grid */
+    .media-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 20px;
+    }
+
+    .media-card {
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.3s;
+    }
+
+    .media-card:hover {
+        transform: scale(1.05);
+    }
+
+    .media-poster {
+        width: 100%;
+        aspect-ratio: 2/3;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+
+    .media-title {
+        color: #fff;
+        font-size: 0.9rem;
+        margin-top: 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .trending-badge {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: #e50914;
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .media-stats {
+        display: flex;
+        gap: 10px;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.7);
+        margin-top: 5px;
+    }
+
+    /* Tags Grid */
+    .tags-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .trending-tag {
+        padding: 10px 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        color: #fff;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .trending-tag:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
+    }
+
+    .tag-count {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 8px;
+        background: #e50914;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    /* Users Grid */
+    .users-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 20px;
+    }
+
+    .user-card {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+
+    .user-card:hover {
+        background: rgba(255, 255, 255, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .user-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .user-info {
+        flex: 1;
+    }
+
+    .user-name {
+        color: #fff;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .user-activity {
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .error-message {
+        text-align: center;
+        padding: 40px;
+        color: #e50914;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="trending-container">
+    <div class="trending-header">
+        <h1>🔥 Trending Now</h1>
+        <p style="color: rgba(255, 255, 255, 0.7);">Discover what's hot in the FrameIQ community</p>
+    </div>
+
+    <div class="period-selector">
+        <button class="period-btn active" data-days="7">This Week</button>
+        <button class="period-btn" data-days="30">This Month</button>
+        <button class="period-btn" data-days="90">3 Months</button>
+    </div>
+
+    <!-- Trending Media -->
+    <div class="trending-section">
+        <div class="section-header">
+            <h2>📽️ Trending Movies & Shows</h2>
+            <a href="#" class="view-all-btn">View All</a>
+        </div>
+        <div id="trending-media" class="media-grid">
+            <div class="loading-spinner">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Trending Tags -->
+    <div class="trending-section">
+        <div class="section-header">
+            <h2>🏷️ Popular Tags</h2>
+        </div>
+        <div id="trending-tags" class="tags-grid">
+            <div class="loading-spinner">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Active Users -->
+    <div class="trending-section">
+        <div class="section-header">
+            <h2>⭐ Most Active Users</h2>
+        </div>
+        <div id="trending-users" class="users-grid">
+            <div class="loading-spinner">Loading...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPeriod = 7;
+
+// Period selector
+document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentPeriod = parseInt(this.dataset.days);
+        loadAllTrending();
+    });
+});
+
+function loadAllTrending() {
+    loadTrendingMedia();
+    loadTrendingTags();
+    loadTrendingUsers();
+}
+
+function loadTrendingMedia() {
+    const container = document.getElementById('trending-media');
+    container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+
+    fetch(`/api/trending/media?days=${currentPeriod}&limit=12`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.items.length > 0) {
+                container.innerHTML = data.items.map((item, index) => `
+                    <div class="media-card" onclick="window.location.href='/${item.media_type}/${item.tmdb_id}'">
+                        <div class="trending-badge">#${index + 1}</div>
+                        <img src="https://image.tmdb.org/t/p/w300${item.poster_path}" 
+                             alt="${item.title}" 
+                             class="media-poster"
+                             onerror="this.src='/static/images/no-poster.png'">
+                        <div class="media-title">${item.title}</div>
+                        <div class="media-stats">
+                            <span>❤️ ${item.like_count}</span>
+                            <span>💬 ${item.comment_count}</span>
+                            <span>⭐ ${item.review_count}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.7); text-align: center;">No trending media found</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading trending media:', error);
+            container.innerHTML = '<div class="error-message">Error loading trending media</div>';
+        });
+}
+
+function loadTrendingTags() {
+    const container = document.getElementById('trending-tags');
+    container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+
+    fetch(`/api/trending/tags?days=${currentPeriod}&limit=20`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.tags.length > 0) {
+                container.innerHTML = data.tags.map(tag => `
+                    <a href="/tags/${tag.name}" class="trending-tag">
+                        ${tag.name}
+                        <span class="tag-count">${tag.recent_usage}</span>
+                    </a>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.7);">No trending tags found</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading trending tags:', error);
+            container.innerHTML = '<div class="error-message">Error loading trending tags</div>';
+        });
+}
+
+function loadTrendingUsers() {
+    const container = document.getElementById('trending-users');
+    container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+
+    fetch(`/api/trending/users?days=${currentPeriod}&limit=12`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.users.length > 0) {
+                container.innerHTML = data.users.map(user => `
+                    <div class="user-card" onclick="window.location.href='/profile/${user.id}'">
+                        <img src="${user.profile_picture || '/static/images/default-avatar.png'}" 
+                             alt="${user.username}" 
+                             class="user-avatar">
+                        <div class="user-info">
+                            <div class="user-name">${user.username}</div>
+                            <div class="user-activity">
+                                ${user.review_count} reviews • ${user.comment_count} comments
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.7); text-align: center;">No active users found</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading trending users:', error);
+            container.innerHTML = '<div class="error-message">Error loading trending users</div>';
+        });
+}
+
+// Load initial data
+loadAllTrending();
+</script>
+{% endblock %}

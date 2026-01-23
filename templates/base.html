@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>{% block title %}FrameIQ - Intelligent Entertainment Discovery{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Animate.css -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- FrameIQ Brand CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
+    
+    <!-- Additional CSS -->
+    {% block extra_css %}{% endblock %}
+    
+    <style>
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .animate-gradient {
+            background: linear-gradient(-45deg, #0a2f35, #1a4a4f, #2b6565, #1a4a4f);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 179, 71, 0.2);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #ff6f61, #ffb347);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-link a {
+            position: relative;
+            color: #f5f6f5;
+        }
+
+        .nav-link a::after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: #00c4cc;
+            transition: width 0.3s ease;
+        }
+
+        .nav-link a:hover::after {
+            width: 100%;
+        }
+
+        .nav-link a:hover {
+            color: #00c4cc;
+        }
+
+        body {
+            font-family: "Poppins", sans-serif;
+            background-color: #0a2f35;
+            color: #f5f6f5;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-link {
+            transition: color 0.3s ease;
+        }
+    </style>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="animate-gradient">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <a href="/" class="frameiq-logo">
+                    <div class="frameiq-logo-icon">🧠</div>
+                    <div>
+                        <div style="font-size: 1.5rem">FrameIQ</div>
+                        <div class="frameiq-tagline">Intelligent Entertainment Discovery</div>
+                    </div>
+                </a>
+                
+                <!-- Desktop Navigation -->
+                <div class="hidden md:flex space-x-8">
+                    <a href="/movies" class="nav-link transition-colors">Movies</a>
+                    <a href="/tv_shows" class="nav-link transition-colors">TV Shows</a>
+                    <a href="/news" class="nav-link transition-colors">News</a>
+                    <a href="/feed" class="nav-link transition-colors">Social Feed</a>
+                    <a href="/discover" class="nav-link transition-colors">Discover</a>
+                    <a href="/trending" class="nav-link transition-colors">Trending</a>
+                    <a href="/stats" class="nav-link transition-colors">Stats</a>
+                    <a href="/chat" class="nav-link transition-colors flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        AI Chat
+                    </a>
+                </div>
+                
+                <!-- User Menu -->
+                <div class="flex items-center space-x-4">
+                    {% if current_user.is_authenticated %}
+                    <div class="relative" id="profile-dropdown">
+                        <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
+                            <i class="fas fa-user"></i>
+                            <span>{{ current_user.username }}</span>
+                            <i class="fas fa-caret-down"></i>
+                        </button>
+                        <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
+                            <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
+                            <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
+                            <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
+                            <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
+                            <a href="{{ url_for('main.stats_dashboard') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">My Stats</a>
+                            <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="hidden md:block">
+                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-gray-300 mr-2">Login</a>
+                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-gray-300">Register</a>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Mobile Menu Toggle -->
+                    <button id="mobile-menu-button" class="md:hidden text-white">
+                        <i class="fas fa-bars text-2xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-gray-900 bg-opacity-95">
+            <div class="px-4 py-3 space-y-2">
+                <a href="/movies" class="block text-white hover:text-gray-300 py-2">Movies</a>
+                <a href="/tv_shows" class="block text-white hover:text-gray-300 py-2">TV Shows</a>
+                <a href="/news" class="block text-white hover:text-gray-300 py-2">News</a>
+                <a href="/feed" class="block text-white hover:text-gray-300 py-2">Social Feed</a>
+                <a href="/discover" class="block text-white hover:text-gray-300 py-2">Discover</a>
+                <a href="/trending" class="block text-white hover:text-gray-300 py-2">Trending</a>
+                <a href="/stats" class="block text-white hover:text-gray-300 py-2">Stats</a>
+                <a href="/feed/enhanced" class="block text-white hover:text-gray-300 py-2">Enhanced Feed</a>
+                <a href="/chat" class="block text-white hover:text-gray-300 py-2">AI Chat</a>
+                {% if current_user.is_authenticated %}
+                <hr class="border-gray-700 my-2">
+                <a href="{{ url_for('auth.profile') }}" class="block text-white hover:text-gray-300 py-2">Profile</a>
+                <a href="{{ url_for('main.watchlist') }}" class="block text-white hover:text-gray-300 py-2">Watchlist</a>
+                <a href="{{ url_for('main.wishlist') }}" class="block text-white hover:text-gray-300 py-2">Wishlist</a>
+                <a href="{{ url_for('main.stats_dashboard') }}" class="block text-white hover:text-gray-300 py-2">My Stats</a>
+                <a href="{{ url_for('main.viewed') }}" class="block text-white hover:text-gray-300 py-2">Viewed</a>
+                <a href="{{ url_for('auth.logout') }}" class="block text-white hover:text-gray-300 py-2">Logout</a>
+                {% else %}
+                <hr class="border-gray-700 my-2">
+                <a href="{{ url_for('auth.login') }}" class="block text-white hover:text-gray-300 py-2">Login</a>
+                <a href="{{ url_for('auth.register') }}" class="block text-white hover:text-gray-300 py-2">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="pt-20">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-8 mt-16">
+        <div class="container mx-auto px-4 text-center">
+            <p>&copy; 2026 FrameIQ. All rights reserved.</p>
+            <p class="mt-2">Powered by TMDB</p>
+        </div>
+    </footer>
+
+    <!-- Base JavaScript -->
+    <script>
+        // Profile dropdown toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const profileButton = document.getElementById('profile-button');
+            const profileMenu = document.getElementById('profile-menu');
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+
+            if (profileButton && profileMenu) {
+                profileButton.addEventListener('click', function() {
+                    profileMenu.classList.toggle('hidden');
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(event) {
+                    if (!profileButton.contains(event.target) && !profileMenu.contains(event.target)) {
+                        profileMenu.classList.add('hidden');
+                    }
+                });
+            }
+
+            // Mobile menu toggle
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function() {
+                    mobileMenu.classList.toggle('hidden');
+                });
+            }
+        });
+    </script>
+
+    <!-- Page-specific JavaScript -->
+    {% block extra_js %}{% endblock %}
+
+    <!-- Particle Background & Animations -->
+    <canvas id="frameiq-particles"></canvas>
+    <script src="{{ url_for('static', filename='js/frameiq-animations.js') }}"></script>
+    
+    <!-- Social Features -->
+    <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/activity-feed.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/suggested-follows.js') }}"></script>
+</body>
+</html>
