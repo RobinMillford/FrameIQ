@@ -2,6 +2,11 @@
 Generate Rich Embeddings from Comprehensive Movie Data
 Creates detailed text descriptions for semantic search and LLM context
 
+🔑 USES OPENAI EMBEDDINGS (text-embedding-3-small)
+   - Requires OPENAI_API_KEY in .env
+   - Cost: ~$0.02 per 1M tokens (~$0.006 for 1000 movies)
+   - No local models needed - runs via API
+
 This script creates embeddings from:
 - Title, tagline, and overview
 - Genres and keywords
@@ -10,6 +15,8 @@ This script creates embeddings from:
 - Collection/franchise information
 - Review snippets for sentiment and themes
 - Similar and recommended movies for relationships
+
+Uploads to ChromaDB Cloud (no local storage)
 """
 
 import json
@@ -20,7 +27,7 @@ from typing import List, Dict, Any
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.vector_db import MovieVectorDB
+from api.vector_db import MovieVectorDB  # Uses OpenAI embeddings automatically
 
 
 def create_rich_description(movie: Dict[str, Any]) -> str:
@@ -267,10 +274,11 @@ def generate_embeddings(
         print("Please run 'python scripts/collect_movies.py' first")
         return
     
-    # Initialize vector database (Chroma Cloud)
+    # Initialize vector database (Chroma Cloud with OpenAI embeddings)
     print(f"\n[Step 2/3] Connecting to Chroma Cloud...")
+    print("Using OpenAI text-embedding-3-small model")
     vector_db = MovieVectorDB()
-    print("✓ Connected to Chroma Cloud")
+    print("✓ Connected to Chroma Cloud with OpenAI embeddings")
     
     # Generate embeddings
     print(f"\n[Step 3/3] Generating embeddings for {len(movies)} movies...")

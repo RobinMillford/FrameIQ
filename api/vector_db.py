@@ -4,7 +4,7 @@ Handles embedding generation and similarity search for recent movies
 """
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 import os
 from typing import List, Dict, Any, Optional
 import logging
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class MovieVectorDB:
     """
     Manages movie embeddings in ChromaDB Cloud for RAG-based recommendations.
-    Uses sentence-transformers for generating embeddings from movie descriptions.
+    Uses OpenAI embeddings for generating embeddings from movie descriptions.
     """
     
     def __init__(self):
@@ -27,15 +27,21 @@ class MovieVectorDB:
         - CHROMA_API_KEY
         - CHROMA_TENANT
         - CHROMA_DATABASE
+        - OPENAI_API_KEY
         """
         # Get Chroma Cloud credentials from environment
         api_key = os.getenv("CHROMA_API_KEY")
         tenant = os.getenv("CHROMA_TENANT")
         database = os.getenv("CHROMA_DATABASE")
+        openai_key = os.getenv("OPENAI_API_KEY")
         
         if not all([api_key, tenant, database]):
             logger.error("Missing Chroma Cloud credentials! Set CHROMA_API_KEY, CHROMA_TENANT, and CHROMA_DATABASE")
             raise ValueError("Chroma Cloud credentials not configured")
+        
+        if not openai_key:
+            logger.error("Missing OpenAI API key! Set OPENAI_API_KEY")
+            raise ValueError("OpenAI API key not configured")
         
         # Initialize ChromaDB Cloud client (official method)
         logger.info(f"Connecting to Chroma Cloud (tenant: {tenant}, database: {database})")
@@ -51,16 +57,29 @@ class MovieVectorDB:
             metadata={"hnsw:space": "cosine"}  # Use cosine similarity
         )
         
-        # Initialize sentence transformer model (lazy loading)
-        self.encoder = None  # Don't load on startup
-        logger.info("Vector database initialized successfully (model will load on first use)")
+        # Initialize OpenAI client
+        self.openai_client = OpenAI(api_key=openai_key)
+        logger.info("Vector database initialized successfully with OpenAI embeddings")
     
-    def _ensure_encoder(self):
-        """Lazy load the sentence transformer model only when needed"""
-        if self.encoder is None:
-            logger.info("Loading sentence transformer model...")
-            self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("Model loaded successfully")
+    def _generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate embedding using OpenAI's text-embedding-3-small model.
+        
+        Args:
+            text: Text to embed
+            
+        Returns:
+            List of floats representing the embedding
+        """
+        try:
+            response = self.openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}")
+            raise
     
     def add_movie(
         self, 
@@ -82,8 +101,8 @@ class MovieVectorDB:
             # Create rich description for embedding
             description = self._create_description(title, overview, metadata)
             
-            # Generate embedding
-            embedding = self.encoder.encode(description).tolist()
+            # Generate embedding using OpenAI
+            embedding = self._generate_embedding(description)
             
             # Clean metadata for ChromaDB (only str, int, float, bool allowed)
             clean_metadata = self._clean_metadata(metadata)
@@ -111,9 +130,6 @@ class MovieVectorDB:
                     Optional: 'description' key to bypass automatic description generation
         """
         try:
-            # Ensure encoder is loaded before processing
-            self._ensure_encoder()
-            
             ids = []
             embeddings = []
             documents = []
@@ -134,7 +150,8 @@ class MovieVectorDB:
                 else:
                     description = self._create_description(title, overview, metadata)
                 
-                embedding = self.encoder.encode(description).tolist()
+                # Generate embedding using OpenAI
+                embedding = self._generate_embedding(description)
                 
                 # Clean metadata for ChromaDB
                 clean_metadata = self._clean_metadata(metadata)
@@ -217,11 +234,8 @@ Overview: {overview}
             Dictionary with ids, documents, metadatas, and distances
         """
         try:
-            # Ensure encoder is loaded (lazy loading)
-            self._ensure_encoder()
-            
-            # Generate query embedding
-            query_embedding = self.encoder.encode(query).tolist()
+            # Generate query embedding using OpenAI
+            query_embedding = self._generate_embedding(query)
             
             # Search in ChromaDB
             results = self.collection.query(

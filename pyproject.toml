@@ -29,6 +29,7 @@ dependencies = [
     "langgraph==0.2.60",
     "langsmith==0.2.10",
     "numpy==1.26.4",
+    "openai>=2.15.0",
     "psycopg2-binary==2.9.9",
     "pydantic==2.10.6",
     "pydantic-settings==2.7.1",

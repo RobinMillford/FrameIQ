@@ -32,6 +32,7 @@ jobs:
 
       - name: Generate embeddings and upload to Chroma Cloud
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
           CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
           CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}

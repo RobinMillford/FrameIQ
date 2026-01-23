@@ -6,15 +6,41 @@ __pycache__/
 env/
 venv/
 myenv/
+.venv/
 .env
 .git/
+.github/
 .gitignore
 *.md
+*.log
+.DS_Store
+node_modules/
+
+# Exclude development/documentation files
+images/
+extra/
+.extra/
+migrates/
+scripts/
 data/
 chroma_db/
 .vscode/
 .idea/
-*.log
-.DS_Store
-node_modules/
-.extra
+.pytest_cache/
+github-actions-key.json
+uv.lock
+agents.md
+cloud_run_deployment.md
+implementation_plan.md.resolved
+README.md
+LICENSE
+
+# Exclude database files
+*.db
+*.sqlite3
+*.sqlite3.gz
+
+# Exclude test files
+test_*.py
+*_test.py
+pytest.ini
