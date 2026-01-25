@@ -1,11 +1,14 @@
-name: Deploy to Cloud Run
+# DISABLED - Now deploying to Render instead of Cloud Run
+# To re-enable: remove the comment below and this line
+# name: Deploy to Cloud Run
 
 on:
-  push:
-    branches:
-      - main # Deploy when pushing to main branch
-      - master # Also deploy for master branch
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+  # push:
+  #   branches:
+  #     - main # Deploy when pushing to main branch
+  #     - master # Also deploy for master branch
+  # workflow_dispatch: # Allow manual trigger from GitHub UI
+  workflow_dispatch: # Keep manual trigger only (won't auto-deploy)
 
 env:
   PROJECT_ID: movietvhub
@@ -52,7 +55,7 @@ jobs:
             --max-instances 10 \
             --min-instances 0 \
             --port 8080 \
-            --set-env-vars GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},TMDB_API_KEY=${{ secrets.TMDB_API_KEY }},TMDB_API_KEY_2=${{ secrets.TMDB_API_KEY_2 }},CHROMA_API_KEY=${{ secrets.CHROMA_API_KEY }},CHROMA_TENANT=${{ secrets.CHROMA_TENANT }},CHROMA_DATABASE=${{ secrets.CHROMA_DATABASE }},SECRET_KEY=${{ secrets.SECRET_KEY }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},DATABASE_URL=${{ secrets.DATABASE_URL }},CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }},CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }},CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }},NEWS_API_KEY=${{ secrets.NEWS_API_KEY }}
+            --set-env-vars OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},TMDB_API_KEY=${{ secrets.TMDB_API_KEY }},TMDB_API_KEY_2=${{ secrets.TMDB_API_KEY_2 }},CHROMA_API_KEY=${{ secrets.CHROMA_API_KEY }},CHROMA_TENANT=${{ secrets.CHROMA_TENANT }},CHROMA_DATABASE=${{ secrets.CHROMA_DATABASE }},SECRET_KEY=${{ secrets.SECRET_KEY }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},DATABASE_URL=${{ secrets.DATABASE_URL }},CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }},CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }},CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }},NEWS_API_KEY=${{ secrets.NEWS_API_KEY }}
 
       - name: Show Deployment URL
         run: |
