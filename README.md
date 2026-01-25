@@ -1,6 +1,6 @@
-# 🎬 FrameIQ - AI-Powered Movie Recommendation Platform
+# 🎬 FrameIQ - Letterboxd-Style Social Platform with AI
 
-A sophisticated movie and TV show recommendation platform powered by **LangGraph multi-agent AI system**, featuring intelligent RAG (Retrieval-Augmented Generation), real-time streaming responses, and comprehensive media discovery.
+A comprehensive movie and TV show social platform inspired by Letterboxd, featuring LangGraph multi-agent AI system, OpenAI embeddings for semantic search, and complete social discovery features.
 
 ![FrameIQ Interface](images/FrameIQ-Intelligent-Entertainment-Discovery.jpg)
 
@@ -9,136 +9,164 @@ A sophisticated movie and TV show recommendation platform powered by **LangGraph
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Latest-purple.svg)
+![OpenAI](https://img.shields.io/badge/OpenAI-Embeddings-orange.svg)
 ![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)
 
-## 🌐 Live Demo
-
-Check out the live demo on Google Cloud Run: [FrameIQ](https://frameiq-344233295407.asia-south1.run.app/)
+**Live Demo**: [FrameIQ on Render](https://tv-movie-recommendations-with-ai.onrender.com)
 
 ---
 
-## ✨ Key Features
+## Feature Comparison with Letterboxd
 
-### 🤖 **LangGraph Multi-Agent AI System**
+| Feature | Letterboxd | FrameIQ |
+|---------|-----------|---------|
+| **Reviews & Ratings** | ✅ 0.5-5 stars | ✅ 0.5-5 stars + titles |
+| **Film Diary** | ✅ Movies only | ✅ Movies + TV shows |
+| **Rewatch Tracking** | ✅ Manual | ✅ Auto-detect + manual |
+| **Custom Lists** | ✅ Basic | ✅ With collaborators |
+| **Watchlist** | ✅ Basic | ✅ High/Medium/Low priorities |
+| **Tags** | ✅ Basic | ✅ Autocomplete + trending |
+| **Likes/Hearts** | ✅ Basic | ✅ Animated + real-time |
+| **Comments** | ✅ Basic | ✅ Edit/delete + 5000 chars |
+| **Following System** | ✅ Yes | ✅ Yes |
+| **Activity Feed** | ✅ Single feed | ✅ Multi-tab (Following/Global/Personal) |
+| **User Profiles** | ✅ Basic | ✅ Stats dashboard with charts |
+| **Trending** | ✅ Basic | ✅ Advanced algorithms |
+| **Review Helpful Votes** | ✅ Yes | ✅ Yes |
+| **Friends Activity** | ✅ Basic | ✅ Per-movie/show pages |
+| **Year in Review** | ✅ Basic | ✅ Interactive Chart.js |
+| **Badges/Achievements** | ✅ Patron only | ✅ Free for all |
+| **TV Shows** | ❌ | ✅ Full support |
+| **Anime Detection** | ❌ | ✅ Auto-categorize |
+| **AI Chat Assistant** | ❌ | ✅ Natural language queries |
+| **Semantic Search** | ❌ | ✅ Vector database (5,722 movies) |
+| **OpenAI Embeddings** | ❌ | ✅ Superior search quality |
+| **Multi-Agent System** | ❌ | ✅ LangGraph orchestration |
 
-- **Intelligent Supervisor**: Routes queries to specialized agents
-- **Smart Retriever**: Dynamically selects between ChromaDB vector search and TMDb API
-- **Conversational Chat**: Handles general questions with deep movie knowledge
-- **Media Enricher**: Automatically fetches posters and metadata
-- **Real-time Streaming**: Live progress updates during AI processing
+### What FrameIQ Offers Beyond Letterboxd
 
-### 🎯 **Advanced Capabilities**
+**Complete TV Show Support**
+- Full integration for TV shows, seasons, and episodes
+- Anime auto-detection for both movies and series
+- Creator, network, and cast information
 
-- **Semantic Search**: 8,945+ movies in ChromaDB vector database
-- **TMDb Integration**: Real-time data from The Movie Database API
-- **Personalized Recommendations**: User watchlists, wishlists, and viewing history
-- **Multi-turn Conversations**: Stateful chat with 24-hour memory
-- **Rate Limiting**: 20 requests/min per user, 100/min global
-- **Performance Monitoring**: Built-in metrics and logging
+**AI-Powered Features**
+- Natural language chat interface with LangGraph agents
+- Semantic search using ChromaDB and OpenAI embeddings
+- Intelligent movie recommendations based on themes and vibes
+- Real-time streaming responses with progress updates
 
-### 🎨 **User Experience**
+**Enhanced Social Features**
+- Priority-based watchlist organization (High/Medium/Low)
+- Multi-tab activity feeds (Following/Global/Personal)
+- Interactive statistics dashboard with Chart.js visualizations
+- Advanced trending algorithms based on activity scores
+- Per-movie friends activity sections
 
-- Modern, responsive UI with glassmorphism design
-- Google OAuth authentication
-- Profile management with avatar support
-- Advanced search with autocomplete
-- Trending content and personalized feeds
+**All Letterboxd Core Features**
+- Star ratings (0.5-5.0 in 0.5 increments)
+- Written reviews with optional titles
+- Custom lists with public/private options
+- Film diary with viewing dates
+- Tags system with autocomplete
+- Following/followers functionality
+- Activity feed with filters
+- User profiles with statistics
+- Review likes and comments
+- Helpful vote system
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### LangGraph Agent Workflow
 
 ```
 User Query
     ↓
-Supervisor (Llama 3.1 8B) → Fast routing (0.3-0.5s)
+Supervisor (Llama 3.1 8B) → Routes to appropriate agent
     ↓
-    ├─→ Retriever (Llama 3.1 8B) → Vector DB + TMDb (0.5-1s)
-    ├─→ Chat (Llama 3.3 70B) → Deep analysis (1-2s)
-    └─→ Enricher (Llama 3.3 70B) → Fetch posters (0.5-1s)
+    ├─→ Retriever → ChromaDB vector search + TMDb API
+    ├─→ Chat Agent → Deep analysis with Llama 3.3 70B
+    └─→ Enricher → Fetches posters and metadata
 ```
 
-### Tech Stack
+### Technology Stack
 
-**Backend**:
+**Backend**
+- Flask 3.0+ - Web framework
+- LangGraph - Multi-agent orchestration
+- LangChain - LLM integration
+- SQLAlchemy + PostgreSQL (Neon) - Data persistence
+- ChromaDB Cloud - Vector database for semantic search
+- OpenAI API - text-embedding-3-small for embeddings
+- Groq API - Fast LLM inference (Llama models)
 
-- Flask 3.0+ (Web framework)
-- LangGraph (Multi-agent orchestration)
-- LangChain (LLM integration)
-- ChromaDB Cloud (Vector database)
-- PostgreSQL (User data)
-- Groq API (LLM provider)
+**Frontend**
+- HTML5 + Tailwind CSS - Responsive UI
+- Vanilla JavaScript - Interactive features
+- Chart.js - Statistics visualizations
+- Server-Sent Events (SSE) - Real-time streaming
 
-**Frontend**:
-
-- HTML5 + Tailwind CSS
-- Vanilla JavaScript
-- Server-Sent Events (SSE) for streaming
-
-**APIs**:
-
-- TMDb API (Movie/TV data)
-- Google OAuth (Authentication)
+**APIs & Services**
+- TMDb API - Movie/TV data and trending content
+- Google OAuth 2.0 - User authentication
+- Cloudinary - Avatar image hosting
+- News API - Entertainment news
 
 ---
-
-## 🚀 Quick Start
+Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- PostgreSQL database
-- API Keys:
-  - Groq API key
-  - TMDb API key
-  - ChromaDB Cloud credentials
-  - Google OAuth credentials
+- PostgreSQL database (or Neon serverless)
+- Required API keys (see .env setup below)
 
 ### Installation
 
-1. **Clone the repository**
-
+1. Clone the repository
 ```bash
 git clone https://github.com/yourusername/FrameIQ.git
 cd FrameIQ
 ```
 
-2. **Install dependencies**
-
+2. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Set up environment variables**
+3. Configure environment variables
 
-Create a `.env` file:
-
+Create `.env` file:
 ```env
 # Database
 DATABASE_URL=postgresql://user:password@host/database
 
-# API Keys
+# AI & Search
 GROQ_API_KEY=your_groq_api_key
-TMDB_API_KEY=your_tmdb_api_key
-
-# ChromaDB Cloud
+OPENAI_API_KEY=your_openai_api_key
 CHROMA_API_KEY=your_chroma_api_key
 CHROMA_TENANT=your_tenant_id
 CHROMA_DATABASE=your_database_name
 
-# Google OAuth
+# External APIs
+TMDB_API_KEY=your_tmdb_api_key
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+CLOUDINARY_CLOUD_NAME=your_cloudinary_name
+CLOUDINARY_API_KEY=your_cloudinary_key
+CLOUDINARY_API_SECRET=your_cloudinary_secret
 
 # Flask
 SECRET_KEY=your_secret_key
 ```
 
-4. **Run the application**
-
+4. Run the application
 ```bash
+python app.py
+# or
+uv rush
 python app.py
 ```
 
@@ -148,63 +176,33 @@ Visit `http://localhost:5000`
 
 ## 🚀 Deployment
 
+### Production (Render)
+
+**Deployment Size**: 280 KB compressed (optimized from 7.3 GB)
+
+**Key Optimizations**:
+- OpenAI API for embeddings instead of local models
+- ChromaDB Cloud for vector database
+- Removed sentence-transformers (saved 1.5 GB)
+- Enhanced .dockerignore for minimal builds
+
+**Environment Variables** (set in Render dashboard):
+```
+DATABASE_URL, GROQ_API_KEY, OPENAI_API_KEY, TMDB_API_KEY,
+CHROMA_API_KEY, CHROMA_TENANT, CHROMA_DATABASE,
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SECRET_KEY,
+CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+```
+
+**Automated Updates**: GitHub Actions runs monthly to fetch new movies and update embeddings
+
 ### Local Development
 
 ```bash
-# Run with Flask development server
 python app.py
-
-# Or use uv (recommended)
+# or with uv for faster startup
 uv run app.py
 ```
-
-### Production Deployment (Google Cloud Run)
-
-FrameIQ is deployed on Google Cloud Run with automatic CI/CD via GitHub Actions.
-
-**Live App**: https://frameiq-344233295407.asia-south1.run.app
-
-#### Quick Deploy
-
-```bash
-# Install Google Cloud CLI
-sudo snap install google-cloud-cli
-
-# Authenticate
-gcloud auth login
-gcloud config set project your-project-id
-
-# Deploy
-gcloud run deploy frameiq \
-  --source . \
-  --region asia-south1 \
-  --platform managed \
-  --allow-unauthenticated
-```
-
-#### Automated CI/CD
-
-Every push to `main` branch automatically deploys to Cloud Run via GitHub Actions.
-
-**Setup Steps**:
-
-1. Create service account with required permissions
-2. Add GitHub secrets (API keys, credentials)
-3. Push to GitHub - automatic deployment in ~9 minutes
-
-**For detailed deployment instructions**, see [cloud_run_deployment.md](cloud_run_deployment.md)
-
-**Features**:
-
-- ✅ Automatic builds on every push
-- ✅ Zero-downtime deployments
-- ✅ Auto-scaling (0-10 instances)
-- ✅ HTTPS enabled by default
-- ✅ Environment variables managed securely
-
----
-
-## 🤖 AI Agent System
 
 ### Model Configuration
 
@@ -234,89 +232,50 @@ Users see real-time updates:
 | `/agent_metrics`  | GET    | Performance metrics          |
 | `/agent_health`   | GET    | System health check          |
 
----
+---AI Agent System
 
-## 📊 Features
+### Model Configuration
 
-### User Management
+| Agent | Model | Purpose |
+|-------|-------|---------|
+| Supervisor | Llama 3.1 8B | Fast query routing |
+| Retriever | Llama 3.1 8B | Tool execution |
+| Chat | Llama 3.3 70B | Analysis & recommendations |
+| Enricher | Llama 3.3 70B | Title extraction |
 
-- Google OAuth authentication
-- Profile customization with avatars
-- Watchlist, wishlist, and viewing history
-- Personalized recommendations
+### Streaming Updates
 
-### Content Discovery
+Real-time progress indicators:
+- "Analyzing your query..."
+- "Searching vector database (5,722 movies)..."
+- "Querying TMDb API..."
+- "Generating response..."
+- "Fetching movie posters..."
 
-- Trending movies and TV shows
-- Now playing and upcoming releases
-- Genre-based browsing
-- Advanced search with autocomplete
-- Actor/director profiles
+### Key Endpoints
 
-### AI Chat
-
-- Natural language movie queries
-- Semantic similarity search
-- Multi-turn conversations
-- Context-aware recommendations
-- Real-time streaming responses
-
----
-
+- `/chat_api` - Streaming chat with progress updates
+- `/agent_metrics` - Performance metrics
+- `/agent_health` - System health check
 ## 🧪 Testing
 
 Test the agent system independently:
+Performance Metrics
 
-```bash
-python test_agent.py
-```
+**Response Times**
+- Average: 2-3 seconds end-to-end
+- Supervisor routing: 0.3-0.5 seconds
+- Vector search: 0.5-1 second
+- Success rate: 98%+
 
-Example queries:
+**Database**
+- Vector database: 5,722 movies with OpenAI embeddings
+- Embedding dimension: 1536 (text-embedding-3-small)
+- Deployment size: 280 KB (99.96% reduction)
 
-- "Suggest movies like Inception"
-- "What are some recent sci-fi movies from 2024?"
-- "Tell me about film noir"
-- "What's trending right now?"
-
----
-
-## 📈 Performance
-
-- **Average Response Time**: 2-3 seconds
-- **Throughput**: 100 requests/min
-- **Success Rate**: 98%+
-- **Vector Database**: 8,945 movies indexed
-- **Cost Optimization**: 30-40% savings with smart model selection
-
----
-
-## 🔧 Configuration
-
-### Rate Limits
-
-Edit `src/agents/rate_limiter.py`:
-
-```python
-_user_rate_limiter = RateLimiter(max_requests=20, time_window=60)
-_global_rate_limiter = RateLimiter(max_requests=100, time_window=60)
-```
-
-### Conversation Memory
-
-Edit `src/agents/memory.py`:
-
-```python
-_cache_ttl = timedelta(hours=24)  # Session expiration
-```
-
-### Recursion Limit
-
-Edit `src/api/agent_service.py`:
-
-```python
-config = {"recursion_limit": 15}  # Max agent iterations
-```
-
+**Cost**
+- Embeddings: ~$0.006 per 1000 movies
+- Smart model selection: 30-40% savings on inference
 ---
 
 ## 📁 Project Structure
@@ -356,28 +315,37 @@ FrameIQ/
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
----
+Example queries:
+- "Suggest movies like Inception"
+- "Recent sci-fi movies from 2024"
+- "Tell me about film noir"
+- "What's trending right now?"uilt with ❤️ using LangGraph and Flask**
+Contributing
 
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **LangGraph** - Multi-agent orchestration framework
-- **LangChain** - LLM integration toolkit
-- **Groq** - Fast LLM inference
-- **TMDb** - Movie and TV show data
-- **ChromaDB** - Vector database
+Contributions are welcome! Areas for improvement:
+- UI/UX enhancements
+- Additional AI agent capabilities
+- New analytics and visualizations
+- Mobile responsive improvements
+- Test coverage
 
 ---
 
-## 📞 Support
+## License
 
-For issues or questions, please open an issue on GitHub.
+GNU Affero General Public License v3.0 - see [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ using LangGraph and Flask**
+## Acknowledgments
+
+- Letterboxd - Inspiration for social features
+- LangGraph & LangChain - Multi-agent framework
+- Groq - Fast LLM inference
+- OpenAI - Superior embedding quality
+- TMDb - Comprehensive movie/TV data
+- ChromaDB - Efficient vector database
+
+---
+
+Built with LangGraph, OpenAI,
