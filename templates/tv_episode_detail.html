@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+
+{% block title %}{{ show_name }} - S{{season_number}}E{{episode_number}} - FrameIQ{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900 py-8">
+    <div class="container mx-auto px-4 max-w-5xl">
+        <!-- Breadcrumb Navigation -->
+        <div class="mb-6">
+            <nav class="flex items-center gap-2 text-sm text-gray-400">
+                <a href="/" class="hover:text-white transition-colors">Home</a>
+                <span>›</span>
+                <a href="/tv_shows" class="hover:text-white transition-colors">TV Shows</a>
+                <span>›</span>
+                <a href="/tv/{{ show_id }}" class="hover:text-white transition-colors">{{ show_name }}</a>
+                <span>›</span>
+                <a href="/tv/{{ show_id }}/season/{{ season_number }}" class="hover:text-white transition-colors">Season {{ season_number }}</a>
+                <span>›</span>
+                <span class="text-white">Episode {{ episode_number }}</span>
+            </nav>
+        </div>
+
+        <!-- Episode Navigation -->
+        <div class="flex justify-between items-center mb-6">
+            <button id="prev-episode-btn" class="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+                Previous
+            </button>
+            <a href="/tv/{{ show_id }}/season/{{ season_number }}" class="text-gray-400 hover:text-white transition-colors text-sm">
+                ← Back to Season
+            </a>
+            <button id="next-episode-btn" class="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                Next
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Episode Still/Banner -->
+        <div id="episode-still" class="rounded-xl overflow-hidden mb-6 shadow-2xl">
+            <img src="/static/images/no-image.png" alt="Episode" class="w-full h-96 object-cover">
+        </div>
+
+        <!-- Episode Header -->
+        <div class="bg-white/5 backdrop-blur-md rounded-xl p-6 mb-6 border border-white/10">
+            <div class="flex justify-between items-start mb-4">
+                <div class="flex-1">
+                    <div class="text-sm text-gray-400 mb-2" id="episode-code">S{{ season_number }}E{{ episode_number }}</div>
+                    <h1 id="episode-title" class="text-4xl font-bold text-white mb-3">Loading...</h1>
+                    <div class="flex flex-wrap gap-4 text-gray-300 mb-4">
+                        <span id="air-date"></span>
+                        <span id="runtime"></span>
+                        <span id="rating"></span>
+                    </div>
+                </div>
+                
+                <!-- Watch Status Badge -->
+                <div id="watch-status-badge"></div>
+            </div>
+            
+            <p id="episode-overview" class="text-gray-300 text-lg leading-relaxed mb-6"></p>
+            
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-3">
+                <button id="mark-watched-btn" class="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg font-semibold transition-all transform hover:scale-105 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                    </svg>
+                    Mark as Watched
+                </button>
+                
+                <button id="unmark-watched-btn" class="hidden px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition-all flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                    Unmark
+                </button>
+                
+                <button id="add-rating-btn" class="px-6 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-all flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                    </svg>
+                    Add Rating & Notes
+                </button>
+            </div>
+        </div>
+
+        <!-- Guest Stars & Crew -->
+        <div id="credits-section" class="bg-white/5 backdrop-blur-md rounded-xl p-6 mb-6 border border-white/10">
+            <h2 class="text-2xl font-bold text-white mb-4">Guest Stars & Crew</h2>
+            <div id="credits-content" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div class="col-span-full text-center py-4 text-gray-400">Loading...</div>
+            </div>
+        </div>
+
+        <!-- User Notes & Rating (if watched) -->
+        <div id="user-notes-section" class="hidden bg-white/5 backdrop-blur-md rounded-xl p-6 border border-white/10">
+            <h3 class="text-xl font-bold text-white mb-4">Your Notes & Rating</h3>
+            <div id="user-notes-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Rating Modal -->
+<div id="rating-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-xl p-6 max-w-md w-full">
+        <h3 class="text-2xl font-bold text-white mb-4">Rate & Add Notes</h3>
+        
+        <!-- Rating Stars -->
+        <div class="mb-4">
+            <label class="block text-gray-300 mb-2">Your Rating</label>
+            <div class="flex gap-2">
+                <button class="star-btn text-4xl" data-rating="1">⭐</button>
+                <button class="star-btn text-4xl" data-rating="2">⭐</button>
+                <button class="star-btn text-4xl" data-rating="3">⭐</button>
+                <button class="star-btn text-4xl" data-rating="4">⭐</button>
+                <button class="star-btn text-4xl" data-rating="5">⭐</button>
+            </div>
+            <p class="text-sm text-gray-400 mt-1">Selected: <span id="selected-rating">0</span>/5</p>
+        </div>
+        
+        <!-- Notes Textarea -->
+        <div class="mb-4">
+            <label class="block text-gray-300 mb-2">Notes (optional)</label>
+            <textarea id="episode-notes" rows="4" class="w-full bg-gray-700 text-white rounded-lg p-3 focus:ring-2 focus:ring-indigo-500" placeholder="Add your thoughts about this episode..."></textarea>
+        </div>
+        
+        <!-- Rewatch Checkbox -->
+        <div class="mb-6">
+            <label class="flex items-center gap-2 text-gray-300">
+                <input type="checkbox" id="is-rewatch" class="rounded bg-gray-700 border-gray-600">
+                <span>This is a rewatch</span>
+            </label>
+        </div>
+        
+        <!-- Buttons -->
+        <div class="flex gap-3">
+            <button onclick="saveRating()" class="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-all">
+                Save
+            </button>
+            <button onclick="closeRatingModal()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition-all">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const TMDB_API_KEY = '{{ api_key }}';
+const SHOW_ID = {{ show_id }};
+const SEASON_NUMBER = {{ season_number }};
+const EPISODE_NUMBER = {{ episode_number }};
+let episodeData = null;
+let isWatched = false;
+let selectedRating = 0;
+
+async function loadEpisodeData() {
+    try {
+        // Load episode details from TMDb
+        const response = await fetch(
+            `https://api.themoviedb.org/3/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${EPISODE_NUMBER}?api_key=${TMDB_API_KEY}&append_to_response=credits`
+        );
+        episodeData = await response.json();
+        
+        // Check if watched
+        await checkWatchStatus();
+        
+        // Render UI
+        renderEpisode();
+        renderCredits();
+        setupNavigation();
+        
+    } catch (error) {
+        console.error('Error loading episode data:', error);
+    }
+}
+
+async function checkWatchStatus() {
+    try {
+        const response = await fetch(`/api/tv/${SHOW_ID}/watched-episodes`);
+        const data = await response.json();
+        if (data.success) {
+            const watched = data.episodes.find(ep => 
+                ep.season_number === SEASON_NUMBER && ep.episode_number === EPISODE_NUMBER
+            );
+            isWatched = !!watched;
+            
+            if (watched) {
+                selectedRating = watched.rating || 0;
+                displayUserNotes(watched);
+            }
+        }
+    } catch (error) {
+        console.error('Error checking watch status:', error);
+    }
+}
+
+function renderEpisode() {
+    // Update still/banner
+    if (episodeData.still_path) {
+        document.querySelector('#episode-still img').src = `https://image.tmdb.org/t/p/original${episodeData.still_path}`;
+    }
+    
+    // Update title and info
+    document.getElementById('episode-title').textContent = episodeData.name;
+    
+    if (episodeData.air_date) {
+        document.getElementById('air-date').innerHTML = `📅 ${new Date(episodeData.air_date).toLocaleDateString()}`;
+    }
+    
+    if (episodeData.runtime) {
+        document.getElementById('runtime').innerHTML = `⏱️ ${episodeData.runtime}min`;
+    }
+    
+    if (episodeData.vote_average) {
+        document.getElementById('rating').innerHTML = `⭐ ${episodeData.vote_average.toFixed(1)}`;
+    }
+    
+    // Update overview
+    document.getElementById('episode-overview').textContent = episodeData.overview || 'No overview available.';
+    
+    // Update watch status
+    updateWatchStatus();
+}
+
+function updateWatchStatus() {
+    const badge = document.getElementById('watch-status-badge');
+    const markBtn = document.getElementById('mark-watched-btn');
+    const unmarkBtn = document.getElementById('unmark-watched-btn');
+    
+    if (isWatched) {
+        badge.innerHTML = `
+            <span class="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-sm font-bold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+                Watched
+            </span>
+        `;
+        markBtn.classList.add('hidden');
+        unmarkBtn.classList.remove('hidden');
+    } else {
+        badge.innerHTML = '';
+        markBtn.classList.remove('hidden');
+        unmarkBtn.classList.add('hidden');
+    }
+}
+
+function renderCredits() {
+    if (!episodeData.credits) return;
+    
+    const container = document.getElementById('credits-content');
+    const cast = episodeData.credits.guest_stars || [];
+    const crew = episodeData.credits.crew || [];
+    
+    if (cast.length === 0 && crew.length === 0) {
+        container.innerHTML = '<p class="col-span-full text-gray-400 text-center py-4">No credits available</p>';
+        return;
+    }
+    
+    // Show top guest stars
+    const html = cast.slice(0, 8).map(person => `
+        <div class="text-center">
+            <img src="${person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : '/static/images/no-avatar.png'}" 
+                 alt="${person.name}"
+                 class="w-full h-32 object-cover rounded-lg mb-2">
+            <p class="text-white text-sm font-semibold">${person.name}</p>
+            <p class="text-gray-400 text-xs">${person.character}</p>
+        </div>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+async function setupNavigation() {
+    // Get all episodes in season
+    const response = await fetch(
+        `https://api.themoviedb.org/3/tv/${SHOW_ID}/season/${SEASON_NUMBER}?api_key=${TMDB_API_KEY}`
+    );
+    const seasonData = await response.json();
+    
+    const currentIndex = seasonData.episodes.findIndex(ep => ep.episode_number === EPISODE_NUMBER);
+    const prevBtn = document.getElementById('prev-episode-btn');
+    const nextBtn = document.getElementById('next-episode-btn');
+    
+    if (currentIndex > 0) {
+        const prevEp = seasonData.episodes[currentIndex - 1];
+        prevBtn.disabled = false;
+        prevBtn.onclick = () => {
+            window.location.href = `/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${prevEp.episode_number}`;
+        };
+    } else {
+        prevBtn.disabled = true;
+    }
+    
+    if (currentIndex < seasonData.episodes.length - 1) {
+        const nextEp = seasonData.episodes[currentIndex + 1];
+        nextBtn.disabled = false;
+        nextBtn.onclick = () => {
+            window.location.href = `/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${nextEp.episode_number}`;
+        };
+    } else {
+        nextBtn.disabled = true;
+    }
+}
+
+async function markWatched() {
+    try {
+        const response = await fetch(`/api/tv/${SHOW_ID}/episode/${SEASON_NUMBER}/${EPISODE_NUMBER}/mark-watched`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            isWatched = true;
+            updateWatchStatus();
+            showNotification('✓ Episode marked as watched!', 'success');
+        }
+    } catch (error) {
+        console.error('Error marking episode watched:', error);
+        showNotification('Failed to mark episode', 'error');
+    }
+}
+
+async function unmarkWatched() {
+    try {
+        const response = await fetch(`/api/tv/${SHOW_ID}/episode/${SEASON_NUMBER}/${EPISODE_NUMBER}/unmark-watched`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            isWatched = false;
+            selectedRating = 0;
+            updateWatchStatus();
+            document.getElementById('user-notes-section').classList.add('hidden');
+            showNotification('Episode unmarked', 'success');
+        }
+    } catch (error) {
+        console.error('Error unmarking episode:', error);
+        showNotification('Failed to unmark episode', 'error');
+    }
+}
+
+function openRatingModal() {
+    document.getElementById('rating-modal').classList.remove('hidden');
+    updateStars();
+}
+
+function closeRatingModal() {
+    document.getElementById('rating-modal').classList.add('hidden');
+}
+
+async function saveRating() {
+    const notes = document.getElementById('episode-notes').value;
+    const isRewatch = document.getElementById('is-rewatch').checked;
+    
+    try {
+        const response = await fetch(`/api/tv/${SHOW_ID}/episode/${SEASON_NUMBER}/${EPISODE_NUMBER}/update-watch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rating: selectedRating || null,
+                notes: notes || null,
+                is_rewatch: isRewatch
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            closeRatingModal();
+            await checkWatchStatus();
+            showNotification('✓ Rating and notes saved!', 'success');
+        }
+    } catch (error) {
+        console.error('Error saving rating:', error);
+        showNotification('Failed to save rating', 'error');
+    }
+}
+
+function displayUserNotes(watchData) {
+    if (!watchData.rating && !watchData.notes) return;
+    
+    const section = document.getElementById('user-notes-section');
+    const content = document.getElementById('user-notes-content');
+    
+    let html = '';
+    if (watchData.rating) {
+        html += `<div class="mb-3"><span class="text-gray-300">Your Rating:</span> <span class="text-yellow-400 text-xl">${'⭐'.repeat(watchData.rating)}</span></div>`;
+    }
+    if (watchData.notes) {
+        html += `<div><span class="text-gray-300">Your Notes:</span><p class="text-white mt-2 p-3 bg-white/5 rounded-lg">${watchData.notes}</p></div>`;
+    }
+    
+    content.innerHTML = html;
+    section.classList.remove('hidden');
+}
+
+// Star rating interaction
+document.querySelectorAll('.star-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        selectedRating = parseInt(btn.dataset.rating);
+        updateStars();
+    });
+});
+
+function updateStars() {
+    document.querySelectorAll('.star-btn').forEach((btn, index) => {
+        if (index < selectedRating) {
+            btn.style.opacity = '1';
+            btn.style.filter = 'none';
+        } else {
+            btn.style.opacity = '0.3';
+            btn.style.filter = 'grayscale(100%)';
+        }
+    });
+    document.getElementById('selected-rating').textContent = selectedRating;
+}
+
+function showNotification(message, type = 'info') {
+    const colors = {
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+        info: 'bg-indigo-500'
+    };
+
+    const notification = document.createElement('div');
+    notification.className = `fixed bottom-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+// Setup buttons
+document.getElementById('mark-watched-btn').onclick = markWatched;
+document.getElementById('unmark-watched-btn').onclick = unmarkWatched;
+document.getElementById('add-rating-btn').onclick = openRatingModal;
+
+// Load data on page load
+loadEpisodeData();
+</script>
+{% endblock %}

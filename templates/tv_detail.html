@@ -433,6 +433,35 @@
                     </div>
                     {% endif %}
                     
+                    <!-- TV Episode Tracking Section -->
+                    {% if current_user.is_authenticated %}
+                    <input type="hidden" id="show-id" value="{{ show.id }}">
+                    <div id="tv-tracking-container" class="mt-6">
+                        <!-- Tracking UI will be rendered here by tv-tracker.js -->
+                    </div>
+                    
+                    <!-- Seasons & Episodes Overview -->
+                    <div class="mt-6 p-6 glass-effect rounded-lg">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-2xl font-bold flex items-center gap-2">
+                                <svg class="w-6 h-6 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/>
+                                </svg>
+                                Seasons & Episodes
+                            </h3>
+                            <button id="mark-all-watched-btn" class="hidden px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-lg font-semibold transition-all transform hover:scale-105">
+                                ✓ Mark All Watched
+                            </button>
+                        </div>
+                        
+                        <div id="seasons-list" class="space-y-4">
+                            <div class="flex justify-center py-8">
+                                <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     <!-- NEW: Tags Section (Letterboxd-style) -->
                     {% if current_user.is_authenticated %}
                     <div class="mt-6 mb-6 p-4 glass-effect rounded-lg">
@@ -1487,6 +1516,15 @@
             }
         });
     </script>
+    
+    <!-- TV Tracking Scripts -->
+    <script>
+        // Make TMDB API key available to JavaScript
+        window.TMDB_API_KEY = '{{ api_key }}';
+        console.log('TMDB API Key set:', window.TMDB_API_KEY ? 'YES' : 'NO', window.TMDB_API_KEY);
+    </script>
+    <script src="{{ url_for('static', filename='js/tv-tracker.js') }}?v=12"></script>
+    <script src="{{ url_for('static', filename='js/tv-seasons.js') }}?v=12"></script>
 </body>
 
 </html>

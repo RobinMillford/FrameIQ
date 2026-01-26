@@ -42,6 +42,10 @@ A comprehensive movie and TV show social platform inspired by Letterboxd, featur
 | **Semantic Search** | ❌ | ✅ Vector database (5,722 movies) |
 | **OpenAI Embeddings** | ❌ | ✅ Superior search quality |
 | **Multi-Agent System** | ❌ | ✅ LangGraph orchestration |
+| **Episode Tracking** | ❌ | ✅ Track progress per episode |
+| **Season Progress** | ❌ | ✅ Visual season completion |
+| **Episode Calendar** | ❌ | ✅ Upcoming episodes calendar |
+| **Batch Mark Episodes** | ❌ | ✅ Mark entire seasons watched |
 
 ### What FrameIQ Offers Beyond Letterboxd
 
@@ -49,6 +53,15 @@ A comprehensive movie and TV show social platform inspired by Letterboxd, featur
 - Full integration for TV shows, seasons, and episodes
 - Anime auto-detection for both movies and series
 - Creator, network, and cast information
+
+**Advanced Episode Tracking**
+- Track progress through each series (episodes and seasons)
+- Mark individual episodes as watched with ratings and notes
+- Mark entire seasons with one click
+- Visual progress bars showing completion percentage
+- Track rewatch status for episodes
+- Episode calendar showing upcoming episodes from tracked shows
+- Multi-status tracking (watching, completed, plan to watch, dropped)
 
 **AI-Powered Features**
 - Natural language chat interface with LangGraph agents
@@ -127,7 +140,7 @@ Quick Start
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/FrameIQ.git
+git clone https://github.com/RobinMillford/FrameIQ.git
 cd FrameIQ
 ```
 

@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, current_app
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
@@ -91,6 +91,7 @@ def tv_detail(show_id):
                               user_viewed_ids=user_viewed_ids,
                               user_lists_with_show=user_lists_with_show,
                               diary_entries=diary_entries,
+                              api_key=current_app.config.get('TMDB_API_KEY', ''),
                               today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:
         print(f"Error fetching TV show details: {e}")

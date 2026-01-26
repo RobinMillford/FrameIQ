@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+
+{% block title %}Upcoming Episodes - FrameIQ{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900 py-8">
+    <div class="container mx-auto px-4 max-w-7xl">
+        <!-- Breadcrumb Navigation -->
+        <div class="mb-6">
+            <nav class="flex items-center gap-2 text-sm text-gray-400">
+                <a href="/" class="hover:text-white transition-colors">Home</a>
+                <span>›</span>
+                <a href="/tv/dashboard" class="hover:text-white transition-colors">TV Dashboard</a>
+                <span>›</span>
+                <span class="text-white">Upcoming Episodes</span>
+            </nav>
+        </div>
+
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-bold text-white mb-4 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
+                📅 Upcoming Episodes
+            </h1>
+            <p class="text-gray-300 text-xl max-w-2xl mx-auto">
+                Never miss an episode from your tracked shows
+            </p>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex flex-wrap justify-center gap-3 mb-8">
+            <button class="filter-btn active" data-filter="today">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 001.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                </svg>
+                Today
+            </button>
+            <button class="filter-btn" data-filter="week">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                </svg>
+                This Week
+            </button>
+            <button class="filter-btn" data-filter="month">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                </svg>
+                This Month
+            </button>
+            <button class="filter-btn" data-filter="all">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/>
+                </svg>
+                All Upcoming
+            </button>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
+                <div class="text-green-400 text-2xl mb-2">📺</div>
+                <div class="text-white text-2xl font-bold" id="stat-today">0</div>
+                <div class="text-gray-400 text-sm">Today</div>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
+                <div class="text-blue-400 text-2xl mb-2">📅</div>
+                <div class="text-white text-2xl font-bold" id="stat-week">0</div>
+                <div class="text-gray-400 text-sm">This Week</div>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
+                <div class="text-purple-400 text-2xl mb-2">🗓️</div>
+                <div class="text-white text-2xl font-bold" id="stat-month">0</div>
+                <div class="text-gray-400 text-sm">This Month</div>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/10">
+                <div class="text-yellow-400 text-2xl mb-2">⭐</div>
+                <div class="text-white text-2xl font-bold" id="stat-shows">0</div>
+                <div class="text-gray-400 text-sm">Tracked Shows</div>
+            </div>
+        </div>
+
+        <!-- Episodes List -->
+        <div id="episodes-container" class="space-y-4">
+            <div class="flex justify-center py-12">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden text-center py-20">
+            <div class="text-8xl mb-6">📺</div>
+            <h3 class="text-3xl font-bold text-white mb-4">No Upcoming Episodes</h3>
+            <p class="text-gray-400 text-lg mb-8 max-w-md mx-auto">
+                Start tracking TV shows to see their upcoming episodes here
+            </p>
+            <a href="/tv_shows" class="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-lg font-bold rounded-xl transition-all transform hover:scale-105 shadow-2xl">
+                🔍 Browse TV Shows
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: #9ca3af;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+.filter-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+.filter-btn.active {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+</style>
+
+<script>
+const TMDB_API_KEY = '{{ api_key }}';
+let allEpisodes = [];
+let currentFilter = 'today';
+
+async function loadUpcomingEpisodes() {
+    try {
+        // Load all tracked shows
+        const response = await fetch('/api/tv/my-shows');
+        const data = await response.json();
+        const shows = data.shows || [];
+        
+        if (shows.length === 0) {
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('episodes-container').classList.add('hidden');
+            return;
+        }
+        
+        // Load episodes for each show
+        allEpisodes = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        for (const show of shows.filter(s => s.status === 'watching' || s.status === 'plan_to_watch')) {
+            try {
+                const showResponse = await fetch(
+                    `https://api.themoviedb.org/3/tv/${show.show_id}?api_key=${TMDB_API_KEY}`
+                );
+                const showData = await showResponse.json();
+                
+                // Get all seasons
+                for (const season of showData.seasons || []) {
+                    if (season.season_number === 0) continue; // Skip specials
+                    
+                    const seasonResponse = await fetch(
+                        `https://api.themoviedb.org/3/tv/${show.show_id}/season/${season.season_number}?api_key=${TMDB_API_KEY}`
+                    );
+                    const seasonData = await seasonResponse.json();
+                    
+                    // Check each episode
+                    for (const episode of seasonData.episodes || []) {
+                        if (!episode.air_date) continue;
+                        
+                        const airDate = new Date(episode.air_date);
+                        airDate.setHours(0, 0, 0, 0);
+                        
+                        // Only future episodes
+                        if (airDate >= today) {
+                            const daysUntil = Math.floor((airDate - today) / (1000 * 60 * 60 * 24));
+                            
+                            allEpisodes.push({
+                                show_id: show.show_id,
+                                show_name: showData.name,
+                                show_poster: showData.poster_path,
+                                season_number: season.season_number,
+                                episode_number: episode.episode_number,
+                                episode_name: episode.name,
+                                episode_still: episode.still_path,
+                                air_date: episode.air_date,
+                                days_until: daysUntil,
+                                overview: episode.overview
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Error loading show ${show.show_id}:`, error);
+            }
+        }
+        
+        // Sort by air date
+        allEpisodes.sort((a, b) => new Date(a.air_date) - new Date(b.air_date));
+        
+        // Update stats
+        updateStats(shows.length);
+        
+        // Render episodes
+        renderEpisodes(currentFilter);
+        
+    } catch (error) {
+        console.error('Error loading upcoming episodes:', error);
+    }
+}
+
+function updateStats(showsCount) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayEnd = new Date(today);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    
+    const monthEnd = new Date(today);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+    
+    const todayCount = allEpisodes.filter(ep => {
+        const date = new Date(ep.air_date);
+        return date >= today && date < todayEnd;
+    }).length;
+    
+    const weekCount = allEpisodes.filter(ep => {
+        const date = new Date(ep.air_date);
+        return date >= today && date < weekEnd;
+    }).length;
+    
+    const monthCount = allEpisodes.filter(ep => {
+        const date = new Date(ep.air_date);
+        return date >= today && date < monthEnd;
+    }).length;
+    
+    document.getElementById('stat-today').textContent = todayCount;
+    document.getElementById('stat-week').textContent = weekCount;
+    document.getElementById('stat-month').textContent = monthCount;
+    document.getElementById('stat-shows').textContent = showsCount;
+}
+
+function renderEpisodes(filter) {
+    const container = document.getElementById('episodes-container');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Filter episodes
+    let filtered = allEpisodes;
+    
+    if (filter === 'today') {
+        const todayEnd = new Date(today);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+        filtered = allEpisodes.filter(ep => {
+            const date = new Date(ep.air_date);
+            return date >= today && date < todayEnd;
+        });
+    } else if (filter === 'week') {
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        filtered = allEpisodes.filter(ep => {
+            const date = new Date(ep.air_date);
+            return date >= today && date < weekEnd;
+        });
+    } else if (filter === 'month') {
+        const monthEnd = new Date(today);
+        monthEnd.setMonth(monthEnd.getMonth() + 1);
+        filtered = allEpisodes.filter(ep => {
+            const date = new Date(ep.air_date);
+            return date >= today && date < monthEnd;
+        });
+    }
+    
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-12 bg-white/5 rounded-xl">
+                <p class="text-gray-400 text-lg">No episodes airing in this period</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Group by date
+    const grouped = {};
+    filtered.forEach(ep => {
+        if (!grouped[ep.air_date]) {
+            grouped[ep.air_date] = [];
+        }
+        grouped[ep.air_date].push(ep);
+    });
+    
+    // Render grouped episodes
+    container.innerHTML = Object.keys(grouped).sort().map(date => {
+        const episodes = grouped[date];
+        const dateObj = new Date(date);
+        const daysUntil = episodes[0].days_until;
+        
+        let dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        if (daysUntil === 0) dateLabel += ' (Today)';
+        else if (daysUntil === 1) dateLabel += ' (Tomorrow)';
+        else dateLabel += ` (in ${daysUntil} days)`;
+        
+        return `
+            <div class="bg-white/5 backdrop-blur-md rounded-xl p-6 border border-white/10">
+                <h2 class="text-2xl font-bold text-white mb-4">${dateLabel}</h2>
+                <div class="space-y-3">
+                    ${episodes.map(ep => `
+                        <div class="bg-white/5 hover:bg-white/10 rounded-lg p-4 flex gap-4 transition-all cursor-pointer"
+                             onclick="window.location.href='/tv/${ep.show_id}/season/${ep.season_number}/episode/${ep.episode_number}'">
+                            <img src="${ep.episode_still ? `https://image.tmdb.org/t/p/w300${ep.episode_still}` : ep.show_poster ? `https://image.tmdb.org/t/p/w300${ep.show_poster}` : '/static/images/no-image.png'}" 
+                                 alt="${ep.episode_name}"
+                                 class="w-40 h-24 rounded-lg object-cover">
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold text-white hover:text-indigo-400">
+                                    ${ep.show_name}
+                                </h3>
+                                <p class="text-indigo-300 mb-2">
+                                    Season ${ep.season_number}, Episode ${ep.episode_number}: ${ep.episode_name}
+                                </p>
+                                <p class="text-gray-400 text-sm line-clamp-2">${ep.overview || 'No overview available.'}</p>
+                            </div>
+                            <div class="flex-shrink-0 flex items-center">
+                                <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Filter button handlers
+document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        renderEpisodes(currentFilter);
+    });
+});
+
+// Load episodes on page load
+loadUpcomingEpisodes();
+</script>
+{% endblock %}

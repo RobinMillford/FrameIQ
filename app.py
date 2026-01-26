@@ -51,6 +51,9 @@ from routes.reviews_enhanced import reviews_enhanced_bp
 # Week 3: Film Stats & Analytics
 from routes.stats import stats_bp
 
+# TV Show Tracking System
+from routes.tv_tracking import tv_tracking
+
 
 # ============================================================================
 # Environment & Configuration
@@ -65,6 +68,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
+app.config['TMDB_API_KEY'] = os.getenv("TMDB_API_KEY")
 
 
 # ============================================================================
@@ -170,6 +174,9 @@ app.register_blueprint(user_discovery)
 
 # Week 3: Stats & Analytics
 app.register_blueprint(stats_bp)
+
+# TV Show Tracking
+app.register_blueprint(tv_tracking)
 
 # Enhanced Features: Popular with Friends
 from routes.popular_with_friends import popular_bp
