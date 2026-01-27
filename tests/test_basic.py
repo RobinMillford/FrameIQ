@@ -16,9 +16,10 @@ def test_models_import():
         # Check that models have expected attributes
         assert hasattr(User, 'id')
         assert hasattr(User, 'username')
-        assert hasattr(MediaItem, 'media_id')
+        assert hasattr(MediaItem, 'id')
+        assert hasattr(MediaItem, 'tmdb_id')
         assert hasattr(Review, 'user_id')
-        assert hasattr(DiaryEntry, 'media_id')
+        assert hasattr(DiaryEntry, 'id')
         assert hasattr(TVShowProgress, 'show_id')
         assert hasattr(TVEpisodeWatch, 'episode_number')
         assert hasattr(UpcomingEpisode, 'air_date')
