@@ -16,6 +16,10 @@ on:
       - 'models.py'
       - 'api/tmdb_client.py'
 
+permissions:
+  contents: read
+  issues: write  # Permission to create issues on failure
+
 jobs:
   sync-episodes:
     runs-on: ubuntu-latest
@@ -40,8 +44,15 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # AI/Vector DB credentials (optional for sync script)
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
+          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
         run: |
           python scripts/sync_upcoming_episodes.py
+        continue-on-error: false
       
       - name: Notify on failure
         if: failure()
