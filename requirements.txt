@@ -1,13 +1,13 @@
 # --- Core Framework & Server ---
-# Updated to patch remaining security vulnerabilities:
-# - Flask: Session Signing Fallback Key vulnerability
-# - Werkzeug: safe_join() Windows device names & DoS issues
-Flask>=3.1.0
+# Updated to latest stable versions to patch security vulnerabilities:
+# - Flask 3.1.2: Session Signing Fallback Key vulnerability fix
+# - Werkzeug 3.1.5: safe_join() Windows device names & DoS issues fix
+Flask==3.1.2
 Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
 Flask-WTF==1.2.1
 WTForms==3.1.2
-Werkzeug>=3.2.0
+Werkzeug==3.1.5
 gunicorn==23.0.0
 anyio==4.8.0
 
