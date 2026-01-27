@@ -9,11 +9,15 @@ gunicorn==23.0.0
 anyio==4.8.0
 
 # --- AI & Agentic Workflow (LangChain/LangGraph) ---
-langchain==0.3.14
-langchain-core==0.3.30
-langchain-community==0.3.14
+# Updated to patch security vulnerabilities:
+# - langchain-core: CVE arbitrary code execution & template injection
+# - langchain-text-splitters: XXE vulnerability
+# - langchain-community: Insecure XML parsing
+langchain>=0.3.15
+langchain-core>=0.3.31
+langchain-community>=0.3.15
 langchain-groq==0.2.3
-langchain-text-splitters==0.3.5
+langchain-text-splitters>=0.3.6
 langsmith==0.2.10
 langgraph==0.2.60
 groq==0.18.0
@@ -27,13 +31,15 @@ chromadb>=0.5.5
 # --- Database & Authentication ---
 SQLAlchemy==2.0.38
 psycopg2-binary==2.9.9
-Authlib==1.3.0
+# Updated Authlib to patch: DoS, RFC violation, algorithm confusion, CSRF, JWE decompression bomb
+Authlib>=1.3.2
 requests-oauthlib==1.3.1
 email-validator==2.2.0
 
 # --- Media & External APIs ---
 cloudinary==1.41.0
-requests==2.32.3
+# Updated requests to patch .netrc credentials leak vulnerability
+requests>=2.32.3
 requests-toolbelt==1.0.0
 httpx==0.28.1
 
