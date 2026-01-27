@@ -403,6 +403,11 @@ def viewed():
 @login_required
 def add_to_watchlist(media_id, media_type):
     """Add a movie or TV show to the user's watchlist"""
+    # Get priority from query parameter (default: medium)
+    priority = request.args.get('priority', 'medium')
+    if priority not in ['high', 'medium', 'low']:
+        priority = 'medium'
+    
     # Check if media item exists in our database, if not create it
     media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
     if not media_item:
@@ -450,11 +455,13 @@ def add_to_watchlist(media_id, media_type):
         stmt = user_watchlist.insert().values(
             user_id=current_user.id,
             media_id=media_item.id,
-            media_type=media_type
+            media_type=media_type,
+            priority=priority
         )
         db.session.execute(stmt)
         db.session.commit()
-        flash(f'Added {media_item.title} to your watchlist!')
+        priority_label = {'high': '🔥 High', 'medium': '📌 Medium', 'low': '💤 Low'}.get(priority, '')
+        flash(f'Added {media_item.title} to your watchlist with {priority_label} priority!')
     else:
         flash(f'{media_item.title} is already in your watchlist!')
     
@@ -465,6 +472,11 @@ def add_to_watchlist(media_id, media_type):
 @login_required
 def add_to_wishlist(media_id, media_type):
     """Add a movie or TV show to the user's wishlist"""
+    # Get priority from query parameter (default: medium)
+    priority = request.args.get('priority', 'medium')
+    if priority not in ['high', 'medium', 'low']:
+        priority = 'medium'
+    
     # Check if media item exists in our database, if not create it
     media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
     if not media_item:
@@ -512,11 +524,13 @@ def add_to_wishlist(media_id, media_type):
         stmt = user_wishlist.insert().values(
             user_id=current_user.id,
             media_id=media_item.id,
-            media_type=media_type
+            media_type=media_type,
+            priority=priority
         )
         db.session.execute(stmt)
         db.session.commit()
-        flash(f'Added {media_item.title} to your wishlist!')
+        priority_label = {'high': '🔥 High', 'medium': '📌 Medium', 'low': '💤 Low'}.get(priority, '')
+        flash(f'Added {media_item.title} to your wishlist with {priority_label} priority!')
     else:
         flash(f'{media_item.title} is already in your wishlist!')
     

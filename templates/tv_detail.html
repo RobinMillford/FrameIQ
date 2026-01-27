@@ -419,20 +419,52 @@
                         <!-- Action buttons - allow adding to multiple lists -->
                         <div class="flex flex-wrap gap-2">
                             {% if (show.id, 'tv') not in user_watchlist_ids %}
-                            <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-600 transition-colors">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                Add to Watchlist
-                            </a>
+                            <div class="relative group">
+                                <button onclick="togglePriorityDropdown('watchlist-priority')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-600 transition-colors">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Add to Watchlist
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </button>
+                                <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
+                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">🔥</span> High Priority
+                                    </a>
+                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='medium') }}" class="block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">📌</span> Medium Priority
+                                    </a>
+                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='low') }}" class="block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">💤</span> Low Priority
+                                    </a>
+                                </div>
+                            </div>
                             {% endif %}
                             {% if (show.id, 'tv') not in user_wishlist_ids %}
-                            <a href="{{ url_for('main.add_to_wishlist', media_id=show.id, media_type='tv') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-pink-600 transition-colors">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-                                </svg>
-                                Add to Wishlist
-                            </a>
+                            <div class="relative group">
+                                <button onclick="togglePriorityDropdown('wishlist-priority')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-pink-600 transition-colors">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                                    </svg>
+                                    Add to Wishlist
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </button>
+                                <div id="wishlist-priority" class="hidden absolute top-full mt-1 left-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
+                                    <a href="{{ url_for('main.add_to_wishlist', media_id=show.id, media_type='tv', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">🔥</span> High Priority
+                                    </a>
+                                    <a href="{{ url_for('main.add_to_wishlist', media_id=show.id, media_type='tv', priority='medium') }}" class="block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">📌</span> Medium Priority
+                                    </a>
+                                    <a href="{{ url_for('main.add_to_wishlist', media_id=show.id, media_type='tv', priority='low') }}" class="block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2">
+                                        <span class="text-xl">💤</span> Low Priority
+                                    </a>
+                                </div>
+                            </div>
                             {% endif %}
                             {% if (show.id, 'tv') not in user_viewed_ids %}
                             <a href="{{ url_for('main.mark_as_viewed', media_id=show.id, media_type='tv') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
@@ -1543,6 +1575,20 @@
                 });
             }
         });
+        
+        // Priority dropdown toggle function
+        function togglePriorityDropdown(dropdownId) {
+            const dropdown = document.getElementById(dropdownId);
+            dropdown.classList.toggle('hidden');
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function closeDropdown(e) {
+                if (!e.target.closest(`#${dropdownId}`) && !e.target.closest('button[onclick*="' + dropdownId + '"]')) {
+                    dropdown.classList.add('hidden');
+                    document.removeEventListener('click', closeDropdown);
+                }
+            });
+        }
     </script>
     
     <!-- TV Tracking Scripts -->
