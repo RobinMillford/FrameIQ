@@ -46,6 +46,8 @@ A comprehensive movie and TV show social platform inspired by Letterboxd, featur
 | **Season Progress** | ❌ | ✅ Visual season completion |
 | **Episode Calendar** | ❌ | ✅ Upcoming episodes calendar |
 | **Batch Mark Episodes** | ❌ | ✅ Mark entire seasons watched |
+| **Smart Completion** | ❌ | ✅ Detects returning series vs ended |
+| **Auto Episode Refresh** | ❌ | ✅ Updates when new seasons release |
 
 ### What FrameIQ Offers Beyond Letterboxd
 
@@ -53,15 +55,42 @@ A comprehensive movie and TV show social platform inspired by Letterboxd, featur
 - Full integration for TV shows, seasons, and episodes
 - Anime auto-detection for both movies and series
 - Creator, network, and cast information
+- Real-time sync with TMDb for latest episode data
 
-**Advanced Episode Tracking**
-- Track progress through each series (episodes and seasons)
-- Mark individual episodes as watched with ratings and notes
-- Mark entire seasons with one click
-- Visual progress bars showing completion percentage
-- Track rewatch status for episodes
-- Episode calendar showing upcoming episodes from tracked shows
-- Multi-status tracking (watching, completed, plan to watch, dropped)
+**Advanced Episode Tracking System (Trakt.tv-Style)**
+- **Episode-by-Episode Tracking**: Mark individual episodes as watched with timestamps
+- **Smart Completion Logic**: Automatically detects if shows are "Ended" vs "Returning Series"
+  - Shows stay in "watching" status even when all current episodes are watched (if series is returning)
+  - Only marks as "completed" when TMDb confirms series has ended
+  - Auto-reverts from "completed" to "watching" when new seasons are released
+- **Auto-Refresh Episode Counts**: System checks TMDb on every page load for new episodes
+  - Updates total episode count automatically when new seasons drop
+  - Maintains accurate progress percentages
+- **Visual Progress Tracking**: 
+  - Per-show progress bars showing completion percentage
+  - Per-season completion indicators
+  - Episode-level watch status with visual checkmarks
+- **Multi-Status System**: 
+  - Watching (currently watching)
+  - Completed (finished, series ended)
+  - Plan to Watch (in watchlist)
+  - On Hold (paused)
+  - Dropped (discontinued)
+- **Batch Operations**: 
+  - Mark entire seasons as watched with one click
+  - Bulk episode management
+- **Upcoming Episodes Calendar**:
+  - Syncs upcoming episodes for next 60 days from tracked shows
+  - Displays episode stills and air dates
+  - Groups episodes by date with countdown timers
+  - Shows which episodes are already watched
+  - Filters based on show tracking status
+- **Interactive TV Dashboard**:
+  - Quick stats overview (total shows, episodes watched, completion %)
+  - Tabbed interface: Overview, Watching, Completed, Plan to Watch, Upcoming
+  - Continue watching section with recent episodes
+  - Most watched shows ranking
+  - Calendar view with 7-day upcoming preview
 
 **AI-Powered Features**
 - Natural language chat interface with LangGraph agents
@@ -187,7 +216,117 @@ Visit `http://localhost:5000`
 
 ---
 
-## 🚀 Deployment
+##  TV Tracking System
+
+### Core Features
+
+**Episode-by-Episode Tracking**
+- Mark individual episodes as watched with viewing timestamps
+- Track rewatch counts for favorite episodes
+- Episode-level notes and ratings
+- Visual checkmarks for watched episodes
+- Responsive grid layout for all episodes in a season
+
+**Smart Series Management**
+- **Intelligent Completion Detection**:
+  - Queries TMDb API to check if series is "Ended", "Canceled", or "Returning Series"
+  - Only marks show as "completed" if officially ended
+  - Keeps status as "watching" for returning series (even with all current episodes watched)
+  - Prevents shows from disappearing from upcoming episodes calendar
+- **Auto-Refresh System**:
+  - Checks TMDb for updated episode counts on every show page load
+  - Automatically updates total episodes when new seasons release
+  - Auto-reverts "completed" status back to "watching" when new episodes detected
+  - Maintains accurate progress percentages dynamically
+- **Progress Tracking**:
+  - Real-time progress bars (episodes watched / total episodes)
+  - Per-season completion indicators
+  - Overall show completion percentage
+  - Visual season grid with completion status
+
+**Upcoming Episodes Calendar**
+- Automated sync via `scripts/sync_upcoming_episodes.py`
+- Fetches episodes airing in next 60 days for all tracked shows
+- Displays episode stills, descriptions, and air dates
+- Groups by date with "Today", "Tomorrow", "X days" labels
+- Shows watched status for each upcoming episode
+- Only includes shows with status "watching" or "plan_to_watch"
+- Auto-cleanup of past episodes
+
+**TV Dashboard** (`/tv/dashboard`)
+- **Overview Tab**: Continue watching, recently added, most watched shows
+- **Status Tabs**: Separate views for Watching, Completed, Plan to Watch
+- **Calendar Tab**: 7-day upcoming preview with episode cards
+- **Quick Stats**: Total shows tracked, episodes watched, completion percentage
+- **Quick Links**: My Shows, Full Calendar, Browse TV Shows
+
+### Implementation Details
+
+**Database Models**
+- `TVShowProgress`: Tracks user's overall progress per show
+  - Fields: user_id, show_id, status, watched_episodes, total_episodes, total_seasons
+  - Status values: watching, completed, plan_to_watch, on_hold, dropped
+- `TVSeasonProgress`: Tracks completion per season
+  - Fields: progress_id, season_number, episodes_watched, total_episodes
+- `TVEpisodeWatch`: Records individual episode views
+  - Fields: progress_id, season_number, episode_number, watched_date, rewatch_count
+- `UpcomingEpisode`: Stores upcoming episodes from TMDb
+  - Fields: show_id, show_name, season_number, episode_number, air_date, still_path, poster_path, episode_overview
+
+**Key Routes** (`routes/tv_tracking.py`)
+- `/tv/dashboard` - Main TV tracking dashboard
+- `/tv/my-shows` - All tracked shows list
+- `/tv/upcoming` - Full upcoming episodes calendar
+- `/tv/<show_id>` - Show detail with tracking controls
+- `/tv/<show_id>/season/<season_number>` - Season detail with episode list
+- `/api/tv/track` - Start tracking a show
+- `/api/tv/mark-episode` - Mark episode as watched
+- `/api/tv/mark-season` - Mark entire season as watched
+- `/api/tv/upcoming-episodes` - Fetch upcoming episodes for User
+
+**GitHub Actions Setup**:
+The project includes automated CI/CD workflows:
+
+1. **Episode Sync** (`.github/workflows/sync-upcoming-episodes.yml`)
+   - Runs daily at 8:00 AM Bangladesh Time (2:00 AM UTC)
+   - Can be triggered manually from GitHub UI
+   - Syncs upcoming episodes for next 60 days
+   - Creates GitHub issue on failure
+   - Requires secrets: `DATABASE_URL`, `TMDB_API_KEY`, `SECRET_KEY`
+
+2. **CI/CD Pipeline** (`.github/workflows/ci-cd.yml`)
+   - Runs on push to main/develop branches
+   - Tests with Python 3.11 and 3.12
+   - Linting with flake8
+   - Code coverage reports
+   - Auto-deploys to Render on main branch
+   - Triggers episode sync after deployment
+   - Security scanning with Trivy
+
+### User Experience Flow
+
+1. **Discover & Track**: User browses TV shows → clicks "Start Tracking"
+2. **Set Status**: Choose "Watching", "Plan to Watch", etc.
+3. **Mark Progress**: 
+   - Click episodes individually to mark as watched
+   - Or mark entire seasons with "Mark Season Watched" button
+   - Progress bars update in real-time
+4. **Smart Completion**: 
+   - When all current episodes watched → System checks TMDb status
+   - If "Returning Series" → Stays in "watching" status
+   - If "Ended" → Marks as "completed"
+5. **Auto-Update**: 
+   - New season releases → Episode count refreshes on page load
+   - Status auto-reverts from "completed" to "watching"
+   - New episodes appear in upcoming calendar
+6. **Stay Updated**: 
+   - Check dashboard's "Upcoming" tab for next 7 days
+   - Visit full calendar for 60-day view
+   - Episodes show countdown timers ("3 days", "Tomorrow", "Today")
+
+---
+
+##�🚀 Deployment
 
 ### Production (Render)
 
@@ -296,13 +435,17 @@ Performance Metrics
 ```
 FrameIQ/
 ├── app.py                 # Flask application entry point
-├── models.py              # Database models
+├── models.py              # Database models (TVShowProgress, TVEpisodeWatch, UpcomingEpisode)
 ├── requirements.txt       # Python dependencies
+├── scripts/               # Utility scripts
+│   ├── sync_upcoming_episodes.py  # Syncs upcoming TV episodes from TMDb
+│   ├── collect_media.py   # Collects movie data
+│   └── generate_embeddings.py     # Creates vector embeddings
 ├── api/                   # Legacy API utilities
 │   ├── chatbot.py        # LLM utilities (still used)
 │   ├── rag_helper.py     # RAG helpers
 │   ├── vector_db.py      # ChromaDB interface
-│   └── tmdb_helper.py    # TMDb API wrapper
+│   └── tmdb_client.py    # TMDb API wrapper (TV show details, episode data)
 ├── src/                   # LangGraph agent system
 │   ├── agents/
 │   │   ├── state.py      # GraphState schema
@@ -317,8 +460,20 @@ FrameIQ/
 │       ├── agent_service.py   # Main service
 │       └── flask_integration.py  # Flask routes
 ├── routes/                # Flask blueprints
+│   ├── tv_tracking.py    # TV show tracking routes & APIs
+│   ├── main.py           # Core routes
+│   ├── auth.py           # Authentication
+│   ├── social.py         # Social features
+│   └── reviews.py        # Review system
 ├── templates/             # HTML templates
+│   ├── tv_dashboard.html # TV tracking dashboard
+│   ├── tv_detail.html    # Show detail with tracking
+│   ├── tv_season_detail.html  # Episode list view
+│   ├── tv_upcoming.html  # Upcoming episodes calendar
+│   └── ...               # Other templates
 ├── static/                # CSS, JS, images
+│   └── js/
+│       └── tv-seasons.js # Episode tracking JavaScript
 └── test_agent.py          # Agent testing utility
 ```
 

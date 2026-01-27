@@ -128,7 +128,7 @@
         position: relative;
         min-height: 650px;
         padding-top: 8rem;
-        padding-bottom: 5rem;
+        padding-bottom: 28rem;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -298,9 +298,10 @@
       }
 
       #autocomplete-items {
-        z-index: 1000;
+        z-index: 9999;
         max-width: calc(100% - 2rem);
         margin: 0 auto;
+        position: absolute;
       }
 
       #autocomplete-items .hover\:bg-indigo-900\/50:hover {
@@ -552,7 +553,7 @@
           <p class="text-lg text-gray-300 mb-8">
             Powered by AI • Personalized for You
           </p>
-          <form action="/search" method="POST" class="max-w-2xl mx-auto">
+          <form action="/search" method="POST" class="max-w-2xl mx-auto relative">
             <div
               class="relative search-card glass-effect rounded-lg p-4 flex items-center gap-2"
             >
@@ -562,6 +563,7 @@
                 id="search-input"
                 placeholder="Search movies, TV shows, or people..."
                 class="w-full bg-transparent text-[#F5F6F5] placeholder-[#A9B8B5] focus:outline-none"
+                autocomplete="off"
               />
               <button
                 type="submit"
@@ -581,11 +583,12 @@
                   ></path>
                 </svg>
               </button>
-              <div
-                id="autocomplete-items"
-                class="absolute w-full left-0 top-full mt-2 glass-effect rounded-lg hidden max-h-96 overflow-y-auto"
-              ></div>
             </div>
+            <div
+              id="autocomplete-items"
+              class="w-full left-0 top-full mt-2 glass-effect rounded-lg hidden max-h-96 overflow-y-auto shadow-2xl"
+              style="z-index: 9999;"
+            ></div>
           </form>
         </div>
       </div>

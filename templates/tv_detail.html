@@ -110,10 +110,32 @@
         .show-poster {
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             transition: transform 0.3s ease;
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            object-fit: cover;
         }
 
         .show-poster:hover {
-            transform: translateY(-10px);
+            transform: translateY(-5px);
+        }
+        
+        @media (min-width: 768px) {
+            .show-poster {
+                max-width: 400px;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .show-poster {
+                max-width: 450px;
+            }
+        }
+        
+        @media (min-width: 1280px) {
+            .show-poster {
+                max-width: 500px;
+            }
         }
 
         .cast-card {
@@ -210,7 +232,7 @@
             }
             
             .show-poster {
-                max-width: 250px;
+                max-width: 300px !important;
                 margin: 0 auto 2rem;
             }
             
@@ -224,6 +246,12 @@
             
             .cast-card, .info-card, .season-card {
                 margin-bottom: 1rem;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .hero-section {
+                padding-bottom: 4rem;
             }
         }
     </style>
@@ -286,14 +314,14 @@
         <div class="hero-backdrop" style="background-image: url('{{ show.backdrop_path }}');"></div>
         <div class="hero-overlay"></div>
         <div class="container mx-auto px-4 h-full flex items-start">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                 <!-- Poster -->
-                <div class="flex justify-center md:justify-start">
-                    <img src="{{ show.poster_path }}" alt="{{ show.name }}" class="show-poster rounded-lg w-96 h-auto">
+                <div class="flex justify-center lg:justify-start lg:sticky lg:top-24">
+                    <img src="{{ show.poster_path }}" alt="{{ show.name }}" class="show-poster rounded-lg">
                 </div>
 
                 <!-- Show Info -->
-                <div class="md:col-span-2">
+                <div class="lg:col-span-3">
                     <h1 class="text-4xl md:text-5xl font-bold mb-2">{{ show.name }}</h1>
                     <div class="flex flex-wrap items-center gap-2 mb-4">
                         <span class="text-blue-300">{{ show.first_air_date }}</span>

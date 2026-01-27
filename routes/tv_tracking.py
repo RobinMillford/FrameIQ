@@ -83,6 +83,27 @@ def get_show_progress(show_id):
         if not progress:
             return jsonify({'progress': None}), 200
         
+        # Refresh total episodes count from TMDb to catch new releases
+        try:
+            show = fetch_tv_show_details(show_id)
+            current_total = show.get('number_of_episodes', 0)
+            
+            if current_total != progress.total_episodes:
+                print(f"Show {show_id} has {current_total} episodes now (was {progress.total_episodes})")
+                progress.total_episodes = current_total
+                progress.total_seasons = show.get('number_of_seasons', 0)
+                
+                # If new episodes were released and show was marked completed, revert to watching
+                if current_total > progress.watched_episodes and progress.status == 'completed':
+                    show_status = show.get('status', '')
+                    if show_status not in ['Ended', 'Canceled']:
+                        progress.status = 'watching'
+                        print(f"Reverted status to 'watching' - new episodes available!")
+                
+                db.session.commit()
+        except Exception as e:
+            print(f"Could not refresh show data: {e}")
+        
         # Get watched episodes
         watched_episodes = TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
@@ -108,7 +129,7 @@ def mark_episode_watched(show_id, season, episode):
     try:
         print(f"\n=== MARK EPISODE WATCHED: Show {show_id}, S{season}E{episode}, User {current_user.id} ===")
         
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         
         # Get or create progress entry
         progress = TVShowProgress.query.filter_by(
@@ -179,11 +200,27 @@ def mark_episode_watched(show_id, season, episode):
         # Check if season completed
         update_season_progress(progress, show_id)
         
-        # Check if show completed
+        # Check if show completed - but only mark as completed if show has actually ended
+        # For returning series, keep status as 'watching' even if all current episodes are watched
         if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
-            progress.status = 'completed'
-            progress.completed_at = datetime.utcnow()
-            print("Show marked as COMPLETED!")
+            # Fetch show details to check if it's actually ended
+            try:
+                show = fetch_tv_show_details(show_id)
+                show_status = show.get('status', '')
+                
+                # Only mark as completed if show has actually ended
+                if show_status in ['Ended', 'Canceled']:
+                    progress.status = 'completed'
+                    progress.completed_at = datetime.utcnow()
+                    print(f"Show marked as COMPLETED (show status: {show_status})")
+                else:
+                    # Returning series - keep as watching
+                    print(f"All current episodes watched, but show is '{show_status}' - keeping status as 'watching'")
+                    if progress.status == 'completed':
+                        progress.status = 'watching'  # Revert if was previously completed
+            except Exception as e:
+                print(f"Could not fetch show status: {e}")
+                # If we can't determine, don't auto-complete
         
         db.session.commit()
         print("✓ Database commit successful!")
@@ -296,11 +333,26 @@ def mark_season_watched(show_id, season):
         
         print(f"Progress updated: {old_watched} -> {progress.watched_episodes}")
         
-        # Check completion
+        # Check completion - but only mark as completed if show has actually ended
         if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
-            progress.status = 'completed'
-            progress.completed_at = datetime.utcnow()
-            print("Show marked as COMPLETED!")
+            # Fetch show details to check if it's actually ended
+            try:
+                show = fetch_tv_show_details(show_id)
+                show_status = show.get('status', '')
+                
+                # Only mark as completed if show has actually ended
+                if show_status in ['Ended', 'Canceled']:
+                    progress.status = 'completed'
+                    progress.completed_at = datetime.utcnow()
+                    print(f"Show marked as COMPLETED (show status: {show_status})")
+                else:
+                    # Returning series - keep as watching
+                    print(f"All current episodes watched, but show is '{show_status}' - keeping status as 'watching'")
+                    if progress.status == 'completed':
+                        progress.status = 'watching'  # Revert if was previously completed
+            except Exception as e:
+                print(f"Could not fetch show status: {e}")
+                # If we can't determine, don't auto-complete
         
         # Commit to database
         db.session.commit()

@@ -309,9 +309,10 @@ function renderEpisodes(filter) {
                     ${episodes.map(ep => `
                         <div class="bg-white/5 hover:bg-white/10 rounded-lg p-4 flex gap-4 transition-all cursor-pointer"
                              onclick="window.location.href='/tv/${ep.show_id}/season/${ep.season_number}/episode/${ep.episode_number}'">
-                            <img src="${ep.episode_still ? `https://image.tmdb.org/t/p/w300${ep.episode_still}` : ep.show_poster ? `https://image.tmdb.org/t/p/w300${ep.show_poster}` : '/static/images/no-image.png'}" 
+                            <img src="${ep.still_path || ep.poster_path || '/static/images/no-poster.png'}" 
                                  alt="${ep.episode_name}"
-                                 class="w-40 h-24 rounded-lg object-cover">
+                                 class="w-40 h-24 rounded-lg object-cover"
+                                 onerror="this.src='/static/images/no-poster.png'">
                             <div class="flex-1">
                                 <h3 class="text-lg font-bold text-white hover:text-indigo-400">
                                     ${ep.show_name}
@@ -319,7 +320,7 @@ function renderEpisodes(filter) {
                                 <p class="text-indigo-300 mb-2">
                                     Season ${ep.season_number}, Episode ${ep.episode_number}: ${ep.episode_name}
                                 </p>
-                                <p class="text-gray-400 text-sm line-clamp-2">${ep.overview || 'No overview available.'}</p>
+                                <p class="text-gray-400 text-sm line-clamp-2">${ep.episode_overview || 'No overview available.'}</p>
                             </div>
                             <div class="flex-shrink-0 flex items-center">
                                 <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">

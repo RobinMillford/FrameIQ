@@ -346,6 +346,7 @@ def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
         {
             'id': season.get('id'),
             'name': season.get('name'),
+            'season_number': season.get('season_number'),
             'overview': season.get('overview'),
             'air_date': season.get('air_date'),
             'episode_count': season.get('episode_count'),
