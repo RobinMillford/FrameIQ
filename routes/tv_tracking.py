@@ -694,9 +694,6 @@ def unmark_season_watched(show_id, season_number):
         
         db.session.commit()
         
-        # Update show progress
-        update_show_progress(show_id)
-        
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -718,9 +715,7 @@ def unmark_single_episode(show_id, season_number, episode_number):
         
         db.session.commit()
         
-        # Update show progress
-        update_show_progress(show_id)
-        
+
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -782,9 +777,6 @@ def mark_all_watched(show_id):
             progress.completed_at = datetime.utcnow()
         
         db.session.commit()
-        
-        # Update progress stats
-        update_show_progress(show_id)
         
         return jsonify({'success': True, 'message': 'Series completed!'})
     except Exception as e:
