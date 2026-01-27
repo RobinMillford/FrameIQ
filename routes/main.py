@@ -354,15 +354,38 @@ def tv_recommend():
 @main.route('/watchlist')
 @login_required
 def watchlist():
-    """Display user's watchlist"""
-    watchlist_items = current_user.watchlist
+    """Display user's watchlist with priorities"""
+    # Query watchlist with priorities from association table
+    from sqlalchemy import select
+    stmt = select(
+        user_watchlist.c.media_id,
+        user_watchlist.c.media_type,
+        user_watchlist.c.date_added,
+        user_watchlist.c.priority
+    ).where(
+        user_watchlist.c.user_id == current_user.id
+    ).order_by(user_watchlist.c.date_added.desc())
+    
+    results = db.session.execute(stmt).all()
+    
+    # Fetch MediaItem details for each
+    watchlist_with_priority = []
+    for row in results:
+        media_item = MediaItem.query.filter_by(id=row.media_id).first()
+        if media_item:
+            watchlist_with_priority.append({
+                'item': media_item,
+                'priority': row.priority or 'medium',
+                'date_added': row.date_added
+            })
     
     # Get user's lists for status indicators
-    user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
+    user_watchlist_ids = {(item['item'].tmdb_id, item['item'].media_type) for item in watchlist_with_priority}
     user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
     user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
     
-    return render_template('watchlist.html', watchlist=watchlist_items,
+    return render_template('watchlist.html', 
+                          watchlist=watchlist_with_priority,
                           user_watchlist_ids=user_watchlist_ids,
                           user_wishlist_ids=user_wishlist_ids,
                           user_viewed_ids=user_viewed_ids)
@@ -370,15 +393,38 @@ def watchlist():
 @main.route('/wishlist')
 @login_required
 def wishlist():
-    """Display user's wishlist"""
-    wishlist_items = current_user.wishlist
+    """Display user's wishlist with priorities"""
+    # Query wishlist with priorities from association table
+    from sqlalchemy import select
+    stmt = select(
+        user_wishlist.c.media_id,
+        user_wishlist.c.media_type,
+        user_wishlist.c.date_added,
+        user_wishlist.c.priority
+    ).where(
+        user_wishlist.c.user_id == current_user.id
+    ).order_by(user_wishlist.c.date_added.desc())
+    
+    results = db.session.execute(stmt).all()
+    
+    # Fetch MediaItem details for each
+    wishlist_with_priority = []
+    for row in results:
+        media_item = MediaItem.query.filter_by(id=row.media_id).first()
+        if media_item:
+            wishlist_with_priority.append({
+                'item': media_item,
+                'priority': row.priority or 'medium',
+                'date_added': row.date_added
+            })
     
     # Get user's lists for status indicators
     user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
-    user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
+    user_wishlist_ids = {(item['item'].tmdb_id, item['item'].media_type) for item in wishlist_with_priority}
     user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
     
-    return render_template('wishlist.html', wishlist=wishlist_items,
+    return render_template('wishlist.html', 
+                          wishlist=wishlist_with_priority,
                           user_watchlist_ids=user_watchlist_ids,
                           user_wishlist_ids=user_wishlist_ids,
                           user_viewed_ids=user_viewed_ids)
@@ -691,6 +737,39 @@ def remove_from_viewed(media_id, media_type):
         flash('Item not found!')
     
     return redirect(request.referrer or url_for('main.viewed'))
+
+@main.route('/api/update_priority/<list_type>/<int:media_id>/<media_type>', methods=['POST'])
+@login_required
+def update_priority(list_type, media_id, media_type):
+    """Update priority for a watchlist or wishlist item"""
+    from sqlalchemy import update as sql_update
+    
+    priority = request.json.get('priority')
+    if priority not in ['high', 'medium', 'low']:
+        return jsonify({'success': False, 'error': 'Invalid priority'}), 400
+    
+    media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
+    if not media_item:
+        return jsonify({'success': False, 'error': 'Media item not found'}), 404
+    
+    # Determine which table to update
+    table = user_watchlist if list_type == 'watchlist' else user_wishlist
+    
+    # Update priority
+    stmt = sql_update(table).where(
+        table.c.user_id == current_user.id,
+        table.c.media_id == media_item.id,
+        table.c.media_type == media_type
+    ).values(priority=priority)
+    
+    result = db.session.execute(stmt)
+    db.session.commit()
+    
+    if result.rowcount == 0:
+        return jsonify({'success': False, 'error': 'Item not found in list'}), 404
+    
+    return jsonify({'success': True, 'priority': priority})
+
 @main.route('/user/<int:user_id>')
 @login_required
 def user_profile(user_id):

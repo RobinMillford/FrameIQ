@@ -100,8 +100,9 @@
                 <div class="category-section" data-category="all">
                     <h2 class="text-2xl font-bold mb-4">All Items ({{ wishlist|length }})</h2>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                        {% for item in wishlist %}
-                            <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}">
+                        {% for entry in wishlist %}
+                            {% set item = entry.item %}
+                            <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}" data-media-id="{{ item.tmdb_id }}" data-priority="{{ entry.priority }}">
                                 <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                     {% if item.poster_path %}
                                         <img src="https://image.tmdb.org/t/p/w500{{ item.poster_path }}" alt="{{ item.title }}" class="w-full h-64 object-cover">
@@ -136,6 +137,16 @@
                                         <span class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Watchlist</span>
                                         {% endif %}
                                     </div>
+                                    
+                                    <!-- Priority Selector -->
+                                    <div class="priority-container mb-3">
+                                        <select class="priority-select w-full" data-media-id="{{ item.tmdb_id }}" data-media-type="{{ item.media_type }}">
+                                            <option value="high" {% if entry.priority == 'high' %}selected{% endif %}>🔥 High Priority</option>
+                                            <option value="medium" {% if entry.priority == 'medium' %}selected{% endif %}>📌 Medium Priority</option>
+                                            <option value="low" {% if entry.priority == 'low' %}selected{% endif %}>💤 Low Priority</option>
+                                        </select>
+                                    </div>
+                                    
                                     <div class="flex justify-between items-center">
                                         <a href="/{{ item.media_type }}/{{ item.tmdb_id }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View Details</a>
                                         <div class="flex gap-1">
@@ -546,6 +557,11 @@
                 });
             });
         });
+    </script>
+    <script src="{{ url_for('static', filename='js/watchlist-priority-handler.js') }}"></script>
+    <script>
+        // Mark as wishlist page for priorities manager
+        document.body.classList.add('wishlist-page');
     </script>
 </body>
 </html>

@@ -152,8 +152,9 @@
                 <div class="category-section" data-category="all">
                     <h2 class="text-2xl font-bold mb-4">All Items ({{ watchlist|length }})</h2>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 watchlist-grid">
-                        {% for item in watchlist %}
-                            <div class="media-card watchlist-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}" data-media-id="{{ item.tmdb_id }}">
+                        {% for entry in watchlist %}
+                            {% set item = entry.item %}
+                            <div class="media-card watchlist-card bg-gray-800 rounded-lg overflow-hidden shadow-lg" data-category="{{ item.media_type }}" data-media-id="{{ item.tmdb_id }}" data-priority="{{ entry.priority }}">
                                 <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                     {% if item.poster_path %}
                                         <img src="https://image.tmdb.org/t/p/w500{{ item.poster_path }}" alt="{{ item.title }}" class="w-full h-64 object-cover">
@@ -190,12 +191,11 @@
                                     </div>
                                     
                                     <!-- Priority Selector -->
-                                    <div class="priority-container">
-                                        <span class="priority-badge priority-medium">MEDIUM</span>
-                                        <select class="priority-select flex-1" data-media-id="{{ item.tmdb_id }}" data-media-type="{{ item.media_type }}">
-                                            <option value="high">🔥 High Priority</option>
-                                            <option value="medium" selected>⭐ Medium Priority</option>
-                                            <option value="low">📋 Low Priority</option>
+                                    <div class="priority-container mb-3">
+                                        <select class="priority-select w-full" data-media-id="{{ item.tmdb_id }}" data-media-type="{{ item.media_type }}">
+                                            <option value="high" {% if entry.priority == 'high' %}selected{% endif %}>🔥 High Priority</option>
+                                            <option value="medium" {% if entry.priority == 'medium' %}selected{% endif %}>📌 Medium Priority</option>
+                                            <option value="low" {% if entry.priority == 'low' %}selected{% endif %}>💤 Low Priority</option>
                                         </select>
                                     </div>
                                     
@@ -610,7 +610,7 @@
             });
         });
     </script>
-    <script src="{{ url_for('static', filename='js/watchlist-priorities.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/watchlist-priority-handler.js') }}"></script>
     <script>
         // Mark as watchlist page for priorities manager
         document.body.classList.add('watchlist-page');
