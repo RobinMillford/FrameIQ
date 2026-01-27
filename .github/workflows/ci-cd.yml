@@ -42,11 +42,22 @@ jobs:
       - name: Lint with flake8
         run: |
           # Stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
           # Exit-zero treats all errors as warnings
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
+      
+      - name: Check for tests
+        id: check_tests
+        run: |
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No test files found. Skipping test execution."
+          fi
       
       - name: Run tests
+        if: steps.check_tests.outputs.has_tests == 'true'
         env:
           DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
@@ -55,6 +66,7 @@ jobs:
           pytest --cov=. --cov-report=xml --cov-report=term
       
       - name: Upload coverage reports
+        if: steps.check_tests.outputs.has_tests == 'true'
         uses: codecov/codecov-action@v3
         with:
           file: ./coverage.xml
