@@ -181,11 +181,17 @@
                 
                 <!-- Movies Section -->
                 <div class="category-section hidden" data-category="movie">
-                    {% set movies = wishlist|selectattr('media_type', 'equalto', 'movie')|list %}
+                    {% set movies = [] %}
+                    {% for entry in wishlist %}
+                        {% if entry.item.media_type == 'movie' %}
+                            {% set _ = movies.append(entry) %}
+                        {% endif %}
+                    {% endfor %}
                     <h2 class="text-2xl font-bold mb-4">Movies ({{ movies|length }})</h2>
                     {% if movies %}
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                            {% for item in movies %}
+                            {% for entry in movies %}
+                            {% set item = entry.item %}
                                 <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg">
                                     <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                         {% if item.poster_path %}
@@ -264,10 +270,15 @@
                 
                 <!-- TV Shows Section -->
                 <div class="category-section hidden" data-category="tv">
-                    {% set tv_shows = wishlist|selectattr('media_type', 'equalto', 'tv')|list %}
+                    {% set tv_shows = [] %}
+                    {% for entry in wishlist %}
+                        {% if entry.item.media_type == 'tv' %}
+                            {% set _ = tv_shows.append(entry) %}
+                        {% endif %}
+                    {% endfor %}
                     {% set non_anime_tv = [] %}
-                    {% for item in tv_shows %}
-                        {% set title_lower = item.title|lower %}
+                    {% for entry in tv_shows %}
+                        {% set title_lower = entry.item.title|lower %}
                         {% set is_anime = (
                             'anime' in title_lower or 
                             'studio ghibli' in title_lower or 
@@ -296,13 +307,14 @@
                             'kiki' in title_lower
                         ) %}
                         {% if not is_anime %}
-                            {% set _ = non_anime_tv.append(item) %}
+                            {% set _ = non_anime_tv.append(entry) %}
                         {% endif %}
                     {% endfor %}
                     <h2 class="text-2xl font-bold mb-4">TV Shows ({{ non_anime_tv|length }})</h2>
                     {% if non_anime_tv %}
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                            {% for item in non_anime_tv %}
+                            {% for entry in non_anime_tv %}
+                            {% set item = entry.item %}
                                 <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg">
                                     <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                         {% if item.poster_path %}
@@ -381,10 +393,15 @@
                 
                 <!-- Anime Section -->
                 <div class="category-section hidden" data-category="anime">
-                    {% set tv_shows = wishlist|selectattr('media_type', 'equalto', 'tv')|list %}
+                    {% set tv_shows = [] %}
+                    {% for entry in wishlist %}
+                        {% if entry.item.media_type == 'tv' %}
+                            {% set _ = tv_shows.append(entry) %}
+                        {% endif %}
+                    {% endfor %}
                     {% set anime_items = [] %}
-                    {% for item in tv_shows %}
-                        {% set title_lower = item.title|lower %}
+                    {% for entry in tv_shows %}
+                        {% set title_lower = entry.item.title|lower %}
                         {% set is_anime = (
                             'anime' in title_lower or 
                             'studio ghibli' in title_lower or 
@@ -413,13 +430,14 @@
                             'kiki' in title_lower
                         ) %}
                         {% if is_anime %}
-                            {% set _ = anime_items.append(item) %}
+                            {% set _ = anime_items.append(entry) %}
                         {% endif %}
                     {% endfor %}
                     <h2 class="text-2xl font-bold mb-4">Anime ({{ anime_items|length }})</h2>
                     {% if anime_items %}
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                            {% for item in anime_items %}
+                            {% for entry in anime_items %}
+                            {% set item = entry.item %}
                                 <div class="media-card bg-gray-800 rounded-lg overflow-hidden shadow-lg">
                                     <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
                                         {% if item.poster_path %}
