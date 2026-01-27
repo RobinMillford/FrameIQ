@@ -9,13 +9,16 @@ def test_models_import():
     """Test that models can be imported without app initialization"""
     try:
         from models import (
-            User, Review, Watchlist, Wishlist,
+            User, Review, MediaItem, DiaryEntry,
             TVShowProgress, TVEpisodeWatch, UpcomingEpisode
         )
         
         # Check that models have expected attributes
         assert hasattr(User, 'id')
         assert hasattr(User, 'username')
+        assert hasattr(MediaItem, 'media_id')
+        assert hasattr(Review, 'user_id')
+        assert hasattr(DiaryEntry, 'media_id')
         assert hasattr(TVShowProgress, 'show_id')
         assert hasattr(TVEpisodeWatch, 'episode_number')
         assert hasattr(UpcomingEpisode, 'air_date')
