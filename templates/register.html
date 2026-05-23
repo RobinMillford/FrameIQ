@@ -284,54 +284,6 @@
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const passwordInput = document.getElementById('password');
-            const lengthReq = document.getElementById('length-req');
-            const uppercaseReq = document.getElementById('uppercase-req');
-            const lowercaseReq = document.getElementById('lowercase-req');
-            const numberReq = document.getElementById('number-req');
-            
-            passwordInput.addEventListener('input', function() {
-                const password = passwordInput.value;
-                
-                // Check length
-                if (password.length >= 8) {
-                    lengthReq.classList.remove('requirement-not-met');
-                    lengthReq.classList.add('requirement-met');
-                } else {
-                    lengthReq.classList.remove('requirement-met');
-                    lengthReq.classList.add('requirement-not-met');
-                }
-                
-                // Check uppercase
-                if (/[A-Z]/.test(password)) {
-                    uppercaseReq.classList.remove('requirement-not-met');
-                    uppercaseReq.classList.add('requirement-met');
-                } else {
-                    uppercaseReq.classList.remove('requirement-met');
-                    uppercaseReq.classList.add('requirement-not-met');
-                }
-                
-                // Check lowercase
-                if (/[a-z]/.test(password)) {
-                    lowercaseReq.classList.remove('requirement-not-met');
-                    lowercaseReq.classList.add('requirement-met');
-                } else {
-                    lowercaseReq.classList.remove('requirement-met');
-                    lowercaseReq.classList.add('requirement-not-met');
-                }
-                
-                // Check number
-                if (/\d/.test(password)) {
-                    numberReq.classList.remove('requirement-not-met');
-                    numberReq.classList.add('requirement-met');
-                } else {
-                    numberReq.classList.remove('requirement-met');
-                    numberReq.classList.add('requirement-not-met');
-                }
-            });
-        });
-    </script>
+    <script src="{{ url_for('static', filename='js/register-validation.js') }}"></script>
 </body>
 </html>

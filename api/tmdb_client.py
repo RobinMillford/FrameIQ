@@ -1,10 +1,13 @@
 import requests
 import time
 import os
+import logging
 from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -28,11 +31,10 @@ def cached_tmdb_request(url, max_age=3600):
     if cache_key in tmdb_cache:
         cached_data, timestamp = tmdb_cache[cache_key]
         if current_time - timestamp < max_age:
-            print(f"Cache hit for {url}")
+            logger.debug("TMDB cache hit: %s", url.split('?')[0])
             return cached_data
-    
-    # Make the request
-    print(f"Making request to {url}")
+
+    logger.debug("TMDB request: %s", url.split('?')[0])
     response = requests.get(url)
     data = response.json()
     
@@ -185,9 +187,9 @@ def fetch_poster(id, is_movie=True, max_retries=3, retry_delay=2):
             poster_path = data.get('poster_path')
             return f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else "https://via.placeholder.com/500x750?text=No+Image"
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching poster (attempt {attempt + 1}/{max_retries}): {e}")
+            logger.warning("Poster fetch attempt %s/%s failed: %s", attempt + 1, max_retries, e)
             time.sleep(retry_delay)
-    print(f"Failed to fetch poster for {media_type}/{id} after {max_retries} retries.")
+    logger.error("Poster fetch failed for %s/%s after %s retries", media_type, id, max_retries)
     return "https://via.placeholder.com/500x750?text=No+Image"
 
 def fetch_tmdb_recommendations(id, is_movie=True, max_recommendations=50):
@@ -208,12 +210,12 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
                 raise Exception(f"TMDb API error: {data.get('status_message', 'Unknown error')}")
             break
         except (requests.exceptions.RequestException, Exception) as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed for movie {movie_id}: {e}")
+            logger.warning("Movie %s fetch attempt %s/%s failed: %s", movie_id, attempt + 1, max_retries, e)
             if attempt + 1 == max_retries:
                 raise Exception(f"Failed to fetch movie details after {max_retries} retries: {e}")
             time.sleep(retry_delay)
     
-    print(f"Movie {movie_id} fetching {len(data.get('credits', {}).get('cast', []))} total cast members, returning first 30")
+    logger.debug("Movie %s: %s cast members, returning first 30", movie_id, len(data.get('credits', {}).get('cast', [])))
     
     movie = {
         'id': data.get('id'),
@@ -302,7 +304,7 @@ def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
                 raise Exception(f"TMDb API error: {data.get('status_message', 'Unknown error')}")
             break
         except (requests.exceptions.RequestException, Exception) as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed for show {show_id}: {e}")
+            logger.warning("Show %s fetch attempt %s/%s failed: %s", show_id, attempt + 1, max_retries, e)
             if attempt + 1 == max_retries:
                 raise Exception(f"Failed to fetch TV show details after {max_retries} retries: {e}")
             time.sleep(retry_delay)
@@ -393,7 +395,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
                 raise Exception(f"TMDb API error: {data.get('status_message', 'Unknown error')}")
             break
         except (requests.exceptions.RequestException, Exception) as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed for actor {actor_id}: {e}")
+            logger.warning("Actor %s fetch attempt %s/%s failed: %s", actor_id, attempt + 1, max_retries, e)
             if attempt + 1 == max_retries:
                 raise Exception(f"Failed to fetch actor details after {max_retries} retries: {e}")
             time.sleep(retry_delay)
@@ -409,7 +411,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
             movie_credits_data = movie_response.json()
             break
         except requests.exceptions.RequestException as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed for movie credits of actor {actor_id}: {e}")
+            logger.warning("Actor %s movie credits attempt %s/%s failed: %s", actor_id, attempt + 1, max_retries, e)
             if attempt + 1 == max_retries:
                 raise Exception(f"Failed to fetch movie credits after {max_retries} retries: {e}")
             time.sleep(retry_delay)
@@ -423,7 +425,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
             tv_credits_data = tv_response.json()
             break
         except requests.exceptions.RequestException as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed for TV credits of actor {actor_id}: {e}")
+            logger.warning("Actor %s TV credits attempt %s/%s failed: %s", actor_id, attempt + 1, max_retries, e)
             if attempt + 1 == max_retries:
                 raise Exception(f"Failed to fetch TV credits after {max_retries} retries: {e}")
             time.sleep(retry_delay)
@@ -443,7 +445,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
                     img['file_path'] = f"https://image.tmdb.org/t/p/w500{img['file_path']}"
                     tagged_images.append(img)
     except Exception as e:
-        print(f"Failed to fetch tagged images for actor {actor_id}: {e}")
+        logger.warning("Actor %s tagged images fetch failed: %s", actor_id, e)
 
     # Fetch external IDs (with fallback)
     external_ids = {
@@ -476,7 +478,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
                 'tvrage_id': external_ids_data.get('tvrage_id', 0),
             })
     except Exception as e:
-        print(f"Failed to fetch external IDs for actor {actor_id}: {e}")
+        logger.warning("Actor %s external IDs fetch failed: %s", actor_id, e)
 
     # Fetch profile images (with fallback)
     profile_images = []
@@ -493,7 +495,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
             for img in profile_images:
                 img['file_path'] = f"https://image.tmdb.org/t/p/w500{img['file_path']}" if img.get('file_path') else "https://via.placeholder.com/500x750?text=No+Image"
     except Exception as e:
-        print(f"Failed to fetch profile images for actor {actor_id}: {e}")
+        logger.warning("Actor %s profile images fetch failed: %s", actor_id, e)
 
     # Process movie credits, removing duplicates by id
     movie_acting_credits = []

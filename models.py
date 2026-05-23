@@ -384,7 +384,7 @@ class ListCollaborator(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     role = db.Column(db.String(20), default='editor')  # 'owner', 'editor', 'viewer'
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
-    added_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # Who added this collaborator
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     
     # Relationships
     list = db.relationship('UserList', backref=db.backref('collaborators', lazy='dynamic', cascade='all, delete-orphan'))
@@ -566,7 +566,7 @@ class DiaryEntry(db.Model):
     media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
     watched_date = db.Column(db.Date, nullable=False, index=True)
     rating = db.Column(db.Float)  # Optional rating 0.5 to 5.0
-    review_id = db.Column(db.Integer, db.ForeignKey('review.id'), nullable=True)  # Optional linked review
+    review_id = db.Column(db.Integer, db.ForeignKey('review.id'), nullable=True, index=True)
     is_rewatch = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     

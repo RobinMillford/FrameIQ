@@ -63,6 +63,20 @@ from routes.tv_tracking import tv_tracking
 
 load_dotenv()
 
+import logging
+_startup_logger = logging.getLogger("app.startup")
+
+_REQUIRED_VARS = ["SECRET_KEY", "DATABASE_URL", "TMDB_API_KEY"]
+_OPTIONAL_VARS = ["CLOUDINARY_URL", "RATELIMIT_STORAGE_URI", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+
+for _var in _REQUIRED_VARS:
+    if not os.getenv(_var):
+        raise RuntimeError(f"Required environment variable {_var!r} is not set")
+
+for _var in _OPTIONAL_VARS:
+    if not os.getenv(_var):
+        _startup_logger.warning("Optional env var %r not set — related feature may be disabled", _var)
+
 
 # ============================================================================
 # Flask Application Setup

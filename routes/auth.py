@@ -239,7 +239,7 @@ def profile_recommendations():
                     break
                     
         except Exception as e:
-            print(f"Error fetching recommendations for {item.title}: {e}")
+            logger.warning("Recommendations fetch failed for %s: %s", item.title, e)
             continue
     
     # Remove duplicates from recommendations (in case any slipped through)
@@ -340,7 +340,7 @@ def profile_recommendations_preview():
                     break
                     
         except Exception as e:
-            print(f"Error fetching recommendations for {item.title}: {e}")
+            logger.warning("Recommendations fetch failed for %s: %s", item.title, e)
             continue
     
     # Remove duplicates (in case any slipped through)
