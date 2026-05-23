@@ -15,8 +15,28 @@ load_dotenv()
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_API_KEY_2 = os.getenv("TMDB_API_KEY_2")
 
-# Simple in-memory cache for TMDB data
-tmdb_cache = {}
+class _BoundedTTLCache:
+    """Size-bounded dict cache; evicts oldest 10% when full."""
+    def __init__(self, maxsize=500):
+        self._store = {}
+        self._maxsize = maxsize
+
+    def __contains__(self, key):
+        return key in self._store
+
+    def __getitem__(self, key):
+        return self._store[key]
+
+    def __setitem__(self, key, value):
+        if len(self._store) >= self._maxsize:
+            oldest = sorted(self._store.items(), key=lambda x: x[1][1])
+            for k, _ in oldest[:max(1, self._maxsize // 10)]:
+                del self._store[k]
+        self._store[key] = value
+
+
+# Bounded in-memory cache for TMDB data (max 500 entries, TTL checked on read)
+tmdb_cache = _BoundedTTLCache(maxsize=500)
 
 def get_cache_key(*args):
     """Generate a cache key from arguments"""
@@ -195,7 +215,6 @@ def fetch_poster(id, is_movie=True, max_retries=3, retry_delay=2):
 def fetch_tmdb_recommendations(id, is_movie=True, max_recommendations=50):
     media_type = "movie" if is_movie else "tv"
     url = f"https://api.themoviedb.org/3/{media_type}/{id}/recommendations?api_key={TMDB_API_KEY}&language=en-US&page=1"
-    time.sleep(1)
     data = cached_tmdb_request(url)
     return data.get('results', [])[:max_recommendations]
 

@@ -529,7 +529,7 @@ def delete_review_reply(reply_id):
         reply.is_deleted = True
         
         # Update comment count
-        review = Review.query.get(reply.review_id)
+        review = db.session.get(Review, reply.review_id)
         if review and review.comments_count > 0:
             review.comments_count -= 1
         

@@ -133,7 +133,9 @@ def update_list(list_id):
         return jsonify({'error': 'You can only edit your own lists'}), 403
     
     data = request.get_json()
-    
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
     try:
         if 'title' in data:
             user_list.title = data['title']
@@ -339,7 +341,7 @@ def reorder_list_items(list_id):
     try:
         # Update positions
         for index, item_id in enumerate(item_order):
-            item = UserListItem.query.get(item_id)
+            item = db.session.get(UserListItem, item_id)
             if item and item.list_id == list_id:
                 item.position = index + 1
         

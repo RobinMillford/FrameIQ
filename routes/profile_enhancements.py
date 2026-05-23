@@ -27,7 +27,7 @@ def calculate_user_badges(user_id):
         badges.append({'id': 'reviewer_100', 'name': 'Master Critic', 'icon': '🏆', 'description': '100+ reviews written'})
     
     # Social badges
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user:
         followers_count = user.followers_count or 0
         if followers_count >= 10:
@@ -91,7 +91,7 @@ def calculate_user_badges(user_id):
 @profile_enhancements.route('/api/users/<int:user_id>/badges', methods=['GET'])
 def get_user_badges(user_id):
     """Get all badges earned by a user with progress tracking"""
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
@@ -254,7 +254,7 @@ def get_user_badges(user_id):
 @profile_enhancements.route('/api/users/<int:user_id>/stats/enhanced', methods=['GET'])
 def get_enhanced_stats(user_id):
     """Get enhanced statistics for a user"""
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
@@ -306,7 +306,7 @@ def get_enhanced_stats(user_id):
     from models import Tag
     top_tags = []
     for tag_id, count in most_used_tags:
-        tag = Tag.query.get(tag_id)
+        tag = db.session.get(Tag, tag_id)
         if tag:
             top_tags.append({'name': tag.name, 'count': count})
     
@@ -343,7 +343,7 @@ def get_enhanced_stats(user_id):
 @profile_enhancements.route('/api/users/<int:user_id>/achievements', methods=['GET'])
 def get_user_achievements(user_id):
     """Get a summary of user achievements and progress"""
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
     

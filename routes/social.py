@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 
 social = Blueprint('social', __name__)
 
@@ -20,7 +20,7 @@ def toggle_follow(user_id):
         return jsonify({'error': 'You cannot follow yourself'}), 400
     
     # Check if target user exists
-    target_user = User.query.get(user_id)
+    target_user = db.session.get(User, user_id)
     if not target_user:
         return jsonify({'error': 'User not found'}), 404
     
@@ -35,11 +35,19 @@ def toggle_follow(user_id):
         if existing_follow:
             # Unfollow (soft delete)
             existing_follow.is_active = False
-            
-            # Update counts
-            current_user.following_count = max(0, (current_user.following_count or 0) - 1)
-            target_user.followers_count = max(0, (target_user.followers_count or 0) - 1)
-            
+
+            # Atomic decrement (avoids read-modify-write race)
+            User.query.filter_by(id=current_user.id).update(
+                {'following_count': func.greatest(0, func.coalesce(User.following_count, 1) - 1)},
+                synchronize_session=False
+            )
+            User.query.filter_by(id=user_id).update(
+                {'followers_count': func.greatest(0, func.coalesce(User.followers_count, 1) - 1)},
+                synchronize_session=False
+            )
+            resp_following = max(0, (current_user.following_count or 0) - 1)
+            resp_followers = max(0, (target_user.followers_count or 0) - 1)
+
             action = 'unfollowed'
             is_following = False
         else:
@@ -49,7 +57,7 @@ def toggle_follow(user_id):
                 following_id=user_id,
                 is_active=False
             ).first()
-            
+
             if inactive_follow:
                 # Reactivate the follow
                 inactive_follow.is_active = True
@@ -57,24 +65,32 @@ def toggle_follow(user_id):
                 # Create new follow
                 follow = UserFollow(
                     follower_id=current_user.id,  # type: ignore
-                    following_id=user_id # type: ignore
+                    following_id=user_id  # type: ignore
                 )  # type: ignore
                 db.session.add(follow)
-            
-            # Update counts
-            current_user.following_count = (current_user.following_count or 0) + 1
-            target_user.followers_count = (target_user.followers_count or 0) + 1
-            
+
+            # Atomic increment
+            User.query.filter_by(id=current_user.id).update(
+                {'following_count': func.coalesce(User.following_count, 0) + 1},
+                synchronize_session=False
+            )
+            User.query.filter_by(id=user_id).update(
+                {'followers_count': func.coalesce(User.followers_count, 0) + 1},
+                synchronize_session=False
+            )
+            resp_following = (current_user.following_count or 0) + 1
+            resp_followers = (target_user.followers_count or 0) + 1
+
             action = 'followed'
             is_following = True
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': f'Successfully {action} {target_user.username}',
             'is_following': is_following,
-            'followers_count': target_user.followers_count,
-            'following_count': current_user.following_count
+            'followers_count': resp_followers,
+            'following_count': resp_following
         }), 200
         
     except IntegrityError as e:
@@ -89,7 +105,7 @@ def toggle_follow(user_id):
 def get_followers(user_id):
     """Get list of users following the target user"""
     # Check if user exists
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
@@ -147,7 +163,7 @@ def get_followers(user_id):
 def get_following(user_id):
     """Get list of users that the target user is following"""
     # Check if user exists
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
@@ -206,7 +222,7 @@ def get_following(user_id):
 def get_follow_status(user_id):
     """Check follow status between current user and target user"""
     # Check if target user exists
-    target_user = User.query.get(user_id)
+    target_user = db.session.get(User, user_id)
     if not target_user:
         return jsonify({'error': 'User not found'}), 404
     

@@ -139,7 +139,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_recycle": 300,
 }
 
-print(f"Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+_startup_logger.debug("Database URI configured")
 
 
 # ============================================================================
@@ -262,12 +262,12 @@ def health_check():
 # ============================================================================
 
 with app.app_context():
-    print(f"Database engine: {db.engine}")
+    _startup_logger.info("Database engine: %s", db.engine.url.render_as_string(hide_password=True))
     try:
         db.create_all()
-        print("✅ Database tables created successfully")
+        _startup_logger.info("Database tables created successfully")
     except Exception as e:
-        print(f"❌ Error creating database tables: {e}")
+        _startup_logger.error("Error creating database tables: %s", e)
 
 
 # ============================================================================

@@ -437,7 +437,7 @@ def compare_with_user(other_user_id):
         user_id = current_user.id
         
         # Get both users
-        other_user = User.query.get(other_user_id)
+        other_user = db.session.get(User, other_user_id)
         if not other_user:
             return jsonify({'success': False, 'error': 'User not found'}), 404
         

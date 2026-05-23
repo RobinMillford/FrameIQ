@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewComment, MediaItem, User, UserFollow
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 
 reviews = Blueprint('reviews', __name__)
 
@@ -67,11 +68,16 @@ def create_review():
         )
         
         db.session.add(review)
-        
-        # Update user stats
-        current_user.total_reviews = (current_user.total_reviews or 0) + 1
-        current_user.total_movies_watched = (current_user.total_movies_watched or 0) + 1
-        
+
+        # Atomic increment to avoid race conditions
+        User.query.filter_by(id=current_user.id).update(
+            {
+                'total_reviews': func.coalesce(User.total_reviews, 0) + 1,
+                'total_movies_watched': func.coalesce(User.total_movies_watched, 0) + 1,
+            },
+            synchronize_session=False
+        )
+
         db.session.commit()
         
         return jsonify({
@@ -166,10 +172,13 @@ def delete_review(review_id):
     try:
         # Soft delete
         review.is_deleted = True
-        
-        # Update user stats
-        current_user.total_reviews = max(0, (current_user.total_reviews or 0) - 1)
-        
+
+        # Atomic decrement
+        User.query.filter_by(id=current_user.id).update(
+            {'total_reviews': func.greatest(0, func.coalesce(User.total_reviews, 1) - 1)},
+            synchronize_session=False
+        )
+
         db.session.commit()
         
         return jsonify({'message': 'Review deleted successfully'}), 200
@@ -197,7 +206,7 @@ def create_comment(review_id):
             
         # If parent_id is provided, verify it exists and belongs to the same review
         if parent_id:
-            parent = ReviewComment.query.get(parent_id)
+            parent = db.session.get(ReviewComment, parent_id)
             if not parent or parent.review_id != review_id:
                 return jsonify({'error': 'Invalid parent comment'}), 400
         
@@ -309,7 +318,7 @@ def get_media_reviews(media_type, tmdb_id):
 @reviews.route('/api/users/<int:user_id>/reviews', methods=['GET'])
 def get_user_reviews(user_id):
     """Get all reviews by a specific user"""
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if not user:
         return jsonify({'error': 'User not found'}), 404

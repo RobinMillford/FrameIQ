@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, Tag, UserMediaTag
 from sqlalchemy import func, desc
+from extensions import limiter
 
 tags_bp = Blueprint('tags', __name__)
 
@@ -26,17 +27,17 @@ def get_popular_tags():
 
 
 @tags_bp.route('/api/tags/search', methods=['GET'])
+@limiter.limit("60 per minute")
 def search_tags():
     """Search/autocomplete tags"""
-    query = request.args.get('q', '').strip().lower()
-    limit = request.args.get('limit', 10, type=int)
-    
+    query = request.args.get('q', '').strip().lower()[:50]
+    limit = min(request.args.get('limit', 10, type=int), 50)
+
     if not query:
         return jsonify({'tags': []}), 200
-    
-    # Search tags that start with or contain the query
+
     matching_tags = Tag.query.filter(
-        Tag.name.like(f'%{query}%')
+        Tag.name.like(f'{query}%')
     ).order_by(desc(Tag.usage_count)).limit(limit).all()
     
     return jsonify({
@@ -193,7 +194,7 @@ def remove_tag_from_media(media_id, tag_id):
         return jsonify({'error': 'Tag not found'}), 404
     
     # Get the tag to update usage count
-    tag = Tag.query.get(tag_id)
+    tag = db.session.get(Tag, tag_id)
     if tag:
         tag.usage_count = max(0, tag.usage_count - 1)
     

@@ -4,7 +4,7 @@ Tracks and displays trending media, tags, and users
 """
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
-from models import db, MediaItem, Tag, User, Review, MediaLike, MediaComment, UserMediaTag
+from models import db, MediaItem, Tag, User, Review, ReviewLike, MediaLike, MediaComment, UserMediaTag
 from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta
 
@@ -201,13 +201,9 @@ def get_trending_reviews():
     # Get reviews with like counts
     trending_reviews = db.session.query(
         Review,
-        func.count(MediaLike.id).label('like_count')
+        func.count(ReviewLike.id).label('like_count')
     ).outerjoin(
-        MediaLike, and_(
-            MediaLike.media_id == Review.media_id,
-            MediaLike.media_type == Review.media_type,
-            MediaLike.user_id == Review.user_id
-        )
+        ReviewLike, ReviewLike.review_id == Review.id
     ).filter(
         Review.created_at >= since_date
     ).group_by(Review.id).order_by(desc('like_count')).limit(limit).all()

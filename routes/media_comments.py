@@ -62,7 +62,7 @@ def add_media_comment(media_id):
 @login_required
 def update_media_comment(comment_id):
     """Update a comment"""
-    comment = MediaComment.query.get(comment_id)
+    comment = db.session.get(MediaComment, comment_id)
     
     if not comment:
         return jsonify({'error': 'Comment not found'}), 404
@@ -95,7 +95,7 @@ def update_media_comment(comment_id):
 @login_required
 def delete_media_comment(comment_id):
     """Delete (soft delete) a comment"""
-    comment = MediaComment.query.get(comment_id)
+    comment = db.session.get(MediaComment, comment_id)
     
     if not comment:
         return jsonify({'error': 'Comment not found'}), 404
