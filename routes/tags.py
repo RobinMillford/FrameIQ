@@ -74,14 +74,12 @@ def get_user_tags(user_id):
 
 
 @tags_bp.route('/api/media/<int:media_id>/tags', methods=['GET'])
+@login_required
 def get_media_tags(media_id):
     """Get tags for a specific media item (for current user)"""
     media_type = request.args.get('media_type', 'movie')
-    user_id = request.args.get('user_id', type=int)
-    
-    if not user_id:
-        return jsonify({'error': 'user_id is required'}), 400
-    
+    user_id = current_user.id
+
     # Get tags applied by this user to this media
     user_media_tags = UserMediaTag.query.join(Tag).filter(
         UserMediaTag.user_id == user_id,

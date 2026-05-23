@@ -1,7 +1,12 @@
-/**
- * Suggested Follows Component
- * Fetches and renders taste-based user recommendations
- */
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 class SuggestedFollows {
     constructor(containerId) {
@@ -58,15 +63,15 @@ class SuggestedFollows {
             <div class="glass-effect rounded-xl p-5 flex flex-col items-center text-center animate__animated animate__fadeIn">
                 <a href="/user/${user.id}" class="group mb-3">
                     <div class="w-20 h-20 rounded-full overflow-hidden border-2 border-indigo-500 group-hover:border-indigo-400 transition-colors mb-2">
-                        <img src="${user.profile_picture || '/static/images/default_avatar.png'}" 
-                             alt="${user.username}" 
+                        <img src="${escapeHtml(user.profile_picture || '/static/images/default_avatar.png')}"
+                             alt="${escapeHtml(user.username)}"
                              class="w-full h-full object-cover">
                     </div>
-                    <h3 class="font-bold text-white group-hover:text-indigo-400 transition-colors truncate w-32">@${user.username}</h3>
+                    <h3 class="font-bold text-white group-hover:text-indigo-400 transition-colors truncate w-32">@${escapeHtml(user.username)}</h3>
                 </a>
-                
-                <p class="text-xs text-indigo-300 mb-4 bg-indigo-900/30 px-2 py-1 rounded-full">${user.reason}</p>
-                
+
+                <p class="text-xs text-indigo-300 mb-4 bg-indigo-900/30 px-2 py-1 rounded-full">${escapeHtml(user.reason)}</p>
+
                 <div class="flex items-center space-x-3 mb-5 text-xs text-gray-400">
                     <div class="flex flex-col">
                         <span class="text-white font-semibold">${user.total_reviews}</span>
@@ -79,8 +84,8 @@ class SuggestedFollows {
                     </div>
                 </div>
 
-                <button 
-                    data-follow-button 
+                <button
+                    data-follow-button
                     data-user-id="${user.id}"
                     data-authenticated="true"
                     data-following="false"

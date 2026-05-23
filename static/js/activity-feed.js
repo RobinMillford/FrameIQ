@@ -1,7 +1,13 @@
-/**
- * Activity Feed Component
- * Handles fetching and rendering the social activity feed on the home page
- */
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 class ActivityFeed {
     constructor(containerId, options = {}) {
         this.container = document.getElementById(containerId);
@@ -139,17 +145,17 @@ class ActivityFeed {
         card.innerHTML = `
             <div class="flex items-center gap-3 mb-4">
                 <a href="/user/${review.user.id}" class="relative flex-shrink-0">
-                    <img src="${profilePic}" alt="${review.user.username}" class="w-10 h-10 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                    <img src="${escapeHtml(profilePic)}" alt="${escapeHtml(review.user.username)}" class="w-10 h-10 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='https://via.placeholder.com/100x100?text=User'">
                 </a>
                 <div class="flex-grow min-w-0">
                     <div class="flex items-center gap-2">
                         <a href="/user/${review.user.id}" class="font-bold text-sm truncate hover:text-indigo-400 transition-colors">
-                            ${review.user.username}
+                            ${escapeHtml(review.user.username)}
                         </a>
                         ${!review.is_author_self ? `
-                            <button class="text-[10px] bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white px-2 py-0.5 rounded transition-all" 
-                                    data-follow-button 
-                                    data-user-id="${review.user.id}" 
+                            <button class="text-[10px] bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white px-2 py-0.5 rounded transition-all"
+                                    data-follow-button
+                                    data-user-id="${review.user.id}"
                                     data-following="false"
                                     data-authenticated="true">
                                 Follow
@@ -159,24 +165,24 @@ class ActivityFeed {
                     <p class="text-[10px] text-gray-500">${this.formatRelativeTime(review.created_at)}</p>
                 </div>
             </div>
-            
+
             <div class="flex gap-4 flex-grow">
                 <a href="${movieUrl}" class="flex-shrink-0">
-                    <img src="${posterUrl}" alt="${review.media.title}" class="w-20 h-28 rounded shadow-lg object-cover border border-gray-700 hover:scale-105 transition-transform duration-300" onerror="this.src='https://via.placeholder.com/200x300?text=No+Poster'">
+                    <img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(review.media.title)}" class="w-20 h-28 rounded shadow-lg object-cover border border-gray-700 hover:scale-105 transition-transform duration-300" onerror="this.src='https://via.placeholder.com/200x300?text=No+Poster'">
                 </a>
                 <div class="flex-grow min-w-0">
                     <h4 class="font-bold text-sm mb-1 leading-tight">
-                        <a href="${movieUrl}" class="hover:text-indigo-400 transition-colors">${review.media.title}</a>
+                        <a href="${movieUrl}" class="hover:text-indigo-400 transition-colors">${escapeHtml(review.media.title)}</a>
                     </h4>
                     <div class="flex text-yellow-500 text-[10px] mb-2">
                         ${'★'.repeat(Math.round(review.rating))}${'☆'.repeat(5 - Math.round(review.rating))}
                     </div>
                     <p class="text-gray-300 text-xs line-clamp-3 italic">
-                        "${review.content || 'No written review.'}"
+                        &quot;${escapeHtml(review.content || 'No written review.')}&quot;
                     </p>
                 </div>
             </div>
-            
+
             <div class="mt-4 pt-4 border-t border-gray-700/50 flex justify-between items-center text-xs">
                 <div class="flex items-center gap-3 text-gray-400">
                     <span><i class="far fa-heart mr-1"></i> ${review.likes_count}</span>

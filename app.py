@@ -10,6 +10,7 @@ from datetime import timedelta
 # Third-Party Imports
 from flask import Flask
 from flask_login import LoginManager
+from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
 
 # Local Imports - Models
@@ -69,6 +70,16 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
 app.config['TMDB_API_KEY'] = os.getenv("TMDB_API_KEY")
+
+# CSRF protection
+csrf = CSRFProtect(app)
+
+# Session cookie security — HTTPS-only in production, allow HTTP in local dev
+_is_production = bool(os.getenv('RENDER') or os.getenv('K_SERVICE'))
+app.config['SESSION_COOKIE_SECURE'] = _is_production
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600
 
 
 # ============================================================================
@@ -194,6 +205,17 @@ app.register_blueprint(agent_chat)
 # Route Handlers
 # ============================================================================
 
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    if _is_production:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+
 @app.route('/health')
 def health_check():
     """Health check endpoint for deployment monitoring"""
@@ -218,5 +240,5 @@ with app.app_context():
 # ============================================================================
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true')
 
