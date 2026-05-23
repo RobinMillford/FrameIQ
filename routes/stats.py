@@ -466,14 +466,18 @@ def compare_with_user(other_user_id):
             Review.rating.isnot(None)
         ).scalar()
         
-        # Find common watched items
+        # Find common watched items — fetch only 2 columns, not full ORM objects
         user1_media = set(
-            (v.media_id, v.media_type)
-            for v in DiaryEntry.query.filter_by(user_id=user_id).all()
+            db.session.query(DiaryEntry.media_id, DiaryEntry.media_type)
+            .filter(DiaryEntry.user_id == user_id)
+            .distinct()
+            .all()
         )
         user2_media = set(
-            (v.media_id, v.media_type)
-            for v in DiaryEntry.query.filter_by(user_id=other_user_id).all()
+            db.session.query(DiaryEntry.media_id, DiaryEntry.media_type)
+            .filter(DiaryEntry.user_id == other_user_id)
+            .distinct()
+            .all()
         )
         
         common_watched = len(user1_media & user2_media)

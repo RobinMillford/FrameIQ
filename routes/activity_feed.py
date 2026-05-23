@@ -18,28 +18,81 @@ def enhanced_feed_page():
     return render_template('feed_enhanced.html')
 
 
+def _collect_activities(user_filter, activity_types, since_date):
+    """Fetch and serialize all activity items within scope, applying optional time filter."""
+    activities = []
+
+    if 'reviews' in activity_types:
+        q = Review.query.filter_by(is_deleted=False)
+        q = user_filter(q, Review.user_id)
+        if since_date:
+            q = q.filter(Review.created_at >= since_date)
+        for r in q.all():
+            activities.append({
+                'type': 'review', 'id': f'review_{r.id}',
+                'user_id': r.user_id, 'username': r.user.username,
+                'user_avatar': r.user.profile_picture,
+                'timestamp': r.created_at.isoformat(), 'timestamp_raw': r.created_at,
+                'media_id': r.media_id, 'media_type': r.media_type,
+                'media_title': r.media_title, 'rating': r.rating,
+                'content': r.content, 'likes_count': 0,
+            })
+
+    if 'likes' in activity_types:
+        q = user_filter(MediaLike.query, MediaLike.user_id)
+        if since_date:
+            q = q.filter(MediaLike.created_at >= since_date)
+        for lk in q.all():
+            activities.append({
+                'type': 'like', 'id': f'like_{lk.id}',
+                'user_id': lk.user_id, 'username': lk.user.username,
+                'user_avatar': lk.user.profile_picture,
+                'timestamp': lk.created_at.isoformat(), 'timestamp_raw': lk.created_at,
+                'media_id': lk.media_id, 'media_type': lk.media_type,
+            })
+
+    if 'comments' in activity_types:
+        q = MediaComment.query.filter_by(is_deleted=False)
+        q = user_filter(q, MediaComment.user_id)
+        if since_date:
+            q = q.filter(MediaComment.created_at >= since_date)
+        for c in q.all():
+            activities.append({
+                'type': 'comment', 'id': f'comment_{c.id}',
+                'user_id': c.user_id, 'username': c.user.username,
+                'user_avatar': c.user.profile_picture,
+                'timestamp': c.created_at.isoformat(), 'timestamp_raw': c.created_at,
+                'media_id': c.media_id, 'media_type': c.media_type,
+                'content': c.content,
+            })
+
+    if 'tags' in activity_types:
+        q = user_filter(UserMediaTag.query, UserMediaTag.user_id)
+        if since_date:
+            q = q.filter(UserMediaTag.created_at >= since_date)
+        for t in q.all():
+            activities.append({
+                'type': 'tag', 'id': f'tag_{t.id}',
+                'user_id': t.user_id, 'username': t.user.username,
+                'user_avatar': t.user.profile_picture,
+                'timestamp': t.created_at.isoformat(), 'timestamp_raw': t.created_at,
+                'media_id': t.media_id, 'media_type': t.media_type,
+                'tag_name': t.tag.name,
+            })
+
+    return activities
+
+
 @activity_feed.route('/api/feed/enhanced', methods=['GET'])
 @login_required
 def get_enhanced_feed():
-    """
-    Get enhanced activity feed with filters
-    
-    Query Parameters:
-    - feed_type: 'following' (default) or 'global' or 'personal'
-    - activity_types: comma-separated (e.g., 'reviews,likes,comments')
-    - page: page number (default: 1)
-    - per_page: items per page (default: 20)
-    - sort: 'recent' (default) or 'popular'
-    - time_range: 'day', 'week', 'month', 'all' (default)
-    """
     feed_type = request.args.get('feed_type', 'following')
     activity_types = request.args.get('activity_types', 'reviews,likes,comments,tags').split(',')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     sort_by = request.args.get('sort', 'recent')
     time_range = request.args.get('time_range', 'all')
-    
-    # Calculate time filter
+
     since_date = None
     if time_range == 'day':
         since_date = datetime.utcnow() - timedelta(days=1)
@@ -47,142 +100,39 @@ def get_enhanced_feed():
         since_date = datetime.utcnow() - timedelta(days=7)
     elif time_range == 'month':
         since_date = datetime.utcnow() - timedelta(days=30)
-    
-    # Collect activities
-    activities = []
-    
-    # Determine which users to include
+
     if feed_type == 'following':
         following_ids = [f.following_id for f in current_user.following if f.is_active]
         if not following_ids:
-            return jsonify({
-                'success': True,
-                'activities': [],
-                'total': 0,
-                'pages': 0,
-                'current_page': page
-            })
+            return jsonify({'success': True, 'activities': [], 'total': 0, 'pages': 0, 'current_page': page})
         user_filter = lambda query, user_field: query.filter(user_field.in_(following_ids))
     elif feed_type == 'personal':
         user_filter = lambda query, user_field: query.filter(user_field == current_user.id)
-    else:  # global
+    else:
         user_filter = lambda query, user_field: query
-    
-    # Fetch Reviews
-    if 'reviews' in activity_types:
-        reviews_query = Review.query.filter_by(is_deleted=False)
-        reviews_query = user_filter(reviews_query, Review.user_id)
-        if since_date:
-            reviews_query = reviews_query.filter(Review.created_at >= since_date)
-        
-        reviews = reviews_query.all()
-        for review in reviews:
-            activities.append({
-                'type': 'review',
-                'id': f'review_{review.id}',
-                'user_id': review.user_id,
-                'username': review.user.username,
-                'user_avatar': review.user.profile_picture,
-                'timestamp': review.created_at.isoformat(),
-                'timestamp_raw': review.created_at,
-                'media_id': review.media_id,
-                'media_type': review.media_type,
-                'media_title': review.media_title,
-                'rating': review.rating,
-                'content': review.content,
-                'likes_count': 0  # Can be enhanced later
-            })
-    
-    # Fetch Likes
-    if 'likes' in activity_types:
-        likes_query = MediaLike.query
-        likes_query = user_filter(likes_query, MediaLike.user_id)
-        if since_date:
-            likes_query = likes_query.filter(MediaLike.created_at >= since_date)
-        
-        likes = likes_query.all()
-        for like in likes:
-            activities.append({
-                'type': 'like',
-                'id': f'like_{like.id}',
-                'user_id': like.user_id,
-                'username': like.user.username,
-                'user_avatar': like.user.profile_picture,
-                'timestamp': like.created_at.isoformat(),
-                'timestamp_raw': like.created_at,
-                'media_id': like.media_id,
-                'media_type': like.media_type
-            })
-    
-    # Fetch Comments
-    if 'comments' in activity_types:
-        comments_query = MediaComment.query.filter_by(is_deleted=False)
-        comments_query = user_filter(comments_query, MediaComment.user_id)
-        if since_date:
-            comments_query = comments_query.filter(MediaComment.created_at >= since_date)
-        
-        comments = comments_query.all()
-        for comment in comments:
-            activities.append({
-                'type': 'comment',
-                'id': f'comment_{comment.id}',
-                'user_id': comment.user_id,
-                'username': comment.user.username,
-                'user_avatar': comment.user.profile_picture,
-                'timestamp': comment.created_at.isoformat(),
-                'timestamp_raw': comment.created_at,
-                'media_id': comment.media_id,
-                'media_type': comment.media_type,
-                'content': comment.content
-            })
-    
-    # Fetch Tags
-    if 'tags' in activity_types:
-        tags_query = UserMediaTag.query
-        tags_query = user_filter(tags_query, UserMediaTag.user_id)
-        if since_date:
-            tags_query = tags_query.filter(UserMediaTag.created_at >= since_date)
-        
-        tags = tags_query.all()
-        for tag in tags:
-            activities.append({
-                'type': 'tag',
-                'id': f'tag_{tag.id}',
-                'user_id': tag.user_id,
-                'username': tag.user.username,
-                'user_avatar': tag.user.profile_picture,
-                'timestamp': tag.created_at.isoformat(),
-                'timestamp_raw': tag.created_at,
-                'media_id': tag.media_id,
-                'media_type': tag.media_type,
-                'tag_name': tag.tag.name
-            })
-    
-    # Sort activities
+
+    activities = _collect_activities(user_filter, activity_types, since_date)
+
     if sort_by == 'recent':
         activities.sort(key=lambda x: x['timestamp_raw'], reverse=True)
     elif sort_by == 'popular':
-        # For now, just use recent. Can be enhanced with engagement metrics
         activities.sort(key=lambda x: x.get('likes_count', 0), reverse=True)
-    
-    # Remove timestamp_raw before returning
-    for activity in activities:
-        activity.pop('timestamp_raw', None)
-    
-    # Paginate
+
+    for a in activities:
+        a.pop('timestamp_raw', None)
+
     total = len(activities)
     start = (page - 1) * per_page
     end = start + per_page
-    paginated_activities = activities[start:end]
-    
+
     return jsonify({
         'success': True,
-        'activities': paginated_activities,
+        'activities': activities[start:end],
         'total': total,
         'pages': (total + per_page - 1) // per_page,
         'current_page': page,
         'has_next': end < total,
-        'has_prev': page > 1
+        'has_prev': page > 1,
     })
 
 

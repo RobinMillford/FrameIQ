@@ -273,8 +273,21 @@ def get_media_reviews(media_type, tmdb_id):
     
     # Check which reviews current user has liked and authors they follow (if logged in)
     if current_user.is_authenticated:
-        liked_review_ids = {like.review_id for like in ReviewLike.query.filter_by(user_id=current_user.id).all()}
-        followed_user_ids = {follow.following_id for follow in UserFollow.query.filter_by(follower_id=current_user.id, is_active=True).all()}
+        review_ids = [r['id'] for r in reviews_data]
+        author_ids = [r['user']['id'] for r in reviews_data]
+        liked_review_ids = {
+            row[0] for row in db.session.query(ReviewLike.review_id)
+            .filter(ReviewLike.user_id == current_user.id,
+                    ReviewLike.review_id.in_(review_ids))
+            .all()
+        }
+        followed_user_ids = {
+            row[0] for row in db.session.query(UserFollow.following_id)
+            .filter(UserFollow.follower_id == current_user.id,
+                    UserFollow.following_id.in_(author_ids),
+                    UserFollow.is_active == True)
+            .all()
+        }
         for review_data in reviews_data:
             review_data['is_liked_by_user'] = review_data['id'] in liked_review_ids
             # Pass user id of the author to check against followed_user_ids

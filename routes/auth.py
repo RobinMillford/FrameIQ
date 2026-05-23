@@ -24,6 +24,7 @@ auth = Blueprint('auth', __name__)
 # Configuration for file uploads
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+_DUMMY_HASH = generate_password_hash('_timing_dummy_')
 
 # Configure Cloudinary
 cloudinary.config(
@@ -127,9 +128,10 @@ def login():
         
         try:
             user = User.query.filter_by(username=username).first()
-            
-            if user and user.check_password(password):
-                # Pass the remember parameter to login_user
+            candidate_hash = user.password_hash if user else _DUMMY_HASH
+            password_ok = check_password_hash(candidate_hash, password)
+
+            if user and password_ok:
                 login_user(user, remember=remember_me)
                 flash('Logged in successfully')
                 logger.info(f"User {username} logged in successfully")
@@ -355,9 +357,9 @@ def profile_recommendations_preview():
 @login_required
 def edit_profile():
     if request.method == 'POST':
-        current_user.first_name = request.form.get('first_name', '')
-        current_user.last_name = request.form.get('last_name', '')
-        current_user.bio = request.form.get('bio', '')
+        current_user.first_name = request.form.get('first_name', '').strip()[:50]
+        current_user.last_name = request.form.get('last_name', '').strip()[:50]
+        current_user.bio = request.form.get('bio', '').strip()[:500]
         
         # Handle profile picture upload
         if 'profile_picture' in request.files:
