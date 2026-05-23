@@ -34,7 +34,7 @@ def generate_slug(title, list_id=None):
 def get_public_lists():
     """Get all public lists"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query public lists
     lists_query = UserList.query.filter_by(is_public=True).order_by(UserList.created_at.desc())
@@ -379,7 +379,7 @@ def discover_lists():
     """Discover popular and trending lists"""
     sort = request.args.get('sort', 'recent')  # recent, popular, trending
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Base query - only public lists
     query = UserList.query.filter_by(is_public=True)

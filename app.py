@@ -228,12 +228,24 @@ app.register_blueprint(agent_chat)
 # Route Handlers
 # ============================================================================
 
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com fonts.googleapis.com; "
+    "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
+    "img-src 'self' data: blob: image.tmdb.org res.cloudinary.com via.placeholder.com; "
+    "frame-src www.youtube.com youtube.com; "
+    "connect-src 'self';"
+)
+
+
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = _CSP
     if _is_production:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response

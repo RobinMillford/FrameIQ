@@ -95,7 +95,7 @@ def get_followers(user_id):
     
     # Get pagination parameters
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query followers (users who follow this user)
     followers_query = UserFollow.query.filter_by(
@@ -153,7 +153,7 @@ def get_following(user_id):
     
     # Get pagination parameters
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query following (users this user follows)
     following_query = UserFollow.query.filter_by(
@@ -236,7 +236,7 @@ def get_follow_status(user_id):
 def get_activity_feed():
     """Get recent reviews from users the current user follows"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query: Get reviews from users the current user follows
     feed_query = db.session.query(Review).join(
@@ -270,7 +270,7 @@ def feed():
 def get_global_feed():
     """Get recent reviews from all users"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query: Get all reviews
     feed_query = Review.query.filter_by(is_deleted=False).order_by(Review.created_at.desc())

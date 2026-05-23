@@ -31,7 +31,7 @@ def search_users():
     """Search for users by username or name"""
     query_str = request.args.get('q', '').strip()
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     if not query_str:
         return jsonify({'users': [], 'total': 0}), 200
@@ -181,7 +181,7 @@ def suggested_follows():
 def popular_users():
     """Get most popular users by follower count"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     timeframe = request.args.get('timeframe', 'all')  # all, week, month
     
     query = User.query.filter(User.is_active == True)  # type: ignore
@@ -284,11 +284,15 @@ def similar_users(user_id):
     
     media_ids = [r.media_id for r in user_reviews]
     
+    user_avg_rating = db.session.query(func.avg(Review.rating)).filter(
+        Review.user_id == user_id, Review.is_deleted == False
+    ).scalar() or 3.0
+
     # Find other users who reviewed the same movies
     similar_user_scores = db.session.query(
         Review.user_id,
         func.count(Review.id).label('common_movies'),
-        func.avg(func.abs(Review.rating - user.total_reviews)).label('avg_rating_diff')
+        func.avg(func.abs(Review.rating - user_avg_rating)).label('avg_rating_diff')
     ).filter(
         Review.media_id.in_(media_ids),
         Review.user_id != user_id,

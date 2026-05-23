@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, TVShowProgress, TVEpisodeWatch, UpcomingEpisode
-from api.tmdb_client import fetch_tv_show_details
+from api.tmdb_client import fetch_tv_show_details, cached_tmdb_request
 from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 import requests
@@ -255,17 +255,11 @@ def mark_season_watched(show_id, season):
         data = request.get_json() or {}
         watched_date = data.get('watched_date', datetime.now().strftime('%Y-%m-%d'))
         
-        # Fetch season details from TMDb
-        response = requests.get(
-            f'{TMDB_BASE_URL}/tv/{show_id}/season/{season}',
-            params={'api_key': TMDB_API_KEY}
-        )
-        
-        if response.status_code != 200:
-            print(f"ERROR: Failed to fetch season details from TMDb: {response.status_code}")
+        # Fetch season details from TMDb (cached)
+        season_url = f'{TMDB_BASE_URL}/tv/{show_id}/season/{season}?api_key={TMDB_API_KEY}'
+        season_data = cached_tmdb_request(season_url)
+        if not season_data:
             return jsonify({'error': 'Failed to fetch season details'}), 400
-        
-        season_data = response.json()
         episodes = season_data.get('episodes', [])
         print(f"Found {len(episodes)} episodes in season {season}")
         
@@ -570,16 +564,9 @@ def my_shows_page():
 def update_season_progress(progress, show_id):
     """Update watched seasons count based on completed seasons"""
     try:
-        # Fetch show details to get season info
-        response = requests.get(
-            f'{TMDB_BASE_URL}/tv/{show_id}',
-            params={'api_key': TMDB_API_KEY}
-        )
-        
-        if response.status_code != 200:
+        show_data = fetch_tv_show_details(show_id)
+        if not show_data:
             return
-        
-        show_data = response.json()
         seasons = show_data.get('seasons', [])
         
         # Count completed seasons
@@ -695,15 +682,22 @@ def get_watched_episodes(show_id):
 def unmark_season_watched(show_id, season_number):
     """Unmark all episodes in a season as unwatched"""
     try:
-        # Delete all episode watches for this season
         TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
             show_id=show_id,
             season_number=season_number
         ).delete()
-        
+
+        progress = TVShowProgress.query.filter_by(
+            user_id=current_user.id, show_id=show_id
+        ).first()
+        if progress:
+            progress.watched_episodes = TVEpisodeWatch.query.filter_by(
+                user_id=current_user.id, show_id=show_id
+            ).count()
+            update_season_progress(progress, show_id)
+
         db.session.commit()
-        
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -716,17 +710,23 @@ def unmark_season_watched(show_id, season_number):
 def unmark_single_episode(show_id, season_number, episode_number):
     """Unmark a single episode as unwatched (new version)"""
     try:
-        # Delete episode watch
         TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
             show_id=show_id,
             season_number=season_number,
             episode_number=episode_number
         ).delete()
-        
-        db.session.commit()
-        
 
+        progress = TVShowProgress.query.filter_by(
+            user_id=current_user.id, show_id=show_id
+        ).first()
+        if progress:
+            progress.watched_episodes = max(0, TVEpisodeWatch.query.filter_by(
+                user_id=current_user.id, show_id=show_id
+            ).count())
+            update_season_progress(progress, show_id)
+
+        db.session.commit()
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -739,24 +739,22 @@ def unmark_single_episode(show_id, season_number, episode_number):
 def mark_all_watched(show_id):
     """Mark all episodes in all seasons as watched (complete series)"""
     try:
-        # Fetch show details
-        response = requests.get(
-            f'{TMDB_BASE_URL}/tv/{show_id}',
-            params={'api_key': TMDB_API_KEY}
-        )
-        show_data = response.json()
-        
+        # Fetch show details (cached)
+        show_data = fetch_tv_show_details(show_id)
+        if not show_data:
+            return jsonify({'success': False, 'error': 'Failed to fetch show details'}), 400
+        show_status = show_data.get('status', '')
+
         # Mark each episode in each season
         for season in show_data.get('seasons', []):
             if season['season_number'] == 0:  # Skip specials
                 continue
-            
-            # Fetch season details
-            season_response = requests.get(
-                f'{TMDB_BASE_URL}/tv/{show_id}/season/{season["season_number"]}',
-                params={'api_key': TMDB_API_KEY}
-            )
-            season_data = season_response.json()
+
+            # Fetch season details (cached)
+            season_url = f'{TMDB_BASE_URL}/tv/{show_id}/season/{season["season_number"]}?api_key={TMDB_API_KEY}'
+            season_data = cached_tmdb_request(season_url)
+            if not season_data:
+                continue
             
             # Mark each episode
             for episode in season_data.get('episodes', []):
@@ -785,11 +783,19 @@ def mark_all_watched(show_id):
         ).first()
         
         if progress:
-            progress.status = 'completed'
-            progress.completed_at = datetime.utcnow()
-        
+            # Sync watched_episodes from actual DB count (HI-01)
+            db.session.flush()
+            progress.watched_episodes = TVEpisodeWatch.query.filter_by(
+                user_id=current_user.id, show_id=show_id
+            ).count()
+            if show_status in ['Ended', 'Canceled']:
+                progress.status = 'completed'
+                progress.completed_at = datetime.utcnow()
+            else:
+                progress.status = 'watching'
+
         db.session.commit()
-        
+
         return jsonify({'success': True, 'message': 'Series completed!'})
     except Exception as e:
         db.session.rollback()

@@ -27,7 +27,7 @@ def diary_page():
 def get_diary_entries():
     """Get diary entries for the current user"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
     
@@ -59,7 +59,7 @@ def get_user_diary(user_id):
     user = User.query.get_or_404(user_id)
     
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query diary entries
     query = user.diary_entries.order_by(DiaryEntry.watched_date.desc(), DiaryEntry.created_at.desc())

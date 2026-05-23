@@ -56,7 +56,7 @@ def get_trending_media():
     for item in results:
         # Get comment count
         comment_count = MediaComment.query.filter(
-            MediaComment.media_id == item.tmdb_id,
+            MediaComment.media_id == item.id,
             MediaComment.media_type == item.media_type,
             MediaComment.created_at >= since_date,
             MediaComment.is_deleted == False
@@ -64,7 +64,7 @@ def get_trending_media():
         
         # Get review count
         review_count = Review.query.filter(
-            Review.media_id == item.tmdb_id,
+            Review.media_id == item.id,
             Review.media_type == item.media_type,
             Review.created_at >= since_date
         ).count()

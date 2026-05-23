@@ -4,7 +4,7 @@ Shows which friends have watched/reviewed specific media items
 """
 from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
-from models import db, User, UserFollow, Review, DiaryEntry
+from models import db, User, UserFollow, Review, DiaryEntry, MediaItem
 from sqlalchemy import and_, func
 
 popular_bp = Blueprint('popular', __name__)
@@ -15,9 +15,20 @@ popular_bp = Blueprint('popular', __name__)
 def get_popular_with_friends(media_id):
     """Get list of friends who have watched/reviewed this media"""
     try:
+        # Resolve TMDB ID → internal MediaItem PK
+        media_type = None
+        media_item = MediaItem.query.filter_by(tmdb_id=media_id).first()
+        if not media_item:
+            return jsonify({
+                'success': True, 'friends': [],
+                'total_count': 0, 'watched_count': 0,
+                'reviewed_count': 0, 'average_rating': None,
+            })
+        internal_id = media_item.id
+
         # Get IDs of users current user follows
         following_ids = [f.following_id for f in current_user.following if f.is_active]
-        
+
         if not following_ids:
             return jsonify({
                 'success': True,
@@ -27,7 +38,7 @@ def get_popular_with_friends(media_id):
                 'reviewed_count': 0,
                 'average_rating': None
             })
-        
+
         # Find friends who have diary entries for this media
         friends_watched = db.session.query(
             User,
@@ -38,10 +49,10 @@ def get_popular_with_friends(media_id):
         ).filter(
             and_(
                 User.id.in_(following_ids),
-                DiaryEntry.media_id == media_id
+                DiaryEntry.media_id == internal_id
             )
         ).order_by(DiaryEntry.watched_date.desc()).all()
-        
+
         # Find friends who have reviewed this media
         friends_reviewed = db.session.query(
             User,
@@ -53,7 +64,7 @@ def get_popular_with_friends(media_id):
         ).filter(
             and_(
                 User.id.in_(following_ids),
-                Review.media_id == media_id,
+                Review.media_id == internal_id,
                 Review.is_deleted == False
             )
         ).all()

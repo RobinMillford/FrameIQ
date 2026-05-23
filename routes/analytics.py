@@ -4,7 +4,7 @@ Handles data aggregation for user statistics and charts
 """
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
-from models import db, User, Review, MediaItem, user_viewed
+from models import db, User, Review, MediaItem, user_viewed, user_watchlist
 from sqlalchemy import func, extract
 from collections import Counter
 from datetime import datetime, timedelta
@@ -34,7 +34,7 @@ def get_user_stats(user_id):
     ).count()
 
     # Watchlist Completion
-    total_watchlist = db.session.query(db.Table('user_watchlist', db.metadata, autoload_with=db.engine)).filter_by(user_id=user_id).count()
+    total_watchlist = db.session.query(user_watchlist).filter(user_watchlist.c.user_id == user_id).count()
     watchlist_ratio = round((total_watched / (total_watched + total_watchlist) * 100), 1) if (total_watched + total_watchlist) > 0 else 0
     
     # 2. Average Rating

@@ -148,7 +148,7 @@ def get_media_reviews(media_id):
     """Get all reviews for a specific movie/TV show (using TMDB ID)"""
     media_type = request.args.get('media_type', 'movie')
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
     sort_by = request.args.get('sort', 'recent')  # recent, popular, rating_high, rating_low, all
     
     if media_type not in ['movie', 'tv']:
@@ -215,7 +215,7 @@ def get_media_reviews(media_id):
 def review_feed():
     """Get latest reviews feed (all or friends only)"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     friends_only = request.args.get('friends_only', 'false').lower() == 'true'
     
     query = Review.query.filter_by(is_deleted=False)
@@ -262,7 +262,7 @@ def review_feed():
 def popular_reviews():
     """Get popular reviews (most liked)"""
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     timeframe = request.args.get('timeframe', 'week')  # week, month, year, all
     
     query = Review.query.filter_by(is_deleted=False)
@@ -304,7 +304,7 @@ def user_reviews(user_id):
     user = User.query.get_or_404(user_id)
     
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     query = Review.query.filter_by(
         user_id=user_id,

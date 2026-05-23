@@ -258,7 +258,7 @@ def get_media_reviews(media_type, tmdb_id):
     
     # Get pagination parameters
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
     
     # Query reviews
     reviews_query = Review.query.filter_by(
@@ -316,7 +316,7 @@ def get_user_reviews(user_id):
     
     # Get pagination parameters
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 100)
     
     # Query reviews
     reviews_query = Review.query.filter_by(
