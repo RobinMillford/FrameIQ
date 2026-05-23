@@ -315,8 +315,10 @@
     </button>
 
     <script>
-        const BASE_URL = 'https://api.themoviedb.org/3';
-        const API_KEY = '{{ api_key }}';
+        function tmdbUrl(path, params) {
+            const q = new URLSearchParams(Object.assign({path}, params || {}));
+            return '/api/tmdb/proxy?' + q.toString();
+        }
 
         document.addEventListener("DOMContentLoaded", function() {
             fetchTrendingMovies();
@@ -346,7 +348,7 @@
         }
     
         function fetchTrendingMovies() {
-            fetch(`${BASE_URL}/trending/movie/week?api_key=${API_KEY}`)
+            fetch(tmdbUrl('/trending/movie/week'))
             .then(response => response.json())
             .then(data => {
                 const slider = document.getElementById("trending-slider");
@@ -375,7 +377,7 @@
 
         async function fetchLatestTrailers() {
             try {
-    const upcomingUrl = `${BASE_URL}/movie/upcoming?api_key=${API_KEY}&language=en-US&page=1`;
+    const upcomingUrl = tmdbUrl('/movie/upcoming', {language: 'en-US', page: 1});
                 const response = await fetch(upcomingUrl);
                 const data = await response.json();
                 
@@ -411,7 +413,7 @@
 }
 
 async function fetchMovieTrailer(movieId) {
-    const url = `${BASE_URL}/movie/${movieId}/videos?api_key=${API_KEY}&language=en-US`;
+    const url = tmdbUrl(`/movie/${movieId}/videos`, {language: 'en-US'});
 
     try {
         const response = await fetch(url);
@@ -452,7 +454,7 @@ async function fetchMovieTrailer(movieId) {
                 return;
             }
 
-            fetch(`${BASE_URL}/search/movie?api_key=${API_KEY}&language=en-US&query=${input}&page=1&include_adult=true`)
+            fetch(tmdbUrl('/search/movie', {language: 'en-US', query: input, page: 1, include_adult: true}))
             .then(response => response.json())
             .then(data => {
                 data.results.forEach(movie => {
@@ -506,7 +508,7 @@ async function fetchMovieTrailer(movieId) {
 
             for (const [genre, id] of Object.entries(genres)) {
                 try {
-                    const response = await fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${id}&sort_by=popularity.desc&page=1`);
+                    const response = await fetch(tmdbUrl('/discover/movie', {with_genres: id, sort_by: 'popularity.desc', page: 1}));
                     const data = await response.json();
                     
                     const container = document.getElementById(`${genre}-movies`);

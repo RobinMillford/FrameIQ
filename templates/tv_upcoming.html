@@ -125,7 +125,10 @@
 </style>
 
 <script>
-const TMDB_API_KEY = '{{ api_key }}';
+function tmdbUrl(path, params) {
+    const q = new URLSearchParams(Object.assign({path}, params || {}));
+    return '/api/tmdb/proxy?' + q.toString();
+}
 let allEpisodes = [];
 let currentFilter = 'today';
 
@@ -149,18 +152,14 @@ async function loadUpcomingEpisodes() {
         
         for (const show of shows.filter(s => s.status === 'watching' || s.status === 'plan_to_watch')) {
             try {
-                const showResponse = await fetch(
-                    `https://api.themoviedb.org/3/tv/${show.show_id}?api_key=${TMDB_API_KEY}`
-                );
+                const showResponse = await fetch(tmdbUrl(`/tv/${show.show_id}`));
                 const showData = await showResponse.json();
                 
                 // Get all seasons
                 for (const season of showData.seasons || []) {
                     if (season.season_number === 0) continue; // Skip specials
                     
-                    const seasonResponse = await fetch(
-                        `https://api.themoviedb.org/3/tv/${show.show_id}/season/${season.season_number}?api_key=${TMDB_API_KEY}`
-                    );
+                    const seasonResponse = await fetch(tmdbUrl(`/tv/${show.show_id}/season/${season.season_number}`));
                     const seasonData = await seasonResponse.json();
                     
                     // Check each episode

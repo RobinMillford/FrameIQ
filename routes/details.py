@@ -91,7 +91,6 @@ def tv_detail(show_id):
                               user_viewed_ids=user_viewed_ids,
                               user_lists_with_show=user_lists_with_show,
                               diary_entries=diary_entries,
-                              api_key=current_app.config.get('TMDB_API_KEY', ''),
                               today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:
         print(f"Error fetching TV show details: {e}")

@@ -192,11 +192,11 @@ def news():
 
 @main.route('/movies')
 def movies():
-    return render_template('movies.html', api_key=TMDB_API_KEY_2)
+    return render_template('movies.html')
 
 @main.route('/tv_shows')
 def tv_shows():
-    return render_template('tv_shows.html', api_key=TMDB_API_KEY_2)
+    return render_template('tv_shows.html')
 
 @main.route('/genre/<genre_name>')
 def genre_page(genre_name):

@@ -49,6 +49,7 @@ from routes.lists_advanced import lists_advanced  # Week 2b
 # Local Imports - AI Agent
 from src.api.flask_integration import agent_chat
 from routes.reviews_enhanced import reviews_enhanced_bp
+from routes.tmdb_proxy import tmdb_proxy_bp
 
 # Week 3: Film Stats & Analytics
 from routes.stats import stats_bp
@@ -199,6 +200,7 @@ app.register_blueprint(media_comments_bp)
 app.register_blueprint(priorities_bp)
 app.register_blueprint(lists_advanced)
 app.register_blueprint(reviews_enhanced_bp)
+app.register_blueprint(tmdb_proxy_bp)
 
 # Week 4: User Discovery
 from routes.user_discovery import user_discovery

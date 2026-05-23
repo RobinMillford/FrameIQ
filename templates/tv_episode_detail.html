@@ -149,7 +149,10 @@
 </div>
 
 <script>
-const TMDB_API_KEY = '{{ api_key }}';
+function tmdbUrl(path, params) {
+    const q = new URLSearchParams(Object.assign({path}, params || {}));
+    return '/api/tmdb/proxy?' + q.toString();
+}
 const SHOW_ID = {{ show_id }};
 const SEASON_NUMBER = {{ season_number }};
 const EPISODE_NUMBER = {{ episode_number }};
@@ -160,9 +163,7 @@ let selectedRating = 0;
 async function loadEpisodeData() {
     try {
         // Load episode details from TMDb
-        const response = await fetch(
-            `https://api.themoviedb.org/3/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${EPISODE_NUMBER}?api_key=${TMDB_API_KEY}&append_to_response=credits`
-        );
+        const response = await fetch(tmdbUrl(`/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${EPISODE_NUMBER}`, {append_to_response: 'credits'}));
         episodeData = await response.json();
         
         // Check if watched
@@ -277,9 +278,7 @@ function renderCredits() {
 
 async function setupNavigation() {
     // Get all episodes in season
-    const response = await fetch(
-        `https://api.themoviedb.org/3/tv/${SHOW_ID}/season/${SEASON_NUMBER}?api_key=${TMDB_API_KEY}`
-    );
+    const response = await fetch(tmdbUrl(`/tv/${SHOW_ID}/season/${SEASON_NUMBER}`));
     const seasonData = await response.json();
     
     const currentIndex = seasonData.episodes.findIndex(ep => ep.episode_number === EPISODE_NUMBER);

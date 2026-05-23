@@ -94,7 +94,10 @@
 </div>
 
 <script>
-const TMDB_API_KEY = '{{ api_key }}';
+function tmdbUrl(path, params) {
+    const q = new URLSearchParams(Object.assign({path}, params || {}));
+    return '/api/tmdb/proxy?' + q.toString();
+}
 const SHOW_ID = {{ show_id }};
 const SEASON_NUMBER = {{ season_number }};
 let seasonData = null;
@@ -103,15 +106,11 @@ let watchedEpisodes = new Set();
 async function loadSeasonData() {
     try {
         // Load season details from TMDb
-        const response = await fetch(
-            `https://api.themoviedb.org/3/tv/${SHOW_ID}/season/${SEASON_NUMBER}?api_key=${TMDB_API_KEY}`
-        );
+        const response = await fetch(tmdbUrl(`/tv/${SHOW_ID}/season/${SEASON_NUMBER}`));
         seasonData = await response.json();
         
         // Load show name
-        const showResponse = await fetch(
-            `https://api.themoviedb.org/3/tv/${SHOW_ID}?api_key=${TMDB_API_KEY}`
-        );
+        const showResponse = await fetch(tmdbUrl(`/tv/${SHOW_ID}`));
         const showData = await showResponse.json();
         
         // Load watched episodes

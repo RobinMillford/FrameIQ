@@ -21,14 +21,14 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 @login_required
 def tv_dashboard():
     """TV Tracking Dashboard - main page for TV tracking"""
-    return render_template('tv_dashboard.html', api_key=TMDB_API_KEY)
+    return render_template('tv_dashboard.html')
 
 
 @tv_tracking.route('/tv/upcoming')
 @login_required
 def tv_upcoming():
     """Upcoming episodes page with filters"""
-    return render_template('tv_upcoming.html', api_key=TMDB_API_KEY)
+    return render_template('tv_upcoming.html')
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/start-tracking', methods=['POST'])
@@ -556,14 +556,14 @@ def get_episode_calendar():
 @login_required
 def tv_calendar_page():
     """Render TV calendar page"""
-    return render_template('tv_calendar.html', api_key=TMDB_API_KEY)
+    return render_template('tv_calendar.html')
 
 
 @tv_tracking.route('/tv/my-shows')
 @login_required
 def my_shows_page():
     """Render my shows tracking page"""
-    return render_template('tv_my_shows.html', api_key=TMDB_API_KEY)
+    return render_template('tv_my_shows.html')
 
 
 # Helper function
@@ -626,7 +626,6 @@ def season_detail(show_id, season_number):
         show_id=show_id,
         show_name=show_name,
         season_number=season_number,
-        api_key=TMDB_API_KEY
     )
 
 
@@ -648,7 +647,6 @@ def episode_detail(show_id, season_number, episode_number):
         show_name=show_name,
         season_number=season_number,
         episode_number=episode_number,
-        api_key=TMDB_API_KEY
     )
 
 
@@ -776,7 +774,7 @@ def mark_all_watched(show_id):
                         show_id=show_id,
                         season_number=season['season_number'],
                         episode_number=episode['episode_number'],
-                        watched_at=datetime.utcnow()
+                        watched_date=datetime.utcnow().date()
                     )
                     db.session.add(watch)
         

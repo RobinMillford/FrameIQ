@@ -150,15 +150,9 @@ class Review(db.Model):
         db.CheckConstraint('rating >= 0.5 AND rating <= 5.0', name='valid_rating'),
     )
     
-    def to_dict(self):
-        """Convert review to dictionary for JSON responses"""
-        return {
+    def to_dict(self, include_user=True):
+        d = {
             'id': self.id,
-            'user': {
-                'id': self.user.id,
-                'username': self.user.username,
-                'profile_picture': self.user.profile_picture
-            },
             'media': {
                 'id': self.media.tmdb_id,
                 'title': self.media.title,
@@ -175,9 +169,16 @@ class Review(db.Model):
             'contains_spoilers': self.contains_spoilers,
             'likes_count': self.likes_count,
             'comments_count': self.comments_count,
-            'is_author_self': current_user.is_authenticated and self.user_id == current_user.id
+            'is_author_self': current_user.is_authenticated and self.user_id == current_user.id,
         }
-    
+        if include_user:
+            d['user'] = {
+                'id': self.user.id,
+                'username': self.user.username,
+                'profile_picture': self.user.profile_picture,
+            }
+        return d
+
     def __repr__(self):
         return f'<Review {self.id} by {self.user.username} for {self.media.title}>'
 

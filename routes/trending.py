@@ -220,7 +220,7 @@ def get_trending_reviews():
             'username': review.user.username,
             'media_id': review.media_id,
             'media_type': review.media_type,
-            'media_title': review.media_title,
+            'media_title': review.media.title if review.media else None,
             'rating': review.rating,
             'content': review.content,
             'created_at': review.created_at.isoformat(),

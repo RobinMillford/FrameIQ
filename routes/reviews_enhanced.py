@@ -31,75 +31,6 @@ def review_popular_page():
 # REVIEW CRUD
 # ============================================================================
 
-@reviews_enhanced_bp.route('/api/reviews', methods=['POST'])
-@login_required
-def create_review():
-    """Create a new review"""
-    data = request.get_json()
-    
-    # Validate required fields
-    media_id = data.get('media_id')
-    media_type = data.get('media_type')
-    rating = data.get('rating')
-    
-    if not all([media_id, media_type, rating]):
-        return jsonify({'error': 'media_id, media_type, and rating are required'}), 400
-    
-    if media_type not in ['movie', 'tv']:
-        return jsonify({'error': 'media_type must be "movie" or "tv"'}), 400
-    
-    # Validate rating (0.5 to 5.0 in 0.5 increments)
-    try:
-        rating = float(rating)
-        if rating < 0.5 or rating > 5.0 or (rating * 2) % 1 != 0:
-            return jsonify({'error': 'rating must be between 0.5 and 5.0 in 0.5 increments'}), 400
-    except (ValueError, TypeError):
-        return jsonify({'error': 'Invalid rating format'}), 400
-    
-    # Check if user already has a review for this media
-    existing = Review.query.filter_by(
-        user_id=current_user.id,
-        media_id=media_id,
-        media_type=media_type,
-        is_deleted=False
-    ).first()
-    
-    if existing:
-        return jsonify({'error': 'You already have a review for this item'}), 400
-    
-    try:
-        # Parse watched_date if provided
-        watched_date = None
-        if data.get('watched_date'):
-            try:
-                watched_date = datetime.strptime(data['watched_date'], '%Y-%m-%d').date()
-            except ValueError:
-                return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-        
-        review = Review(
-            user_id=current_user.id,
-            media_id=media_id,
-            media_type=media_type,
-            rating=rating,
-            title=data.get('title', '').strip() or None,
-            content=data.get('content', '').strip() or None,
-            has_spoilers=data.get('has_spoilers', False),
-            watched_date=watched_date,
-            rewatch=data.get('rewatch', False)
-        )
-        
-        db.session.add(review)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Review created successfully',
-            'review': review.to_dict()
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>', methods=['GET'])
 def get_review(review_id):
@@ -160,7 +91,7 @@ def update_review(review_id):
         if 'content' in data:
             review.content = data['content'].strip() or None
         if 'has_spoilers' in data:
-            review.has_spoilers = data['has_spoilers']
+            review.contains_spoilers = data['has_spoilers']
         if 'rewatch' in data:
             review.rewatch = data['rewatch']
         

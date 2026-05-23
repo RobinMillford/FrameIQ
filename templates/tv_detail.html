@@ -1593,9 +1593,7 @@
     
     <!-- TV Tracking Scripts -->
     <script>
-        // Make TMDB API key available to JavaScript
-        window.TMDB_API_KEY = '{{ api_key }}';
-        console.log('TMDB API Key set:', window.TMDB_API_KEY ? 'YES' : 'NO', window.TMDB_API_KEY);
+        window.TMDB_API_KEY = 'proxy';
     </script>
     <script src="{{ url_for('static', filename='js/tv-tracker.js') }}?v=12"></script>
     <script src="{{ url_for('static', filename='js/tv-seasons.js') }}?v=12"></script>

@@ -494,8 +494,10 @@
     </button>
         
         <script>
-        const BASE_URL = 'https://api.themoviedb.org/3';
-        const API_KEY = '{{ api_key }}';
+        function tmdbUrl(path, params) {
+            const q = new URLSearchParams(Object.assign({path}, params || {}));
+            return '/api/tmdb/proxy?' + q.toString();
+        }
 
             document.addEventListener("DOMContentLoaded", function() {
                 fetchTrendingTVShows();
@@ -525,7 +527,7 @@
         }
         
             function fetchTrendingTVShows() {
-            fetch(`${BASE_URL}/trending/tv/week?api_key=${API_KEY}`)
+            fetch(tmdbUrl('/trending/tv/week'))
                 .then(response => response.json())
                 .then(data => {
                 const slider = document.getElementById("trending-slider");
@@ -556,7 +558,7 @@
         async function fetchBestTVShows() {
             try {
                 // Fetch top-rated TV shows
-                const response = await fetch(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}&language=en-US&page=1`);
+                const response = await fetch(tmdbUrl('/tv/top_rated', {language: 'en-US', page: 1}));
                 const data = await response.json();
                 
                 if (data.results && data.results.length > 0) {
@@ -666,7 +668,7 @@
                 return;
             }
 
-            fetch(`${BASE_URL}/search/tv?api_key=${API_KEY}&language=en-US&query=${input}&page=1&include_adult=true`)
+            fetch(tmdbUrl('/search/tv', {language: 'en-US', query: input, page: 1, include_adult: true}))
             .then(response => response.json())
             .then(data => {
                 data.results.forEach(show => {
@@ -728,7 +730,7 @@
 
             for (const [genre, id] of Object.entries(genres)) {
                 try {
-                    let url = `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=${id}&sort_by=popularity.desc&page=1`;
+                    let url = tmdbUrl('/discover/tv', {with_genres: id, sort_by: 'popularity.desc', page: 1});
                     
                     // Log the URL for debugging
                     if (genre === 'scifi') {

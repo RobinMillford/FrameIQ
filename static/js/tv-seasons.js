@@ -55,7 +55,7 @@ class TVSeasonsManager {
 
     async loadShowDetails() {
         console.log('TVSeasonsManager: Fetching show details from TMDb...');
-        const response = await fetch(`https://api.themoviedb.org/3/tv/${this.showId}?api_key=${this.apiKey}`);
+        const response = await fetch(`/api/tmdb/proxy?path=${encodeURIComponent('/tv/' + this.showId)}`);
         
         if (!response.ok) {
             throw new Error(`TMDb API error: ${response.status}`);
