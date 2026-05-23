@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 import requests
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 tv_tracking = Blueprint('tv_tracking', __name__)
 
@@ -67,7 +70,8 @@ def start_tracking_show(show_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/progress', methods=['GET'])
@@ -119,7 +123,8 @@ def get_show_progress(show_id):
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season>/<int:episode>/mark-watched', methods=['POST'])
@@ -236,7 +241,8 @@ def mark_episode_watched(show_id, season, episode):
         import traceback
         traceback.print_exc()
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/season/<int:season>/mark-watched', methods=['POST'])
@@ -378,7 +384,8 @@ def mark_season_watched(show_id, season):
         import traceback
         traceback.print_exc()
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/my-shows', methods=['GET'])
@@ -401,7 +408,8 @@ def get_my_tracked_shows():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/update-status', methods=['POST'])
@@ -439,7 +447,8 @@ def update_show_status(show_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/upcoming-episodes', methods=['GET'])
@@ -486,7 +495,8 @@ def get_upcoming_episodes():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/calendar', methods=['GET'])
@@ -538,7 +548,8 @@ def get_episode_calendar():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/tv/calendar')
@@ -677,7 +688,8 @@ def get_watched_episodes(show_id):
         print(f"ERROR in get_watched_episodes: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/season/<int:season_number>/unmark-watched', methods=['POST'])
@@ -697,7 +709,8 @@ def unmark_season_watched(show_id, season_number):
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/unmark-watched', methods=['POST'])
@@ -719,7 +732,8 @@ def unmark_single_episode(show_id, season_number, episode_number):
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/mark-all-watched', methods=['POST'])
@@ -781,7 +795,8 @@ def mark_all_watched(show_id):
         return jsonify({'success': True, 'message': 'Series completed!'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/update-watch', methods=['POST'])
@@ -819,4 +834,5 @@ def update_episode_watch(show_id, season_number, episode_number):
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500

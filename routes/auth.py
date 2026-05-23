@@ -4,6 +4,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User, Review
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from extensions import limiter
 from datetime import datetime
 import os
 import re
@@ -34,7 +35,21 @@ cloudinary.config(
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+def _valid_image_bytes(stream):
+    """Verify magic bytes match a real image — extension alone is not enough."""
+    header = stream.read(12)
+    stream.seek(0)
+    if header[:4] == b'\x89PNG':
+        return True
+    if header[:3] == b'\xff\xd8\xff':
+        return True
+    if header[:6] in (b'GIF87a', b'GIF89a'):
+        return True
+    return False
+
 @auth.route('/register', methods=['GET', 'POST'])
+@limiter.limit("5 per minute; 20 per hour")
 def register():
     if request.method == 'POST':
         username = request.form['username']
@@ -103,6 +118,7 @@ def register():
     return render_template('register.html')
 
 @auth.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute; 50 per hour")
 def login():
     if request.method == 'POST':
         username = request.form['username']
@@ -346,7 +362,7 @@ def edit_profile():
         # Handle profile picture upload
         if 'profile_picture' in request.files:
             file = request.files['profile_picture']
-            if file and file.filename != '' and allowed_file(file.filename):
+            if file and file.filename != '' and allowed_file(file.filename) and _valid_image_bytes(file.stream):
                 try:
                     # Upload to Cloudinary
                     logger.info(f"Uploading profile picture for user {current_user.id}")

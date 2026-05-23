@@ -12,6 +12,7 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
+from extensions import limiter
 
 # Local Imports - Models
 from models import db, User
@@ -73,6 +74,12 @@ app.config['TMDB_API_KEY'] = os.getenv("TMDB_API_KEY")
 
 # CSRF protection
 csrf = CSRFProtect(app)
+
+# Rate limiting
+limiter.init_app(app)
+
+# File upload size cap (5 MB)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 # Session cookie security — HTTPS-only in production, allow HTTP in local dev
 _is_production = bool(os.getenv('RENDER') or os.getenv('K_SERVICE'))
