@@ -111,18 +111,17 @@
                 
                 if (data.lists && data.lists.length > 0) {
                     totalPages = data.pages;
-                    
+
                     data.lists.forEach(list => {
                         container.appendChild(createListCard(list));
                     });
-                    
-                    // Update results count
-                    document.getElementById('results-count').textContent = 
+
+                    document.getElementById('results-count').textContent =
                         `Showing ${data.lists.length} of ${data.total} lists`;
-                    
-                    // Update pagination
+
                     updatePagination(data);
                 } else {
+                    document.getElementById('results-count').textContent = '0 lists found';
                     emptyState.classList.remove('hidden');
                     pagination.classList.add('hidden');
                 }
@@ -136,7 +135,7 @@
 
         function createListCard(list) {
             const card = document.createElement('a');
-            card.href = `/lists/l/${list.slug}`;
+            card.href = list.slug ? `/lists/l/${list.slug}` : `/lists/${list.id}`;
             card.className = 'block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 transition-all transform hover:-translate-y-1';
             
             // Cover image or gradient
