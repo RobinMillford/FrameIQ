@@ -49,11 +49,11 @@ class User(UserMixin, db.Model):
     profile_picture = db.Column(db.String(200))
     
     # Relationships
-    watchlist = db.relationship('MediaItem', secondary=user_watchlist, lazy='subquery',
+    watchlist = db.relationship('MediaItem', secondary=user_watchlist, lazy='select',
         backref=db.backref('watchlisted_by', lazy=True))
-    wishlist = db.relationship('MediaItem', secondary=user_wishlist, lazy='subquery',
+    wishlist = db.relationship('MediaItem', secondary=user_wishlist, lazy='select',
         backref=db.backref('wishlisted_by', lazy=True))
-    viewed_media = db.relationship('MediaItem', secondary=user_viewed, lazy='subquery',
+    viewed_media = db.relationship('MediaItem', secondary=user_viewed, lazy='select',
         backref=db.backref('viewed_by', lazy=True))
     
     # Following relationships
