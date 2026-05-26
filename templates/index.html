@@ -557,6 +557,7 @@
             Powered by AI • Personalized for You
           </p>
           <form action="/search" method="POST" class="max-w-2xl mx-auto relative">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div
               class="relative search-card glass-effect rounded-lg p-4 flex items-center gap-2"
             >

@@ -48,6 +48,7 @@
             {% endwith %}
             
             <form method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="username">Username</label>
                     <input 
