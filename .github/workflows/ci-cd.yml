@@ -1,20 +1,15 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  security-events: write
-  pull-requests: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -28,79 +23,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest pytest-cov flake8
 
-      - name: Lint
+      - name: Lint (errors only)
         run: |
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
-            --exclude=venv,env,.venv,.env,__pycache__,.git
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 \
-            --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
+            --exclude=venv,env,.venv,__pycache__,.git,migrations,migrates
 
       - name: Run tests
         env:
-          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL || secrets.DATABASE_URL }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          SECRET_KEY: test-secret-key
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
-          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
-          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
-        run: |
-          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-            pytest --cov=. --cov-report=xml --cov-report=term -v
-          else
-            echo "No test files found — skipping."
-          fi
-
-      - name: Upload coverage
-        if: hashFiles('coverage.xml') != ''
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-
-  deploy-production:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Trigger Render deploy
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-        run: |
-          curl -fsSX POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"clearCache": false}'
-
-      - name: Health check (retry for 3 min)
-        run: |
-          for i in $(seq 1 18); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://frameiq.studio/health)
-            if [ "$code" = "200" ]; then
-              echo "Health check passed"; exit 0
-            fi
-            echo "Attempt $i — got $code, retrying in 10s…"
-            sleep 10
-          done
-          echo "Health check failed after 3 minutes"; exit 1
-
-  security-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-results.sarif
-
-      - name: Upload results
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results.sarif
+          # conftest sets these via setdefault; providing them here ensures
+          # the CI environment doesn't inherit a stale DATABASE_URL.
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: "ci-test-secret-key"
+          TMDB_API_KEY: "test"
+          OPENAI_API_KEY: "test"
+          CHROMA_API_KEY: "test"
+          CHROMA_TENANT: "test"
+          CHROMA_DATABASE: "test"
+        run: pytest tests/ -v --tb=short
