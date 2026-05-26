@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ movie.title }} — Watch on FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #080808; color: #e5e7eb; }
+
+        /* Player */
+        .player-wrap {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%;
+            background: #000;
+        }
+        .player-wrap iframe {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Progress bar on cards */
+        .progress-bar { height: 3px; background: #374151; border-radius: 2px; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg,#6366f1,#a855f7); border-radius: 2px; transition: width .3s; }
+
+        /* Genre pill */
+        .genre-pill { background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); color: #a5b4fc; }
+
+        /* Rec card hover */
+        .rec-card { transition: transform .2s, box-shadow .2s; }
+        .rec-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(99,102,241,.25); }
+
+        /* Toast */
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 999;
+            background: #1f2937; border: 1px solid #374151;
+            padding: 12px 20px; border-radius: 10px;
+            display: flex; align-items: center; gap: 10px;
+            transform: translateY(80px); opacity: 0;
+            transition: all .3s;
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+
+        /* Back button */
+        .back-btn { transition: background .2s; }
+        .back-btn:hover { background: rgba(255,255,255,.1); }
+    </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav class="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3">
+    <div class="max-w-screen-2xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <a href="javascript:history.back()" class="back-btn flex items-center gap-2 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
+        </div>
+        <div class="flex items-center gap-3 text-sm text-gray-400">
+            <i class="fas fa-film text-indigo-400"></i>
+            <span class="text-white font-medium truncate max-w-xs">{{ movie.title }}</span>
+            {% if movie.release_date %}
+                <span class="text-gray-600">{{ movie.release_date[:4] }}</span>
+            {% endif %}
+        </div>
+        {% if current_user.is_authenticated %}
+        <a href="/profile" class="flex items-center gap-2 text-sm text-gray-400 hover:text-white">
+            <i class="fas fa-user-circle text-indigo-400"></i> {{ current_user.username }}
+        </a>
+        {% else %}
+        <a href="/login" class="text-sm text-indigo-400 hover:text-indigo-300">Login to save progress</a>
+        {% endif %}
+    </div>
+</nav>
+
+<!-- ── Player ── -->
+<div class="max-w-screen-2xl mx-auto px-4 py-4">
+    <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5">
+        <iframe id="player-frame"
+                src="{{ embed_url }}{% if resume_time > 0 %}?t={{ resume_time }}{% endif %}"
+                allowfullscreen
+                allow="autoplay; fullscreen; picture-in-picture"
+                referrerpolicy="origin">
+        </iframe>
+    </div>
+</div>
+
+<!-- ── Movie info ── -->
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+    <div class="flex flex-col md:flex-row gap-8">
+
+        <!-- Poster (hidden on mobile) -->
+        <div class="hidden md:block flex-shrink-0 w-40">
+            {% if movie.poster_path %}
+            <img src="{{ movie.poster_path }}" alt="{{ movie.title }}"
+                 class="w-full rounded-xl shadow-lg ring-1 ring-white/10">
+            {% endif %}
+        </div>
+
+        <!-- Details -->
+        <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-white mb-1">{{ movie.title }}</h1>
+                    <div class="flex flex-wrap items-center gap-3 text-sm text-gray-400">
+                        {% if movie.release_date %}<span>{{ movie.release_date[:4] }}</span>{% endif %}
+                        {% if movie.runtime %}<span class="text-gray-600">·</span><span>{{ movie.runtime }}</span>{% endif %}
+                        {% if movie.vote_average %}<span class="text-gray-600">·</span>
+                        <span class="flex items-center gap-1 text-yellow-400"><i class="fas fa-star text-xs"></i>{{ movie.vote_average }}</span>{% endif %}
+                        {% if movie.certification %}<span class="text-gray-600">·</span>
+                        <span class="border border-gray-600 px-1.5 py-0.5 rounded text-xs">{{ movie.certification }}</span>{% endif %}
+                    </div>
+                </div>
+                <!-- Action buttons -->
+                <div class="flex gap-2">
+                    <a href="/movie/{{ tmdb_id }}" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                        <i class="fas fa-info-circle"></i> Details
+                    </a>
+                    {% if current_user.is_authenticated %}
+                    <button onclick="addToWatchlist()" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                        <i class="fas fa-bookmark"></i> Watchlist
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Genres -->
+            {% if movie.genres %}
+            <div class="flex flex-wrap gap-2 mb-4">
+                {% for genre in movie.genres %}
+                <span class="genre-pill text-xs px-3 py-1 rounded-full">{{ genre }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Overview -->
+            {% if movie.overview %}
+            <p class="text-gray-300 leading-relaxed text-sm max-w-3xl">{{ movie.overview }}</p>
+            {% endif %}
+
+            <!-- Director / Cast row -->
+            <div class="flex flex-wrap gap-6 mt-4 text-sm">
+                {% if movie.director %}
+                <div><span class="text-gray-500">Director</span><br><span class="text-white font-medium">{{ movie.director }}</span></div>
+                {% endif %}
+                {% if movie.cast %}
+                <div>
+                    <span class="text-gray-500">Cast</span><br>
+                    <span class="text-white font-medium">{{ movie.cast[:4] | map(attribute='name') | join(', ') }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Progress bar (shown if resuming) -->
+            {% if resume_time > 0 %}
+            <div class="mt-4 max-w-sm">
+                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Resuming from {{ (resume_time // 60) }}m {{ (resume_time % 60) }}s</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-display" style="width:0%"></div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ── Recommendations ── -->
+{% if movie.recommendations %}
+<div class="max-w-screen-2xl mx-auto px-4 pb-12">
+    <h2 class="text-xl font-semibold text-white mb-4">More Like This</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        {% for rec in movie.recommendations[:12] %}
+        <a href="/watch/movie/{{ rec.id }}" class="rec-card block group">
+            <div class="rounded-lg overflow-hidden bg-gray-900 ring-1 ring-white/5">
+                {% if rec.poster_path %}
+                <img src="{{ rec.poster_path }}" alt="{{ rec.title }}"
+                     class="w-full aspect-[2/3] object-cover group-hover:scale-105 transition-transform duration-300">
+                {% else %}
+                <div class="w-full aspect-[2/3] bg-gray-800 flex items-center justify-center">
+                    <i class="fas fa-film text-gray-600 text-2xl"></i>
+                </div>
+                {% endif %}
+            </div>
+            <p class="mt-2 text-xs text-gray-400 line-clamp-2 group-hover:text-white transition-colors">{{ rec.title }}</p>
+            {% if rec.release_date %}<p class="text-xs text-gray-600">{{ rec.release_date[:4] }}</p>{% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ── Toast ── -->
+<div id="toast">
+    <i class="fas fa-check-circle text-green-400"></i>
+    <span id="toast-msg">Progress saved</span>
+</div>
+
+<script>
+    const TMDB_ID    = {{ tmdb_id }};
+    const MEDIA_TYPE = 'movie';
+    const RESUME_TIME = {{ resume_time }};
+    const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
+
+    let lastSaved = 0;
+
+    // ── PostMessage listener ──────────────────────────────────────
+    window.addEventListener('message', (e) => {
+        let data;
+        try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
+        catch { return; }
+
+        if (!data || data.id == null) return;
+
+        // Update local progress bar
+        if (data.progress != null) {
+            const el = document.getElementById('progress-display');
+            if (el) el.style.width = data.progress + '%';
+        }
+
+        // Throttle saves — every 15 s
+        const now = Date.now();
+        if (!IS_AUTH || now - lastSaved < 15000) return;
+        lastSaved = now;
+
+        fetch('/api/watch/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({
+                id: TMDB_ID,
+                mediaType: MEDIA_TYPE,
+                currentTime: data.currentTime || 0,
+                duration: data.duration || 0,
+                progress: data.progress || 0,
+                title: '{{ movie.title | e }}',
+                posterPath: '{{ movie.poster_path or "" }}'
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.auto_logged) showToast('✓ Logged to your diary');
+        })
+        .catch(() => {});
+    });
+
+    function getCsrf() {
+        const m = document.cookie.match(/csrf_token=([^;]+)/);
+        if (m) return m[1];
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : '';
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        document.getElementById('toast-msg').textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    function addToWatchlist() {
+        fetch('/api/watchlist/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({ media_id: TMDB_ID, media_type: 'movie' })
+        })
+        .then(r => r.json())
+        .then(() => showToast('Added to watchlist'))
+        .catch(() => showToast('Could not add to watchlist'));
+    }
+
+    // Show initial progress if resuming
+    {% if resume_time > 0 %}
+    document.getElementById('progress-display') && (
+        document.getElementById('progress-display').style.width = '{{ ((resume_time / 90) * 100) | round(1) }}%'
+    );
+    {% endif %}
+</script>
+</body>
+</html>

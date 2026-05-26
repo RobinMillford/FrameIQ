@@ -223,6 +223,10 @@ app.register_blueprint(recommendations_bp)
 # AI
 app.register_blueprint(agent_chat)
 
+# Video Streaming
+from routes.watch import watch_bp
+app.register_blueprint(watch_bp)
+
 
 # ============================================================================
 # Route Handlers
@@ -234,8 +238,8 @@ _CSP = (
     "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
     "img-src 'self' data: blob: image.tmdb.org res.cloudinary.com via.placeholder.com; "
-    "frame-src www.youtube.com youtube.com; "
-    "connect-src 'self';"
+    "frame-src www.youtube.com youtube.com www.vidking.net vidking.net; "
+    "connect-src 'self' db.videasy.net;"
 )
 
 

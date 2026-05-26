@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ show.name }} S{{ season }}E{{ episode }} — Watch on FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #080808; color: #e5e7eb; }
+
+        /* Layout */
+        .watch-layout {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 16px;
+            align-items: start;
+        }
+        @media (max-width: 1024px) {
+            .watch-layout { grid-template-columns: 1fr; }
+            .episode-sidebar { max-height: 400px; }
+        }
+
+        /* Player */
+        .player-wrap { position: relative; width: 100%; padding-top: 56.25%; background: #000; }
+        .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+
+        /* Sidebar */
+        .episode-sidebar {
+            background: #111; border: 1px solid rgba(255,255,255,.07);
+            border-radius: 12px; overflow: hidden;
+            height: calc(100vh - 120px);
+            display: flex; flex-direction: column;
+            position: sticky; top: 72px;
+        }
+        .sidebar-header { background: #181818; border-bottom: 1px solid rgba(255,255,255,.07); }
+        .episodes-list { overflow-y: auto; flex: 1; }
+        .episodes-list::-webkit-scrollbar { width: 4px; }
+        .episodes-list::-webkit-scrollbar-track { background: #111; }
+        .episodes-list::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+
+        /* Episode item */
+        .ep-item { border-bottom: 1px solid rgba(255,255,255,.04); transition: background .15s; cursor: pointer; }
+        .ep-item:hover { background: rgba(255,255,255,.05); }
+        .ep-item.active { background: rgba(99,102,241,.15); border-left: 2px solid #6366f1; }
+
+        /* Season tabs */
+        .season-tab { transition: all .2s; }
+        .season-tab.active { background: #6366f1; color: white; }
+        .season-tab:not(.active) { color: #6b7280; }
+        .season-tab:not(.active):hover { background: rgba(255,255,255,.07); color: white; }
+
+        /* Progress bar */
+        .progress-bar { height: 2px; background: #1f2937; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg,#6366f1,#a855f7); transition: width .3s; }
+
+        /* Genre pill */
+        .genre-pill { background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); color: #a5b4fc; }
+
+        /* Next ep banner */
+        #next-ep-banner {
+            position: fixed; bottom: 80px; right: 24px; z-index: 50;
+            background: #1f2937; border: 1px solid #374151; border-radius: 12px;
+            padding: 16px 20px; width: 280px;
+            transform: translateY(120px); opacity: 0; transition: all .4s;
+        }
+        #next-ep-banner.show { transform: translateY(0); opacity: 1; }
+
+        /* Toast */
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 999;
+            background: #1f2937; border: 1px solid #374151;
+            padding: 12px 20px; border-radius: 10px;
+            display: flex; align-items: center; gap: 10px;
+            transform: translateY(80px); opacity: 0; transition: all .3s;
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav class="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3">
+    <div class="max-w-screen-2xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <a href="javascript:history.back()" class="flex items-center gap-2 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/10">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
+        </div>
+        <div class="flex items-center gap-3 text-sm text-gray-400">
+            {% if media_type == 'anime' %}
+                <i class="fas fa-dragon text-pink-400"></i>
+            {% else %}
+                <i class="fas fa-tv text-indigo-400"></i>
+            {% endif %}
+            <span class="text-white font-medium truncate max-w-[200px]">{{ show.name }}</span>
+            <span class="text-gray-600 text-xs">S{{ season }} E{{ episode }}</span>
+        </div>
+        {% if current_user.is_authenticated %}
+        <a href="/profile" class="flex items-center gap-2 text-sm text-gray-400 hover:text-white">
+            <i class="fas fa-user-circle text-indigo-400"></i> {{ current_user.username }}
+        </a>
+        {% else %}
+        <a href="/login" class="text-sm text-indigo-400 hover:text-indigo-300">Login to save progress</a>
+        {% endif %}
+    </div>
+</nav>
+
+<!-- ── Main layout ── -->
+<div class="max-w-screen-2xl mx-auto px-4 py-4">
+    <div class="watch-layout">
+
+        <!-- Left: player + info -->
+        <div>
+            <!-- Player -->
+            <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 mb-4">
+                <iframe id="player-frame"
+                        src="{{ embed_url }}{% if resume_time > 0 %}?t={{ resume_time }}{% endif %}"
+                        allowfullscreen
+                        allow="autoplay; fullscreen; picture-in-picture"
+                        referrerpolicy="origin">
+                </iframe>
+            </div>
+
+            <!-- Episode title bar -->
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div>
+                    <h1 class="text-xl font-bold text-white">
+                        <span class="text-indigo-400">S{{ season }}:E{{ episode }}</span>
+                        <span id="ep-title" class="ml-2">{{ show.name }}</span>
+                    </h1>
+                    <div class="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-400">
+                        <span>{{ show.name }}</span>
+                        {% if show.vote_average %}<span class="text-gray-600">·</span>
+                        <span class="flex items-center gap-1 text-yellow-400"><i class="fas fa-star text-xs"></i>{{ show.vote_average }}</span>{% endif %}
+                        {% if show.status %}<span class="text-gray-600">·</span>
+                        <span class="{% if show.status == 'Ended' %}text-red-400{% else %}text-green-400{% endif %}">{{ show.status }}</span>{% endif %}
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <a href="/tv/{{ tmdb_id }}" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                        <i class="fas fa-info-circle"></i> Show Details
+                    </a>
+                    {% if current_user.is_authenticated %}
+                    <button onclick="markWatched()" id="mark-btn"
+                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                        <i class="fas fa-check"></i> Mark Watched
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Progress bar -->
+            <div class="progress-bar rounded-full mb-4">
+                <div class="progress-fill rounded-full" id="progress-display" style="width:0%"></div>
+            </div>
+
+            <!-- Overview -->
+            {% if show.overview %}
+            <p class="text-gray-400 text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
+            {% endif %}
+
+            <!-- Genres -->
+            {% if show.genres %}
+            <div class="flex flex-wrap gap-2">
+                {% for genre in show.genres %}
+                <span class="genre-pill text-xs px-3 py-1 rounded-full">{{ genre }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right: episode sidebar -->
+        <div class="episode-sidebar">
+            <div class="sidebar-header p-3">
+                <h3 class="text-white font-semibold text-sm mb-3">Episodes</h3>
+                <!-- Season tabs -->
+                <div class="flex flex-wrap gap-1" id="season-tabs">
+                    {% for s in show.seasons %}
+                    {% if s.season_number > 0 %}
+                    <button onclick="loadSeason({{ s.season_number }})"
+                            id="tab-{{ s.season_number }}"
+                            class="season-tab text-xs px-3 py-1.5 rounded-lg font-medium {% if s.season_number == season %}active{% endif %}">
+                        S{{ s.season_number }}
+                    </button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Episode list -->
+            <div class="episodes-list" id="episodes-list">
+                <div class="p-4 text-center text-gray-500 text-sm">
+                    <i class="fas fa-spinner fa-spin mb-2"></i><br>Loading episodes...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Next episode banner ── -->
+<div id="next-ep-banner">
+    <div class="flex items-start justify-between mb-3">
+        <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide">Up Next</p>
+            <p class="text-white font-semibold text-sm mt-0.5" id="next-ep-label">Next Episode</p>
+        </div>
+        <button onclick="document.getElementById('next-ep-banner').classList.remove('show')"
+                class="text-gray-500 hover:text-white text-xs">✕</button>
+    </div>
+    <div class="flex gap-3">
+        <button onclick="playNextEpisode()"
+                class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-sm py-2 rounded-lg transition-colors font-medium">
+            <i class="fas fa-play mr-1"></i> Play Now
+        </button>
+        <button onclick="document.getElementById('next-ep-banner').classList.remove('show')"
+                class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-2 rounded-lg transition-colors">
+            Skip
+        </button>
+    </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast">
+    <i class="fas fa-check-circle text-green-400"></i>
+    <span id="toast-msg">Progress saved</span>
+</div>
+
+<script>
+    const TMDB_ID    = {{ tmdb_id }};
+    const MEDIA_TYPE = '{{ media_type }}';
+    const CUR_SEASON = {{ season }};
+    const CUR_EP     = {{ episode }};
+    const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
+    const EMBED_BASE = 'https://www.vidking.net';
+
+    let allEpisodes  = {};   // season → [episode]
+    let nextEp       = null;
+    let lastSaved    = 0;
+    let currentProgress = 0;
+
+    // ── Load episodes for a season ───────────────────────────────
+    async function loadSeason(season) {
+        // Update tab styles
+        document.querySelectorAll('.season-tab').forEach(t => t.classList.remove('active'));
+        const tab = document.getElementById('tab-' + season);
+        if (tab) tab.classList.add('active');
+
+        if (allEpisodes[season]) { renderEpisodes(season); return; }
+
+        const list = document.getElementById('episodes-list');
+        list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin mb-2"></i><br>Loading...</div>';
+
+        try {
+            const r = await fetch(`https://db.videasy.net/3/tv/${TMDB_ID}/season/${season}`);
+            const data = await r.json();
+            allEpisodes[season] = data.episodes || [];
+            renderEpisodes(season);
+        } catch {
+            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">Could not load episodes.</div>';
+        }
+    }
+
+    function renderEpisodes(season) {
+        const eps = allEpisodes[season] || [];
+        const list = document.getElementById('episodes-list');
+
+        if (!eps.length) {
+            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">No episodes found.</div>';
+            return;
+        }
+
+        list.innerHTML = eps.map((ep, i) => {
+            const isActive = season === CUR_SEASON && ep.episode_number === CUR_EP;
+            const still = ep.still_path
+                ? `<img src="https://image.tmdb.org/t/p/w185${ep.still_path}" class="w-16 h-10 object-cover rounded flex-shrink-0 opacity-80">`
+                : `<div class="w-16 h-10 bg-gray-800 rounded flex-shrink-0 flex items-center justify-center"><i class="fas fa-play text-gray-600 text-xs"></i></div>`;
+            return `
+            <div class="ep-item px-3 py-2.5 ${isActive ? 'active' : ''}"
+                 onclick="navigateTo(${season}, ${ep.episode_number})">
+                <div class="flex gap-3 items-start">
+                    <div class="relative">${still}
+                        ${isActive ? '<div class="absolute inset-0 flex items-center justify-center"><i class="fas fa-play text-indigo-400 text-xs drop-shadow"></i></div>' : ''}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs font-semibold ${isActive ? 'text-indigo-300' : 'text-gray-300'} truncate">
+                            ${ep.episode_number}. ${ep.name || 'Episode ' + ep.episode_number}
+                        </p>
+                        <p class="text-xs text-gray-600 mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}</p>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        // Scroll active into view
+        const activeEl = list.querySelector('.ep-item.active');
+        if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+        // Find next episode
+        const curIdx = eps.findIndex(e => e.episode_number === CUR_EP);
+        if (season === CUR_SEASON && curIdx !== -1 && curIdx + 1 < eps.length) {
+            nextEp = { season, episode: eps[curIdx + 1].episode_number, name: eps[curIdx + 1].name };
+        } else {
+            // Next season ep 1
+            const seasons = {{ show.seasons | tojson }};
+            const nextSeason = seasons.find(s => s.season_number === season + 1);
+            if (nextSeason) nextEp = { season: season + 1, episode: 1, name: 'Episode 1' };
+        }
+    }
+
+    function navigateTo(season, episode) {
+        const params = MEDIA_TYPE !== 'tv' ? `?type=${MEDIA_TYPE}` : '';
+        window.location.href = `/watch/tv/${TMDB_ID}/${season}/${episode}${params}`;
+    }
+
+    function playNextEpisode() {
+        if (nextEp) navigateTo(nextEp.season, nextEp.episode);
+    }
+
+    // ── PostMessage listener ──────────────────────────────────────
+    window.addEventListener('message', (e) => {
+        let data;
+        try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
+        catch { return; }
+        if (!data || data.id == null) return;
+
+        currentProgress = data.progress || 0;
+
+        // Progress bar
+        const bar = document.getElementById('progress-display');
+        if (bar) bar.style.width = currentProgress + '%';
+
+        // Show next ep banner at 85%
+        if (currentProgress >= 85 && nextEp) {
+            const banner = document.getElementById('next-ep-banner');
+            document.getElementById('next-ep-label').textContent = `S${nextEp.season} E${nextEp.episode}: ${nextEp.name}`;
+            banner.classList.add('show');
+        }
+
+        // Save progress (throttled 15s)
+        const now = Date.now();
+        if (!IS_AUTH || now - lastSaved < 15000) return;
+        lastSaved = now;
+
+        fetch('/api/watch/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({
+                id: TMDB_ID,
+                mediaType: MEDIA_TYPE,
+                currentTime: data.currentTime || 0,
+                duration: data.duration || 0,
+                progress: currentProgress,
+                season: CUR_SEASON,
+                episode: CUR_EP,
+                title: '{{ show.name | e }}',
+                posterPath: '{{ show.poster_path or "" }}'
+            })
+        })
+        .then(r => r.json())
+        .then(res => { if (res.auto_logged) showToast('✓ Episode logged to diary'); })
+        .catch(() => {});
+    });
+
+    function markWatched() {
+        fetch(`/api/tv/${TMDB_ID}/episode/${CUR_SEASON}/${CUR_EP}/mark-watched`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({ watched_date: new Date().toISOString().split('T')[0] })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                const btn = document.getElementById('mark-btn');
+                btn.classList.replace('bg-indigo-600','bg-green-600');
+                btn.classList.replace('hover:bg-indigo-500','hover:bg-green-500');
+                btn.innerHTML = '<i class="fas fa-check-double"></i> Watched';
+                showToast('Episode marked as watched!');
+            }
+        })
+        .catch(() => showToast('Could not mark as watched'));
+    }
+
+    function getCsrf() {
+        const m = document.cookie.match(/csrf_token=([^;]+)/);
+        if (m) return m[1];
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : '';
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        document.getElementById('toast-msg').textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // ── Init ────────────────────────────────────────────────────
+    loadSeason(CUR_SEASON);
+</script>
+</body>
+</html>
