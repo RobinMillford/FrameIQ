@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, current_app
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
-from models import UserListItem, DiaryEntry, UserList
+from models import UserListItem, DiaryEntry, UserList, WatchProgress, db
 
 details = Blueprint('details', __name__)
 
@@ -84,13 +84,30 @@ def tv_detail(show_id):
                 media_id=show_id,
                 media_type='tv'
             ).order_by(DiaryEntry.watched_date.desc()).all()
-        
+
+        # Last-watched episode for Watch Now button (resume logic)
+        watch_resume = None
+        if current_user.is_authenticated:
+            last_wp = (WatchProgress.query
+                       .filter(
+                           WatchProgress.user_id == current_user.id,
+                           WatchProgress.tmdb_id == show_id,
+                           WatchProgress.media_type.in_(['tv', 'anime']),
+                           WatchProgress.season.isnot(None),
+                           WatchProgress.episode.isnot(None),
+                       )
+                       .order_by(WatchProgress.updated_at.desc())
+                       .first())
+            if last_wp and last_wp.progress_pct < 90:
+                watch_resume = last_wp
+
         return render_template('tv_detail.html', show=show,
                               user_watchlist_ids=user_watchlist_ids,
                               user_wishlist_ids=user_wishlist_ids,
                               user_viewed_ids=user_viewed_ids,
                               user_lists_with_show=user_lists_with_show,
                               diary_entries=diary_entries,
+                              watch_resume=watch_resume,
                               today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:
         print(f"Error fetching TV show details: {e}")

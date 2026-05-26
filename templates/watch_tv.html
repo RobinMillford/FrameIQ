@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ show.name }} S{{ season }}E{{ episode }} — Watch on FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -242,6 +243,12 @@
     let lastSaved    = 0;
     let currentProgress = 0;
 
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
     // ── Load episodes for a season ───────────────────────────────
     async function loadSeason(season) {
         // Update tab styles
@@ -287,7 +294,7 @@
                     </div>
                     <div class="min-w-0 flex-1">
                         <p class="text-xs font-semibold ${isActive ? 'text-indigo-300' : 'text-gray-300'} truncate">
-                            ${ep.episode_number}. ${ep.name || 'Episode ' + ep.episode_number}
+                            ${ep.episode_number}. ${escHtml(ep.name || 'Episode ' + ep.episode_number)}
                         </p>
                         <p class="text-xs text-gray-600 mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}</p>
                     </div>
@@ -302,7 +309,7 @@
         // Find next episode
         const curIdx = eps.findIndex(e => e.episode_number === CUR_EP);
         if (season === CUR_SEASON && curIdx !== -1 && curIdx + 1 < eps.length) {
-            nextEp = { season, episode: eps[curIdx + 1].episode_number, name: eps[curIdx + 1].name };
+            nextEp = { season, episode: eps[curIdx + 1].episode_number, name: eps[curIdx + 1].name || '' };
         } else {
             // Next season ep 1
             const seasons = {{ show.seasons | tojson }};
@@ -322,6 +329,7 @@
 
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
+        if (e.origin !== 'https://www.vidking.net') return;
         let data;
         try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
         catch { return; }
@@ -336,7 +344,7 @@
         // Show next ep banner at 85%
         if (currentProgress >= 85 && nextEp) {
             const banner = document.getElementById('next-ep-banner');
-            document.getElementById('next-ep-label').textContent = `S${nextEp.season} E${nextEp.episode}: ${nextEp.name}`;
+            document.getElementById('next-ep-label').textContent = `S${nextEp.season} E${nextEp.episode}${nextEp.name ? ': ' + nextEp.name : ''}`;
             banner.classList.add('show');
         }
 
@@ -356,8 +364,8 @@
                 progress: currentProgress,
                 season: CUR_SEASON,
                 episode: CUR_EP,
-                title: '{{ show.name | e }}',
-                posterPath: '{{ show.poster_path or "" }}'
+                title: {{ show.name | tojson }},
+                posterPath: {{ (show.poster_path or '') | tojson }}
             })
         })
         .then(r => r.json())

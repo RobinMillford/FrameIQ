@@ -2,11 +2,15 @@
 Week 3: Reviews System Enhancement API Routes
 Adds helpful votes and enhanced discovery features
 """
+import logging
+
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewHelpful, ReviewComment, User, UserFollow, MediaItem
 from datetime import datetime, date
 from sqlalchemy import desc, func, and_
+
+logger = logging.getLogger(__name__)
 
 reviews_enhanced_bp = Blueprint('reviews_enhanced', __name__)
 
@@ -115,7 +119,8 @@ def update_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>', methods=['DELETE'])
@@ -136,7 +141,8 @@ def delete_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to delete review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============================================================================
@@ -367,7 +373,8 @@ def like_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to like review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>/like', methods=['DELETE'])
@@ -397,7 +404,8 @@ def unlike_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to unlike review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>/helpful', methods=['POST'])
@@ -457,7 +465,8 @@ def mark_helpful(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to record helpful vote", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>/replies', methods=['GET'])
@@ -512,7 +521,8 @@ def create_review_reply(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to create review reply", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews_enhanced_bp.route('/api/reviews/replies/<int:reply_id>', methods=['DELETE'])
@@ -539,4 +549,5 @@ def delete_review_reply(reply_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to delete review reply", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500

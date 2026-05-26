@@ -12,7 +12,7 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
-from extensions import limiter
+from extensions import limiter, mail
 
 # Local Imports - Models
 from models import db, User
@@ -92,6 +92,15 @@ csrf = CSRFProtect(app)
 
 # Rate limiting
 limiter.init_app(app)
+
+# Email (Flask-Mail) — configure via env vars; gracefully disabled if MAIL_SERVER not set
+app.config['MAIL_SERVER']   = os.getenv('MAIL_SERVER', '')
+app.config['MAIL_PORT']     = int(os.getenv('MAIL_PORT', '587'))
+app.config['MAIL_USE_TLS']  = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', '')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@frameiq.app')
+mail.init_app(app)
 
 # File upload size cap (5 MB)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024

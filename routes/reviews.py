@@ -2,12 +2,16 @@
 Review API Routes
 Handles CRUD operations for user-generated reviews
 """
+import logging
+
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewComment, MediaItem, User, UserFollow
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
+
+logger = logging.getLogger(__name__)
 
 reviews = Blueprint('reviews', __name__)
 
@@ -90,7 +94,8 @@ def create_review():
         return jsonify({'error': 'You have already reviewed this item'}), 409
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to create review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews.route('/api/reviews/<int:review_id>', methods=['GET'])
@@ -153,7 +158,8 @@ def update_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews.route('/api/reviews/<int:review_id>', methods=['DELETE'])
@@ -185,7 +191,8 @@ def delete_review(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to delete review", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews.route('/api/reviews/<int:review_id>/comments', methods=['POST'])
@@ -231,7 +238,8 @@ def create_comment(review_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to create comment", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @reviews.route('/api/reviews/<int:review_id>/comments', methods=['GET'])

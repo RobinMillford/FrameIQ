@@ -232,8 +232,11 @@
             
             <div class="text-center mt-6">
                 <p class="text-gray-400">
-                    Don't have an account? 
+                    Don't have an account?
                     <a href="{{ url_for('auth.register') }}" class="link-style">Sign up</a>
+                </p>
+                <p class="text-gray-500 text-sm mt-2">
+                    <a href="{{ url_for('auth.forgot_password') }}" class="text-indigo-400 hover:text-indigo-300">Forgot password?</a>
                 </p>
             </div>
         </div>

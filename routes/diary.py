@@ -2,6 +2,8 @@
 Diary API Routes
 Handles user diary entries for logging watched movies/shows
 """
+import logging
+
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, DiaryEntry, MediaItem, Review
@@ -9,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date
 import requests
 import os
+
+logger = logging.getLogger(__name__)
 
 diary = Blueprint('diary', __name__)
 
@@ -167,7 +171,8 @@ def log_diary_entry():
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to add diary entry", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @diary.route('/api/diary/<int:entry_id>/update', methods=['PUT'])
@@ -199,7 +204,8 @@ def update_diary_entry(entry_id):
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update diary entry", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @diary.route('/api/diary/<int:entry_id>/delete', methods=['DELETE'])
@@ -224,4 +230,5 @@ def delete_diary_entry(entry_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to delete diary entry", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500

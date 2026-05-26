@@ -3,6 +3,8 @@ Film Stats & Analytics Routes
 Week 3 Implementation: Personal stats, viewing patterns, Year in Review
 """
 
+import logging
+
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from sqlalchemy import func, extract, desc, and_, or_, select
@@ -11,6 +13,8 @@ from collections import defaultdict, Counter
 import calendar
 
 from models import db, Review, User, DiaryEntry, MediaItem, user_watchlist, user_viewed
+
+logger = logging.getLogger(__name__)
 
 stats_bp = Blueprint('stats', __name__)
 
@@ -83,7 +87,8 @@ def get_stats_overview():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch stats overview", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/by-year', methods=['GET'])
@@ -134,7 +139,8 @@ def get_stats_by_year():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch stats by year", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/by-month', methods=['GET'])
@@ -173,7 +179,8 @@ def get_stats_by_month():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch stats by month", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/genres', methods=['GET'])
@@ -213,7 +220,8 @@ def get_genre_stats():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch genre stats", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/decades', methods=['GET'])
@@ -253,7 +261,8 @@ def get_decade_stats():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch decade stats", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/streaks', methods=['GET'])
@@ -320,7 +329,8 @@ def get_viewing_streaks():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch viewing streaks", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/year-in-review/<int:year>', methods=['GET'])
@@ -426,7 +436,8 @@ def get_year_in_review(year):
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch year in review", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/compare/<int:other_user_id>', methods=['GET'])
@@ -509,7 +520,8 @@ def compare_with_user(other_user_id):
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch user comparison stats", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 @stats_bp.route('/api/stats/platform', methods=['GET'])
@@ -568,5 +580,6 @@ def get_platform_stats():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch platform stats", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 

@@ -2,10 +2,14 @@
 Popular with Friends API
 Shows which friends have watched/reviewed specific media items
 """
+import logging
+
 from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review, DiaryEntry, MediaItem
 from sqlalchemy import and_, func
+
+logger = logging.getLogger(__name__)
 
 popular_bp = Blueprint('popular', __name__)
 
@@ -122,4 +126,5 @@ def get_popular_with_friends(media_id):
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch popular with friends data", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500

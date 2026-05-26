@@ -101,18 +101,25 @@ def register():
             username=username,
             email=email,
             first_name=request.form.get('first_name', ''),
-            last_name=request.form.get('last_name', '')
+            last_name=request.form.get('last_name', ''),
+            email_verified=False,
         )
         new_user.set_password(password)
-        
+
         try:
             db.session.add(new_user)
             db.session.commit()
-            flash('Registration successful')
+            # Send verification email (non-blocking — failure doesn't break registration)
+            from utils.email import send_verification_email
+            sent = send_verification_email(new_user)
+            if sent:
+                flash('Registration successful! Check your email to verify your account.')
+            else:
+                flash('Registration successful! (Email verification unavailable — contact support if needed.)')
             return redirect(url_for('auth.login'))
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Error during user registration: {e}")
+            logger.error("Error during user registration: %s", e)
             flash('An error occurred during registration. Please try again.')
             return redirect(url_for('auth.register'))
     
@@ -159,198 +166,81 @@ def profile():
     recent_reviews = current_user.user_reviews.order_by(db.desc(Review.created_at)).all()
     return render_template('profile.html', reviews=recent_reviews)
 
-@auth.route('/profile/recommendations')
-@login_required
-def profile_recommendations():
-    from api.tmdb_client import fetch_poster, fetch_tmdb_recommendations
-    from routes.main import TMDB_API_KEY
-    import requests
+def _build_recommendations(unique_user_items, max_total, max_per_item):
+    """
+    Build recommendation list from TMDB without calling fetch_poster.
+    TMDB recommendation results already include poster_path — use it directly,
+    eliminating one extra API call per recommendation (was 54 calls per page load).
+    """
+    from api.tmdb_client import fetch_tmdb_recommendations
     import random
-    
-    # Get user's lists
-    user_watchlist = current_user.watchlist
-    user_wishlist = current_user.wishlist
-    user_viewed = current_user.viewed_media
-    
-    # Combine all user items
-    user_items = list(user_watchlist) + list(user_wishlist) + list(user_viewed)
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_user_items = []
-    for item in user_items:
-        if item.tmdb_id not in seen:
-            seen.add(item.tmdb_id)
-            unique_user_items.append(item)
-    
-    # Get recommendations based on user's items
-    recommendations = []
-    processed_ids = set()
-    
-    # Shuffle the items to get a more diverse selection
     random.shuffle(unique_user_items)
-    
-    # Consider more items to get diverse recommendations (up to 15 items)
-    items_to_consider = min(15, len(unique_user_items))
-    
-    # Get recommendations from TMDB for each item
-    for item in unique_user_items[:items_to_consider]:
-        if len(recommendations) >= 18:  # Limit total recommendations
+
+    user_tmdb_ids = {item.tmdb_id for item in unique_user_items}
+    recommendations = []
+    processed_ids: set = set()
+
+    for item in unique_user_items[:15]:
+        if len(recommendations) >= max_total:
             break
-            
         try:
-            # Get recommendations from TMDB
             tmdb_recs = fetch_tmdb_recommendations(item.tmdb_id, item.media_type == 'movie')
-            
-            # Limit the number of recommendations we take from each item to avoid over-representation
-            max_recs_per_item = 3
-            recs_added_for_this_item = 0
-            
+            added = 0
             for rec in tmdb_recs:
-                # Skip if we already have this recommendation
-                if rec['id'] in processed_ids:
+                if rec['id'] in processed_ids or rec['id'] in user_tmdb_ids:
                     continue
-                    
-                # Skip if user already has this item in any list
-                user_has_item = any(user_item.tmdb_id == rec['id'] for user_item in unique_user_items)
-                if user_has_item:
-                    continue
-                
-                # Add recommendation
-                poster = fetch_poster(rec['id'], item.media_type == 'movie')
+                poster_path = rec.get('poster_path')
+                poster = (f"https://image.tmdb.org/t/p/w500{poster_path}"
+                          if poster_path else "https://via.placeholder.com/500x750?text=No+Image")
                 recommendations.append({
                     'id': rec['id'],
-                    'title': rec['title'] if item.media_type == 'movie' else rec['name'],
+                    'title': rec.get('title') or rec.get('name', 'Unknown'),
                     'poster': poster,
                     'media_type': item.media_type,
-                    'release_date': rec.get('release_date') if item.media_type == 'movie' else rec.get('first_air_date', 'N/A'),
-                    'based_on': item.title  # What this recommendation is based on
+                    'release_date': rec.get('release_date') or rec.get('first_air_date', 'N/A'),
+                    'based_on': item.title,
                 })
-                
                 processed_ids.add(rec['id'])
-                recs_added_for_this_item += 1
-                
-                # Limit recommendations per source item
-                if recs_added_for_this_item >= max_recs_per_item:
+                added += 1
+                if added >= max_per_item or len(recommendations) >= max_total:
                     break
-                
-                # Limit total recommendations
-                if len(recommendations) >= 18:
-                    break
-                    
         except Exception as e:
             logger.warning("Recommendations fetch failed for %s: %s", item.title, e)
-            continue
-    
-    # Remove duplicates from recommendations (in case any slipped through)
-    final_recommendations = []
-    seen_rec_ids = set()
-    for rec in recommendations:
-        if rec['id'] not in seen_rec_ids:
-            seen_rec_ids.add(rec['id'])
-            final_recommendations.append(rec)
-    
-    # Get user's lists for status indicators
-    user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
-    user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
-    user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
-    
-    return render_template('profile_recommendations.html', 
-                          recommendations=final_recommendations,
-                          user_watchlist_ids=user_watchlist_ids,
-                          user_wishlist_ids=user_wishlist_ids,
-                          user_viewed_ids=user_viewed_ids)
+
+    return recommendations
+
+
+@auth.route('/profile/recommendations')
+@login_required
+@limiter.limit("5 per minute")
+def profile_recommendations():
+    user_items = list(current_user.watchlist) + list(current_user.wishlist) + list(current_user.viewed_media)
+    seen: set = set()
+    unique_user_items = [i for i in user_items
+                         if not (i.tmdb_id in seen or seen.add(i.tmdb_id))]
+
+    final_recommendations = _build_recommendations(unique_user_items, max_total=18, max_per_item=3)
+
+    user_watchlist_ids = {(i.tmdb_id, i.media_type) for i in current_user.watchlist}
+    user_wishlist_ids = {(i.tmdb_id, i.media_type) for i in current_user.wishlist}
+    user_viewed_ids = {(i.tmdb_id, i.media_type) for i in current_user.viewed_media}
+
+    return render_template('profile_recommendations.html',
+                           recommendations=final_recommendations,
+                           user_watchlist_ids=user_watchlist_ids,
+                           user_wishlist_ids=user_wishlist_ids,
+                           user_viewed_ids=user_viewed_ids)
 
 @auth.route('/profile/recommendations-preview')
 @login_required
+@limiter.limit("10 per minute")
 def profile_recommendations_preview():
-    from api.tmdb_client import fetch_poster, fetch_tmdb_recommendations
-    import requests
-    import random
-    
-    # Get user's lists
-    user_watchlist = current_user.watchlist
-    user_wishlist = current_user.wishlist
-    user_viewed = current_user.viewed_media
-    
-    # Combine all user items
-    user_items = list(user_watchlist) + list(user_wishlist) + list(user_viewed)
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_user_items = []
-    for item in user_items:
-        if item.tmdb_id not in seen:
-            seen.add(item.tmdb_id)
-            unique_user_items.append(item)
-    
-    # Shuffle for diversity
-    random.shuffle(unique_user_items)
-    
-    # Get recommendations based on user's items
-    recommendations = []
-    processed_ids = set()
-    
-    # Consider more items for preview (up to 8 items)
-    items_to_consider = min(8, len(unique_user_items))
-    
-    # Get recommendations from TMDB for each item
-    for item in unique_user_items[:items_to_consider]:
-        if len(recommendations) >= 6:  # Limit total recommendations for preview
-            break
-            
-        try:
-            # Get recommendations from TMDB
-            tmdb_recs = fetch_tmdb_recommendations(item.tmdb_id, item.media_type == 'movie')
-            
-            # Limit recommendations per item for preview
-            recs_added_for_this_item = 0
-            max_recs_per_item = 2
-            
-            for rec in tmdb_recs:
-                # Skip if we already have this recommendation
-                if rec['id'] in processed_ids:
-                    continue
-                    
-                # Skip if user already has this item in any list
-                user_has_item = any(user_item.tmdb_id == rec['id'] for user_item in unique_user_items)
-                if user_has_item:
-                    continue
-                
-                # Add recommendation
-                poster = fetch_poster(rec['id'], item.media_type == 'movie')
-                recommendations.append({
-                    'id': rec['id'],
-                    'title': rec['title'] if item.media_type == 'movie' else rec['name'],
-                    'poster': poster,
-                    'media_type': 'movie' if item.media_type == 'movie' else 'tv',
-                    'release_date': rec.get('release_date') if item.media_type == 'movie' else rec.get('first_air_date', 'N/A'),
-                    'based_on': item.title  # What this recommendation is based on
-                })
-                
-                processed_ids.add(rec['id'])
-                recs_added_for_this_item += 1
-                
-                # Limit recommendations per source item
-                if recs_added_for_this_item >= max_recs_per_item:
-                    break
-                
-                # Limit total recommendations
-                if len(recommendations) >= 6:
-                    break
-                    
-        except Exception as e:
-            logger.warning("Recommendations fetch failed for %s: %s", item.title, e)
-            continue
-    
-    # Remove duplicates (in case any slipped through)
-    final_recommendations = []
-    seen_rec_ids = set()
-    for rec in recommendations:
-        if rec['id'] not in seen_rec_ids:
-            seen_rec_ids.add(rec['id'])
-            final_recommendations.append(rec)
-    
+    user_items = list(current_user.watchlist) + list(current_user.wishlist) + list(current_user.viewed_media)
+    seen: set = set()
+    unique_user_items = [i for i in user_items
+                         if not (i.tmdb_id in seen or seen.add(i.tmdb_id))]
+
+    final_recommendations = _build_recommendations(unique_user_items, max_total=6, max_per_item=2)
     return jsonify({'recommendations': final_recommendations})
 
 @auth.route('/profile/edit', methods=['GET', 'POST'])
@@ -399,5 +289,98 @@ def edit_profile():
             flash('An error occurred while updating your profile. Please try again.')
         
         return redirect(url_for('auth.profile'))
-    
+
     return render_template('edit_profile.html')
+
+
+# ── Email verification ────────────────────────────────────────────────────────
+
+@auth.route('/verify-email/<token>')
+def verify_email(token):
+    from utils.email import verify_email_token
+    email = verify_email_token(token)
+    if not email:
+        flash('Verification link is invalid or has expired.')
+        return redirect(url_for('auth.login'))
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        flash('User not found.')
+        return redirect(url_for('auth.login'))
+    if user.email_verified:
+        flash('Email already verified. You can log in.')
+    else:
+        user.email_verified = True
+        db.session.commit()
+        flash('Email verified! You can now log in.')
+    return redirect(url_for('auth.login'))
+
+
+@auth.route('/resend-verification')
+@login_required
+def resend_verification():
+    if current_user.email_verified:
+        flash('Your email is already verified.')
+        return redirect(url_for('auth.profile'))
+    from utils.email import send_verification_email
+    send_verification_email(current_user)
+    flash('Verification email sent. Check your inbox.')
+    return redirect(url_for('auth.profile'))
+
+
+# ── Password reset ────────────────────────────────────────────────────────────
+
+@auth.route('/forgot-password', methods=['GET', 'POST'])
+@limiter.limit("5 per minute; 10 per hour")
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        user = User.query.filter_by(email=email).first()
+        # Always show success message — prevents user enumeration
+        if user:
+            from utils.email import send_password_reset_email
+            send_password_reset_email(user)
+        flash('If that email is registered you will receive a reset link shortly.')
+        return redirect(url_for('auth.login'))
+    return render_template('forgot_password.html')
+
+
+@auth.route('/reset-password/<token>', methods=['GET', 'POST'])
+@limiter.limit("10 per minute")
+def reset_password(token):
+    from utils.email import verify_reset_token
+    email = verify_reset_token(token)
+    if not email:
+        flash('Reset link is invalid or has expired.')
+        return redirect(url_for('auth.forgot_password'))
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        flash('User not found.')
+        return redirect(url_for('auth.login'))
+
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm  = request.form.get('confirm_password', '')
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.')
+            return render_template('reset_password.html', token=token)
+        if not re.search(r'[A-Z]', password):
+            flash('Password must contain at least one uppercase letter.')
+            return render_template('reset_password.html', token=token)
+        if not re.search(r'[a-z]', password):
+            flash('Password must contain at least one lowercase letter.')
+            return render_template('reset_password.html', token=token)
+        if not re.search(r'\d', password):
+            flash('Password must contain at least one digit.')
+            return render_template('reset_password.html', token=token)
+        if password != confirm:
+            flash('Passwords do not match.')
+            return render_template('reset_password.html', token=token)
+
+        user.set_password(password)
+        db.session.commit()
+        flash('Password reset successful. You can now log in.')
+        return redirect(url_for('auth.login'))
+
+    return render_template('reset_password.html', token=token)

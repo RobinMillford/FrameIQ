@@ -40,7 +40,8 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(512), nullable=False)  # Increased length to accommodate longer hashes
     date_joined = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-    
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+
     # Profile information
     first_name = db.Column(db.String(50))
     last_name = db.Column(db.String(50))
@@ -291,10 +292,12 @@ class UserFollow(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     is_active = db.Column(db.Boolean, default=True)  # For soft delete
     
-    # Constraints
     __table_args__ = (
         db.UniqueConstraint('follower_id', 'following_id', name='unique_follower_following'),
         db.CheckConstraint('follower_id != following_id', name='no_self_follow'),
+        # Composite indexes for the two hot query patterns in social.py
+        db.Index('idx_uf_following_active', 'following_id', 'is_active'),
+        db.Index('idx_uf_follower_active',  'follower_id',  'is_active'),
     )
     
     def to_dict(self):
@@ -968,8 +971,16 @@ class WatchProgress(db.Model):
     user = db.relationship('User', backref=db.backref('watch_progress', lazy='dynamic'))
 
     __table_args__ = (
+        # Partial unique indexes handle NULL season/episode correctly (NULL != NULL in PG).
+        # uq_watch_progress is kept as a fallback for non-PG databases.
         db.UniqueConstraint('user_id', 'tmdb_id', 'media_type', 'season', 'episode',
                             name='uq_watch_progress'),
+        db.Index('idx_wp_movie_uniq', 'user_id', 'tmdb_id', 'media_type',
+                 unique=True,
+                 postgresql_where=db.text('season IS NULL AND episode IS NULL')),
+        db.Index('idx_wp_tv_uniq', 'user_id', 'tmdb_id', 'media_type', 'season', 'episode',
+                 unique=True,
+                 postgresql_where=db.text('season IS NOT NULL AND episode IS NOT NULL')),
         db.Index('idx_wp_user_updated', 'user_id', 'updated_at'),
     )
 

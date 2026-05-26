@@ -2,11 +2,16 @@
 Social API Routes
 Handles user following/follower relationships
 """
+import logging
+
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, case
+from sqlalchemy.orm import joinedload
+
+logger = logging.getLogger(__name__)
 
 social = Blueprint('social', __name__)
 
@@ -36,13 +41,17 @@ def toggle_follow(user_id):
             # Unfollow (soft delete)
             existing_follow.is_active = False
 
-            # Atomic decrement (avoids read-modify-write race)
+            # Atomic decrement — CASE is portable (SQLite + PostgreSQL)
             User.query.filter_by(id=current_user.id).update(
-                {'following_count': func.greatest(0, func.coalesce(User.following_count, 1) - 1)},
+                {'following_count': case(
+                    (User.following_count > 0, User.following_count - 1), else_=0
+                )},
                 synchronize_session=False
             )
             User.query.filter_by(id=user_id).update(
-                {'followers_count': func.greatest(0, func.coalesce(User.followers_count, 1) - 1)},
+                {'followers_count': case(
+                    (User.followers_count > 0, User.followers_count - 1), else_=0
+                )},
                 synchronize_session=False
             )
             resp_following = max(0, (current_user.following_count or 0) - 1)
@@ -98,7 +107,8 @@ def toggle_follow(user_id):
         return jsonify({'error': 'Database error occurred'}), 500
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to toggle follow", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @social.route('/api/users/<int:user_id>/followers', methods=['GET'])
@@ -113,19 +123,36 @@ def get_followers(user_id):
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     
-    # Query followers (users who follow this user)
-    followers_query = UserFollow.query.filter_by(
-        following_id=user_id,
-        is_active=True
-    ).order_by(UserFollow.created_at.desc())
-    
-    # Paginate
+    # Eager-load follower_user to avoid N+1 (one query total, not one per row)
+    followers_query = (
+        UserFollow.query
+        .filter_by(following_id=user_id, is_active=True)
+        .options(joinedload(UserFollow.follower_user))
+        .order_by(UserFollow.created_at.desc())
+    )
     pagination = followers_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
-    
-    # Build follower list with user details
+
+    # Single query for current-user follow-back status — no per-row queries
+    current_follows: set = set()
+    if current_user.is_authenticated and pagination.items:
+        follower_ids = [f.follower_user.id for f in pagination.items if f.follower_user]
+        current_follows = {
+            row[0] for row in (
+                UserFollow.query
+                .with_entities(UserFollow.following_id)
+                .filter(
+                    UserFollow.follower_id == current_user.id,
+                    UserFollow.following_id.in_(follower_ids),
+                    UserFollow.is_active == True,
+                ).all()
+            )
+        }
+
     followers_data = []
     for follow in pagination.items:
         follower = follow.follower_user
+        if not follower:
+            continue
         follower_data = {
             'id': follower.id,
             'username': follower.username,
@@ -134,18 +161,10 @@ def get_followers(user_id):
             'followers_count': follower.followers_count or 0,
             'following_count': follower.following_count or 0,
             'total_reviews': follower.total_reviews or 0,
-            'followed_at': follow.created_at.isoformat()
+            'followed_at': follow.created_at.isoformat(),
         }
-        
-        # Check if current user follows this follower
         if current_user.is_authenticated:
-            is_following = UserFollow.query.filter_by(
-                follower_id=current_user.id,
-                following_id=follower.id,
-                is_active=True
-            ).first() is not None
-            follower_data['is_following'] = is_following
-        
+            follower_data['is_following'] = follower.id in current_follows
         followers_data.append(follower_data)
     
     return jsonify({
@@ -171,39 +190,48 @@ def get_following(user_id):
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     
-    # Query following (users this user follows)
-    following_query = UserFollow.query.filter_by(
-        follower_id=user_id,
-        is_active=True
-    ).order_by(UserFollow.created_at.desc())
-    
-    # Paginate
+    # Eager-load following_user — no N+1
+    following_query = (
+        UserFollow.query
+        .filter_by(follower_id=user_id, is_active=True)
+        .options(joinedload(UserFollow.following_user))
+        .order_by(UserFollow.created_at.desc())
+    )
     pagination = following_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
-    
-    # Build following list with user details
+
+    # Batch follow-status check
+    current_follows: set = set()
+    if current_user.is_authenticated and pagination.items:
+        following_ids = [f.following_user.id for f in pagination.items if f.following_user]
+        current_follows = {
+            row[0] for row in (
+                UserFollow.query
+                .with_entities(UserFollow.following_id)
+                .filter(
+                    UserFollow.follower_id == current_user.id,
+                    UserFollow.following_id.in_(following_ids),
+                    UserFollow.is_active == True,
+                ).all()
+            )
+        }
+
     following_data = []
     for follow in pagination.items:
-        following_user = follow.following_user
+        fu = follow.following_user
+        if not fu:
+            continue
         following_user_data = {
-            'id': following_user.id,
-            'username': following_user.username,
-            'profile_picture': following_user.profile_picture,
-            'bio': following_user.bio,
-            'followers_count': following_user.followers_count or 0,
-            'following_count': following_user.following_count or 0,
-            'total_reviews': following_user.total_reviews or 0,
-            'followed_at': follow.created_at.isoformat()
+            'id': fu.id,
+            'username': fu.username,
+            'profile_picture': fu.profile_picture,
+            'bio': fu.bio,
+            'followers_count': fu.followers_count or 0,
+            'following_count': fu.following_count or 0,
+            'total_reviews': fu.total_reviews or 0,
+            'followed_at': follow.created_at.isoformat(),
         }
-        
-        # Check if current user follows this user
         if current_user.is_authenticated:
-            is_following = UserFollow.query.filter_by(
-                follower_id=current_user.id,
-                following_id=following_user.id,
-                is_active=True
-            ).first() is not None
-            following_user_data['is_following'] = is_following
-        
+            following_user_data['is_following'] = fu.id in current_follows
         following_data.append(following_user_data)
     
     return jsonify({

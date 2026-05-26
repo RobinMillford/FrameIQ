@@ -80,6 +80,7 @@ def calculate_user_badges(user_id):
     # Activity streak badges (simplified - checks if active in last 7 days)
     recent_activity = Review.query.filter(
         Review.user_id == user_id,
+        Review.is_deleted == False,
         Review.created_at >= datetime.utcnow() - timedelta(days=7)
     ).count()
     if recent_activity >= 3:
@@ -284,6 +285,7 @@ def get_enhanced_stats(user_id):
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     recent_reviews = Review.query.filter(
         Review.user_id == user_id,
+        Review.is_deleted == False,
         Review.created_at >= thirty_days_ago
     ).count()
     recent_likes = MediaLike.query.filter(

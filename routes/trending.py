@@ -66,6 +66,7 @@ def get_trending_media():
         review_count = Review.query.filter(
             Review.media_id == item.id,
             Review.media_type == item.media_type,
+            Review.is_deleted == False,
             Review.created_at >= since_date
         ).count()
         

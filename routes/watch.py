@@ -7,8 +7,10 @@ from datetime import datetime, date
 
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
+from sqlalchemy.exc import IntegrityError
 
 from models import db, WatchProgress, MediaItem, DiaryEntry
+from extensions import limiter
 
 watch_bp = Blueprint('watch', __name__)
 logger = logging.getLogger(__name__)
@@ -79,6 +81,7 @@ def watch_tv(tmdb_id, season, episode):
 
 @watch_bp.route('/api/watch/progress', methods=['POST'])
 @login_required
+@limiter.limit("30 per minute")
 def save_progress():
     data = request.get_json()
     if not data:
@@ -130,11 +133,28 @@ def save_progress():
 
         auto_logged = False
         if progress >= 85 and duration > 60:
-            auto_logged = _auto_log(tmdb_id, media_type, title, poster_path)
+            try:
+                with db.session.begin_nested():
+                    auto_logged = _auto_log(tmdb_id, media_type, title, poster_path)
+            except Exception as ae:
+                logger.warning("Auto-log savepoint failed: %s", ae)
 
         db.session.commit()
         return jsonify({'success': True, 'auto_logged': auto_logged}), 200
 
+    except IntegrityError:
+        db.session.rollback()
+        # Race condition: another request inserted same row; retry as update
+        wp = WatchProgress.query.filter_by(
+            user_id=current_user.id, tmdb_id=tmdb_id,
+            media_type=media_type, season=season, episode=episode
+        ).first()
+        if wp:
+            wp.current_time = current_time
+            wp.duration = duration
+            wp.updated_at = datetime.utcnow()
+            db.session.commit()
+        return jsonify({'success': True, 'auto_logged': False}), 200
     except Exception as e:
         db.session.rollback()
         logger.error("Progress save error: %s", e, exc_info=True)
@@ -149,14 +169,13 @@ def continue_watching():
         .filter(
             WatchProgress.user_id == current_user.id,
             WatchProgress.duration > 60,
+            WatchProgress.current_time < WatchProgress.duration * 0.9,
         )
         .order_by(WatchProgress.updated_at.desc())
         .limit(20)
         .all()
     )
-    # Filter out fully-watched in Python (progress_pct uses property)
-    in_progress = [i for i in items if i.progress_pct < 90]
-    return jsonify({'items': [i.to_dict() for i in in_progress]}), 200
+    return jsonify({'items': [i.to_dict() for i in items]}), 200
 
 
 @watch_bp.route('/api/watch/history')

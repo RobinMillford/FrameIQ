@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, render_template, request, jsonify, Response, stream_with_context
 import json
 import time
@@ -10,6 +12,8 @@ from langchain.schema import AIMessage, HumanMessage
 import json
 from datetime import datetime
 import re
+
+logger = logging.getLogger(__name__)
 
 # Get environment variables
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
@@ -123,10 +127,8 @@ def chat_api():
                 yield f"data: {json.dumps({'error': 'No response generated', 'type': 'error'})}\n\n"
         
         except Exception as e:
-            print(f"Error in streaming chat: {e}")
-            import traceback
-            traceback.print_exc()
-            yield f"data: {json.dumps({'error': str(e), 'type': 'error'})}\n\n"
+            logger.error("Error in streaming chat", exc_info=True)
+            yield f"data: {json.dumps({'error': 'Internal server error', 'type': 'error'})}\n\n"
     
     return Response(
         stream_with_context(generate()),

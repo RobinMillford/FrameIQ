@@ -2,11 +2,15 @@
 Week 2b Lists Features API Routes
 Handles collaboration, categories, and analytics
 """
+import logging
+
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 from models import db, UserList, ListCollaborator, ListCategory, UserListCategory, ListAnalytics, ListView, User
 from datetime import datetime, timedelta
 from sqlalchemy import func
+
+logger = logging.getLogger(__name__)
 
 lists_advanced = Blueprint('lists_advanced', __name__)
 
@@ -88,7 +92,8 @@ def add_collaborator(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to add collaborator", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists_advanced.route('/api/lists/<int:list_id>/collaborators/<int:user_id>', methods=['DELETE'])
@@ -115,7 +120,8 @@ def remove_collaborator(list_id, user_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to remove collaborator", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists_advanced.route('/api/lists/<int:list_id>/collaborators/<int:user_id>/role', methods=['PUT'])
@@ -150,7 +156,8 @@ def update_collaborator_role(list_id, user_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update collaborator role", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 def can_edit_list(user_list, user):
@@ -251,7 +258,8 @@ def add_category_to_list(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to add category to list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists_advanced.route('/api/lists/<int:list_id>/categories/<int:category_id>', methods=['DELETE'])
@@ -283,7 +291,8 @@ def remove_category_from_list(list_id, category_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to remove category from list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists_advanced.route('/api/categories/search', methods=['GET'])
@@ -412,7 +421,8 @@ def track_list_view(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to track list view", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists_advanced.route('/api/lists/<int:list_id>/share', methods=['POST'])
@@ -438,7 +448,8 @@ def track_list_share(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to track list share", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============================================================================

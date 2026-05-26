@@ -2,6 +2,7 @@ import requests
 import time
 import os
 import logging
+import threading
 from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
@@ -9,30 +10,34 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# Load environment variables
 load_dotenv()
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-TMDB_API_KEY_2 = os.getenv("TMDB_API_KEY_2")
+
 
 class _BoundedTTLCache:
-    """Size-bounded dict cache; evicts oldest 10% when full."""
+    """Thread-safe size-bounded TTL cache; evicts oldest 10% when full."""
+
     def __init__(self, maxsize=500):
         self._store = {}
         self._maxsize = maxsize
+        self._lock = threading.Lock()
 
     def __contains__(self, key):
-        return key in self._store
+        with self._lock:
+            return key in self._store
 
     def __getitem__(self, key):
-        return self._store[key]
+        with self._lock:
+            return self._store[key]
 
     def __setitem__(self, key, value):
-        if len(self._store) >= self._maxsize:
-            oldest = sorted(self._store.items(), key=lambda x: x[1][1])
-            for k, _ in oldest[:max(1, self._maxsize // 10)]:
-                del self._store[k]
-        self._store[key] = value
+        with self._lock:
+            if len(self._store) >= self._maxsize:
+                oldest = sorted(self._store.items(), key=lambda x: x[1][1])
+                for k, _ in oldest[:max(1, self._maxsize // 10)]:
+                    del self._store[k]
+            self._store[key] = value
 
 
 # Bounded in-memory cache for TMDB data (max 500 entries, TTL checked on read)

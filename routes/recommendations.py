@@ -3,10 +3,14 @@ More Like This API
 Provides recommendations similar to a given movie/TV show
 Uses genre, cast, director matching logic
 """
+import logging
+
 from flask import Blueprint, jsonify, request
 from models import MediaItem
 import os
 import requests
+
+logger = logging.getLogger(__name__)
 
 recommendations_bp = Blueprint('recommendations', __name__)
 
@@ -90,6 +94,8 @@ def get_recommendations(media_id):
         })
         
     except requests.RequestException as e:
-        return jsonify({'success': False, 'error': f'TMDB API error: {str(e)}'}), 500
+        logger.error("TMDB API request failed", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error("Failed to fetch recommendations", exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500

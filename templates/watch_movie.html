@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ movie.title }} — Watch on FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -215,6 +216,7 @@
 
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
+        if (e.origin !== 'https://www.vidking.net') return;
         let data;
         try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
         catch { return; }
@@ -241,8 +243,8 @@
                 currentTime: data.currentTime || 0,
                 duration: data.duration || 0,
                 progress: data.progress || 0,
-                title: '{{ movie.title | e }}',
-                posterPath: '{{ movie.poster_path or "" }}'
+                title: {{ movie.title | tojson }},
+                posterPath: {{ (movie.poster_path or '') | tojson }}
             })
         })
         .then(r => r.json())
@@ -277,12 +279,7 @@
         .catch(() => showToast('Could not add to watchlist'));
     }
 
-    // Show initial progress if resuming
-    {% if resume_time > 0 %}
-    document.getElementById('progress-display') && (
-        document.getElementById('progress-display').style.width = '{{ ((resume_time / 90) * 100) | round(1) }}%'
-    );
-    {% endif %}
+    // Progress bar starts at 0; postMessage events from player update it in real time
 </script>
 </body>
 </html>

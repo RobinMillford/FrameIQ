@@ -2,6 +2,8 @@
 Lists API Routes
 Handles user-created custom lists of movies/TV shows
 """
+import logging
+
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserList, UserListItem, MediaItem
@@ -10,6 +12,8 @@ from datetime import datetime
 import requests
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 lists = Blueprint('lists', __name__)
 
@@ -119,7 +123,8 @@ def create_list():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("List creation error", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/<int:list_id>/update', methods=['PUT'])
@@ -154,7 +159,8 @@ def update_list(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/<int:list_id>/delete', methods=['DELETE'])
@@ -175,7 +181,8 @@ def delete_list(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to delete list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/<int:list_id>/add', methods=['POST'])
@@ -256,7 +263,8 @@ def add_to_list(list_id):
         return jsonify({'error': 'This item is already in the list'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to add item to list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/<int:list_id>/remove/<int:item_id>', methods=['DELETE'])
@@ -284,7 +292,8 @@ def remove_from_list(list_id, item_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to remove item from list", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============================================================================
@@ -319,7 +328,8 @@ def update_list_cover(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to update list cover", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/<int:list_id>/reorder', methods=['PUT'])
@@ -355,7 +365,8 @@ def reorder_list_items(list_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        logger.error("Failed to reorder list items", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @lists.route('/api/lists/slug/<slug>')
