@@ -3,6 +3,7 @@ import requests
 import time
 import os
 from datetime import datetime
+import feedparser
 from sqlalchemy import select
 from api.tmdb_client import (
     fetch_now_playing_movies, fetch_popular_movies, fetch_upcoming_movies,
@@ -16,7 +17,6 @@ from models import db, MediaItem, user_watchlist, user_wishlist, user_viewed, Us
 # Get environment variables
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_API_KEY_2 = os.getenv("TMDB_API_KEY_2")
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
 main = Blueprint('main', __name__)
 
@@ -162,48 +162,56 @@ def trending_page():
     """Render the trending page"""
     return render_template('trending.html')
 
+_NEWS_FEEDS = [
+    ("Variety",             "https://variety.com/feed/"),
+    ("Deadline",            "https://deadline.com/feed/"),
+    ("The Hollywood Reporter", "https://www.hollywoodreporter.com/feed/"),
+    ("Entertainment Weekly","https://ew.com/feed/"),
+    ("Screen Rant",         "https://screenrant.com/feed/"),
+    ("IGN Entertainment",   "https://feeds.feedburner.com/ign/movies-articles"),
+    ("Collider",            "https://collider.com/feed/"),
+]
+
 @main.route('/news')
 def news():
-    if not NEWS_API_KEY:
-        return render_template('news.html', articles=[], error="News API key not configured.")
-
-    news_url = (
-        "https://newsapi.org/v2/everything?"
-        "q=movies OR 'TV shows' OR 'movie actors' OR 'TV actors' OR actresses "
-        "-sports -politics -business -tech "
-        f"&apiKey={NEWS_API_KEY}&language=en&sortBy=publishedAt&pageSize=50"
-    )
-    try:
-        news_response = requests.get(news_url, timeout=8)
-        news_response.raise_for_status()
-        news_data = news_response.json()
-    except requests.exceptions.Timeout:
-        return render_template('news.html', articles=[], error="News feed timed out. Try again shortly.")
-    except Exception:
-        return render_template('news.html', articles=[], error="Could not load news right now.")
-
-    _KEYWORDS = {
-        'movie', 'tv', 'actor', 'actress', 'show', 'film', 'series',
-        'cinema', 'television', 'star', 'celebrity', 'director',
-        'producer', 'screenplay', 'premiere', 'release', 'cast',
-        'episode', 'season',
-    }
-    filtered_articles = []
-    for article in news_data.get('articles', []):
-        if not (article.get('title') and article.get('url')):
+    articles = []
+    for source_name, feed_url in _NEWS_FEEDS:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:10]:
+                title = entry.get('title', '').strip()
+                url   = entry.get('link', '')
+                if not (title and url):
+                    continue
+                # thumbnail: try media_thumbnail, media_content, or enclosure
+                image = None
+                if entry.get('media_thumbnail'):
+                    image = entry['media_thumbnail'][0].get('url')
+                elif entry.get('media_content'):
+                    image = entry['media_content'][0].get('url')
+                elif entry.get('enclosures'):
+                    enc = entry['enclosures'][0]
+                    if enc.get('type', '').startswith('image/'):
+                        image = enc.get('href') or enc.get('url')
+                published = ''
+                if entry.get('published_parsed'):
+                    import calendar
+                    ts = calendar.timegm(entry['published_parsed'])
+                    published = datetime.utcfromtimestamp(ts).strftime('%Y-%m-%dT%H:%M:%SZ')
+                articles.append({
+                    'title':       title,
+                    'description': entry.get('summary', 'No description available')[:300],
+                    'url':         url,
+                    'urlToImage':  image,
+                    'publishedAt': published,
+                    'source':      source_name,
+                })
+        except Exception:
             continue
-        text = (article.get('title', '') + ' ' + (article.get('description') or '')).lower()
-        if not any(kw in text for kw in _KEYWORDS):
-            continue
-        filtered_articles.append({
-            'title': article['title'],
-            'description': article.get('description') or 'No description available',
-            'url': article['url'],
-            'urlToImage': article.get('urlToImage'),
-            'publishedAt': article.get('publishedAt', ''),
-        })
 
-    return render_template('news.html', articles=filtered_articles)
+    # Sort newest first
+    articles.sort(key=lambda a: a['publishedAt'], reverse=True)
+    return render_template('news.html', articles=articles[:60])
 
 @main.route('/movies')
 def movies():
