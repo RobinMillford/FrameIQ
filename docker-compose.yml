@@ -2,35 +2,13 @@ name: frameiq   # unique project name — isolates from other compose stacks on 
 
 services:
 
-  db:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: frameiq
-      POSTGRES_USER: frameiq
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U frameiq"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - frameiq
-
   web:
     build: .
-    image: frameiq-app:latest        # explicit name makes clean rebuilds easy
+    image: frameiq-app:latest
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      # ── Database ───────────────────────────────────────────────────────────
-      # Points to the local postgres container.
-      # To use Neon instead, set DATABASE_URL in .env and remove this line.
-      DATABASE_URL: postgresql://frameiq:${POSTGRES_PASSWORD}@db:5432/frameiq
+      # ── Database (Neon — passed from .env) ────────────────────────────────
+      DATABASE_URL: ${DATABASE_URL}
 
       # ── App ────────────────────────────────────────────────────────────────
       SECRET_KEY: ${SECRET_KEY}
@@ -77,7 +55,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - certbot_www:/var/www/certbot:ro   # certbot ACME challenge files
+      - certbot_www:/var/www/certbot:ro
       - nginx_logs:/var/log/nginx
     depends_on:
       - web
@@ -85,7 +63,6 @@ services:
       - frameiq
 
 volumes:
-  postgres_data:
   nginx_logs:
   certbot_www:
 
