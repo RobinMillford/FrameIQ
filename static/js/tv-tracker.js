@@ -8,11 +8,9 @@ class TVTracker {
         this.showId = showId;
         this.progress = null;
         this.watchedEpisodes = [];
-        console.log('TVTracker initialized for show:', showId);
     }
 
     async initialize() {
-        console.log('TVTracker: Loading progress...');
         await this.loadProgress();
         this.renderTrackingUI();
     }
@@ -25,19 +23,12 @@ class TVTracker {
             
             this.progress = data.progress;
             this.watchedEpisodes = data.watched_episodes || [];
-            
-            console.log('TVTracker: Progress loaded', {
-                hasProgress: !!this.progress,
-                episodeCount: this.watchedEpisodes.length
-            });
         } catch (error) {
-            console.error('TVTracker: Error loading progress:', error);
         }
     }
 
     async startTracking() {
         try {
-            console.log('TVTracker: Starting tracking...');
             const response = await fetch(`/api/tv/${this.showId}/start-tracking`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -58,14 +49,12 @@ class TVTracker {
                 this.showNotification('Error: ' + (data.error || 'Failed to start tracking'), 'error');
             }
         } catch (error) {
-            console.error('TVTracker: Error starting tracking:', error);
             this.showNotification('Failed to start tracking', 'error');
         }
     }
 
     async changeStatus(newStatus) {
         try {
-            console.log('TVTracker: Changing status to:', newStatus);
             const response = await fetch(`/api/tv/${this.showId}/status`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -82,7 +71,6 @@ class TVTracker {
                 this.showNotification('Error: ' + (data.error || 'Failed to change status'), 'error');
             }
         } catch (error) {
-            console.error('TVTracker: Error changing status:', error);
             this.showNotification('Failed to change status', 'error');
         }
     }
@@ -90,7 +78,6 @@ class TVTracker {
     renderTrackingUI() {
         const container = document.getElementById('tracking-container');
         if (!container) {
-            console.warn('TVTracker: tracking-container not found');
             return;
         }
 
@@ -99,8 +86,6 @@ class TVTracker {
         } else {
             container.innerHTML = this.renderProgressCard();
         }
-
-        console.log('TVTracker: UI rendered');
     }
 
     renderStartTrackingButton() {

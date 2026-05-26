@@ -17,7 +17,6 @@ class ReviewManager {
     }
 
     init() {
-        console.log('ReviewManager initialized');
         this.attachEventListeners();
         
         // Auto-load reviews if on media detail page
@@ -104,7 +103,6 @@ class ReviewManager {
                 this.showToast(data.error || 'Failed to vote', 'error');
             }
         } catch (error) {
-            console.error('Error voting helpful:', error);
             this.showToast('Network error', 'error');
         }
     }
@@ -133,7 +131,6 @@ class ReviewManager {
                 this.showToast(data.error || 'Failed to like review', 'error');
             }
         } catch (error) {
-            console.error('Error toggling like:', error);
             this.showToast('Network error', 'error');
         }
     }
@@ -176,7 +173,6 @@ class ReviewManager {
                 container.innerHTML = '<div class="error-message">Failed to load reviews</div>';
             }
         } catch (error) {
-            console.error('Error loading reviews:', error);
             container.innerHTML = '<div class="error-message">Network error</div>';
         } finally {
             this.isLoading = false;
@@ -224,7 +220,6 @@ class ReviewManager {
                 container.innerHTML = '<div class="error-message">Failed to load feed</div>';
             }
         } catch (error) {
-            console.error('Error loading feed:', error);
             container.innerHTML = '<div class="error-message">Network error</div>';
         } finally {
             this.isLoading = false;
@@ -269,7 +264,6 @@ class ReviewManager {
                 container.innerHTML = '<div class="error-message">Failed to load popular reviews</div>';
             }
         } catch (error) {
-            console.error('Error loading popular reviews:', error);
             container.innerHTML = '<div class="error-message">Network error</div>';
         } finally {
             this.isLoading = false;

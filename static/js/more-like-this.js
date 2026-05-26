@@ -19,11 +19,9 @@ class MoreLikeThisManager {
                 this.recommendations = data.recommendations;
                 this.render();
             } else {
-                console.error('Failed to load recommendations:', data.error);
                 this.renderError();
             }
         } catch (error) {
-            console.error('Error loading recommendations:', error);
             this.renderError();
         }
     }

@@ -372,7 +372,6 @@
                     slider.appendChild(movieCard);
                 });
             })
-            .catch(error => console.error("Error fetching trending movies:", error));
         }
 
         async function fetchLatestTrailers() {
@@ -408,7 +407,6 @@
                     }
                 });
     } catch (error) {
-                console.error("Error fetching latest trailers:", error);
     }
 }
 
@@ -438,7 +436,6 @@ async function fetchMovieTrailer(movieId) {
 
         return trailer ? `https://www.youtube.com/embed/${trailer.key}` : null;
     } catch (error) {
-        console.error(`Error fetching trailer for movie ID ${movieId}:`, error);
         return null;
     }
 }
@@ -482,7 +479,6 @@ async function fetchMovieTrailer(movieId) {
 
                 autocompleteContainer.style.display = autocompleteContainer.children.length > 0 ? "block" : "none";
             })
-            .catch(error => console.error("Error fetching movies:", error));
         });
 
         document.addEventListener("click", function(e) {
@@ -533,7 +529,6 @@ async function fetchMovieTrailer(movieId) {
                         container.appendChild(movieCard);
                     });
                 } catch (error) {
-                    console.error(`Error fetching ${genre} movies:`, error);
                 }
             }
         }

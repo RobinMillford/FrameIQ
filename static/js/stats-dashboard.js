@@ -27,7 +27,6 @@ class StatsDashboard {
             if (!response.ok) throw new Error('Failed to fetch stats');
             this.data = await response.json();
         } catch (error) {
-            console.error('Error fetching dashboard data:', error);
             const container = document.getElementById(this.containerId);
             if (container) {
                 container.innerHTML = `<div class="text-center py-12 text-gray-500 bg-gray-800/50 rounded-xl border border-gray-700">

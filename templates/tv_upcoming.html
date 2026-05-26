@@ -189,7 +189,6 @@ async function loadUpcomingEpisodes() {
                     }
                 }
             } catch (error) {
-                console.error(`Error loading show ${show.show_id}:`, error);
             }
         }
         
@@ -203,7 +202,6 @@ async function loadUpcomingEpisodes() {
         renderEpisodes(currentFilter);
         
     } catch (error) {
-        console.error('Error loading upcoming episodes:', error);
     }
 }
 

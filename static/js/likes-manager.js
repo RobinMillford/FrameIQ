@@ -25,7 +25,6 @@ class LikesManager {
                 this.liked = data.liked;
             }
         } catch (error) {
-            console.error('Error checking like status:', error);
         }
     }
 
@@ -37,7 +36,6 @@ class LikesManager {
                 this.likesCount = data.count;
             }
         } catch (error) {
-            console.error('Error loading likes count:', error);
         }
     }
 
@@ -98,7 +96,6 @@ class LikesManager {
                 this.showMessage(error.error || 'Failed to like', 'error');
             }
         } catch (error) {
-            console.error('Error liking media:', error);
             this.showMessage('An error occurred', 'error');
         }
     }
@@ -120,7 +117,6 @@ class LikesManager {
                 this.showMessage(error.error || 'Failed to unlike', 'error');
             }
         } catch (error) {
-            console.error('Error unliking media:', error);
             this.showMessage('An error occurred', 'error');
         }
     }

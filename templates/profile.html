@@ -459,28 +459,54 @@
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('recommendations-preview');
+                    container.innerHTML = '';
                     if (data.recommendations && data.recommendations.length > 0) {
-                        let html = '<div class="grid grid-cols-3 gap-4">';
-                        // Show recommendations
+                        const grid = document.createElement('div');
+                        grid.className = 'grid grid-cols-3 gap-4';
                         data.recommendations.forEach(rec => {
-                            html += `
-                                <a href="/${rec.media_type === 'movie' ? 'movie' : 'tv'}/${rec.id}" class="recommendation-card block">
-                                    <img src="${rec.poster}" alt="${rec.title}" class="w-full rounded mb-2" style="aspect-ratio: 2/3; object-fit: cover;" onerror="this.src='https://via.placeholder.com/150x225?text=No+Image'">
-                                    <div class="text-xs font-semibold truncate">${rec.title}</div>
-                                    <div class="text-xs text-gray-400">${rec.release_date}</div>
-                                    <div class="text-xs text-indigo-300 truncate" title="Based on: ${rec.based_on}">Based on: ${rec.based_on}</div>
-                                </a>
-                            `;
+                            const mediaPath = rec.media_type === 'movie' ? 'movie' : 'tv';
+                            const a = document.createElement('a');
+                            a.href = `/${mediaPath}/${rec.id}`;
+                            a.className = 'recommendation-card block';
+                            const img = document.createElement('img');
+                            img.src = rec.poster || '';
+                            img.alt = rec.title || '';
+                            img.className = 'w-full rounded mb-2';
+                            img.style.cssText = 'aspect-ratio:2/3;object-fit:cover';
+                            img.onerror = function() { this.src = '/static/images/no-poster.svg'; };
+                            const titleEl = document.createElement('div');
+                            titleEl.className = 'text-xs font-semibold truncate';
+                            titleEl.textContent = rec.title || '';
+                            const dateEl = document.createElement('div');
+                            dateEl.className = 'text-xs text-gray-400';
+                            dateEl.textContent = rec.release_date || '';
+                            const basedEl = document.createElement('div');
+                            basedEl.className = 'text-xs text-indigo-300 truncate';
+                            basedEl.title = `Based on: ${rec.based_on || ''}`;
+                            basedEl.textContent = `Based on: ${rec.based_on || ''}`;
+                            a.appendChild(img);
+                            a.appendChild(titleEl);
+                            a.appendChild(dateEl);
+                            a.appendChild(basedEl);
+                            grid.appendChild(a);
                         });
-                        html += '</div>';
-                        container.innerHTML = html;
+                        container.appendChild(grid);
                     } else {
-                        container.innerHTML = '<p class="text-gray-400">Add items to your lists to get personalized recommendations.</p>';
+                        const p = document.createElement('p');
+                        p.className = 'text-gray-400';
+                        p.textContent = 'Add items to your lists to get personalized recommendations.';
+                        container.appendChild(p);
                     }
                 })
-                .catch(error => {
-                    console.error('Error loading recommendations:', error);
-                    document.getElementById('recommendations-preview').innerHTML = '<p class="text-gray-400">Unable to load recommendations at this time.</p>';
+                .catch(() => {
+                    const container = document.getElementById('recommendations-preview');
+                    if (container) {
+                        container.innerHTML = '';
+                        const p = document.createElement('p');
+                        p.className = 'text-gray-400';
+                        p.textContent = 'Unable to load recommendations at this time.';
+                        container.appendChild(p);
+                    }
                 });
         }
         
@@ -497,7 +523,6 @@
                 const diaryData = await diaryResponse.json();
                 document.getElementById('diary-count').textContent = `${diaryData.total || 0} entries`;
             } catch (error) {
-                console.error('Error loading counts:', error);
                 document.getElementById('lists-count').textContent = '0 lists';
                 document.getElementById('diary-count').textContent = '0 entries';
             }
@@ -545,7 +570,6 @@
                     alert(data.error || 'Failed to create list');
                 }
             } catch (error) {
-                console.error('Error creating list:', error);
                 alert('An error occurred');
             }
         }

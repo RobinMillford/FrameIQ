@@ -551,7 +551,7 @@
                         slider.appendChild(showCard);
                     });
                 })
-                .catch(error => console.error("Error fetching trending TV shows:", error));
+                .catch(() => {});
             }
 
         // Add new function to fetch collection images
@@ -619,7 +619,6 @@
                     initializeSlideshow(totalSlides);
                 }
     } catch (error) {
-                console.error("Error fetching best TV shows:", error);
             }
         }
 
@@ -698,7 +697,7 @@
 
                 autocompleteContainer.style.display = autocompleteContainer.children.length > 0 ? "block" : "none";
             })
-            .catch(error => console.error("Error fetching TV shows:", error));
+            .catch(() => {});
         });
 
         document.addEventListener("click", function(e) {
@@ -732,18 +731,8 @@
                 try {
                     let url = tmdbUrl('/discover/tv', {with_genres: id, sort_by: 'popularity.desc', page: 1});
                     
-                    // Log the URL for debugging
-                    if (genre === 'scifi') {
-                        console.log("Sci-Fi & Fantasy URL:", url);
-                    }
-                    
                     const response = await fetch(url);
                     const data = await response.json();
-                    
-                    // Log the response for debugging
-                    if (genre === 'scifi') {
-                        console.log("Sci-Fi & Fantasy response:", data);
-                    }
                     
                     const container = document.getElementById(`${genre}-tv`);
                     if (container) {
@@ -774,7 +763,6 @@
                         }
                     }
                 } catch (error) {
-                    console.error(`Error fetching ${genre} TV shows:`, error);
                     
                     // Show error message in the container
                     const container = document.getElementById(`${genre}-tv`);

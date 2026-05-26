@@ -18,7 +18,6 @@ class WatchlistPrioritiesManager {
             const stats = await response.json();
             this.updateStatsDisplay(stats);
         } catch (error) {
-            console.error('Error loading watchlist stats:', error);
         }
     }
 
@@ -99,7 +98,6 @@ class WatchlistPrioritiesManager {
                 this.showMessage(data.error || 'Failed to update priority', 'error');
             }
         } catch (error) {
-            console.error('Error updating priority:', error);
             this.showMessage('An error occurred', 'error');
         }
     }

@@ -161,7 +161,6 @@ function loadShows() {
             renderShows(data.shows);
         })
         .catch(error => {
-            console.error('Error loading shows:', error);
             document.getElementById('loadingState').classList.add('hidden');
             alert('Failed to load shows');
         });
@@ -258,7 +257,6 @@ async function fetchShowDetails(showId) {
         const response = await fetch(`/api/tmdb/proxy?path=${encodeURIComponent('/tv/' + showId)}`);
         return await response.json();
     } catch (error) {
-        console.error('Error fetching show details:', error);
         return { name: 'Unknown Show', poster_path: null };
     }
 }
@@ -302,7 +300,6 @@ function changeStatus(showId) {
         }
     })
     .catch(error => {
-        console.error('Error updating status:', error);
         alert('Failed to update status');
     });
 }

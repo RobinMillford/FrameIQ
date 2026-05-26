@@ -21,7 +21,10 @@
         }
         @media (max-width: 1024px) {
             .watch-layout { grid-template-columns: 1fr; }
-            .episode-sidebar { max-height: 400px; }
+            .episode-sidebar { max-height: 60vh; height: auto; position: static; }
+        }
+        @media (max-width: 640px) {
+            .episode-sidebar { max-height: 50vh; }
         }
 
         /* Player */

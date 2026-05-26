@@ -44,7 +44,6 @@ class ListAdvancedManager {
                 container.innerHTML = '<p class="text-gray-500 text-sm">No collaborators yet</p>';
             }
         } catch (error) {
-            console.error('Error loading collaborators:', error);
         }
     }
     
@@ -126,7 +125,6 @@ class ListAdvancedManager {
                 this.showMessage(data.error || 'Failed to add collaborator', 'error');
             }
         } catch (error) {
-            console.error('Error adding collaborator:', error);
             this.showMessage('Failed to add collaborator', 'error');
         }
     }
@@ -148,7 +146,6 @@ class ListAdvancedManager {
                 this.showMessage(data.error || 'Failed to remove collaborator', 'error');
             }
         } catch (error) {
-            console.error('Error removing collaborator:', error);
             this.showMessage('Failed to remove collaborator', 'error');
         }
     }
@@ -178,7 +175,6 @@ class ListAdvancedManager {
                 this.showMessage(data.error || 'Failed to update role', 'error');
             }
         } catch (error) {
-            console.error('Error updating role:', error);
             this.showMessage('Failed to update role', 'error');
         }
     }
@@ -214,7 +210,6 @@ class ListAdvancedManager {
                 container.innerHTML = '<span class="text-gray-500 text-sm">No categories</span>';
             }
         } catch (error) {
-            console.error('Error loading categories:', error);
         }
     }
     
@@ -227,7 +222,6 @@ class ListAdvancedManager {
                 this.availableCategories = data.categories;
             }
         } catch (error) {
-            console.error('Error loading available categories:', error);
         }
     }
     
@@ -309,7 +303,6 @@ class ListAdvancedManager {
                 this.showMessage(data.error || 'Failed to add category', 'error');
             }
         } catch (error) {
-            console.error('Error adding category:', error);
             this.showMessage('Failed to add category', 'error');
         }
     }
@@ -329,7 +322,6 @@ class ListAdvancedManager {
                 this.showMessage(data.error || 'Failed to remove category', 'error');
             }
         } catch (error) {
-            console.error('Error removing category:', error);
             this.showMessage('Failed to remove category', 'error');
         }
     }
@@ -352,7 +344,6 @@ class ListAdvancedManager {
                 method: 'POST'
             });
         } catch (error) {
-            console.error('Error tracking view:', error);
         }
     }
     
@@ -369,7 +360,6 @@ class ListAdvancedManager {
             }
         } catch (error) {
             // User probably doesn't have permission to view analytics
-            console.log('Analytics not available');
         }
     }
     
@@ -431,7 +421,6 @@ class ListAdvancedManager {
                 this.loadAnalytics(); // Refresh analytics
             }
         } catch (error) {
-            console.error('Error tracking share:', error);
         }
     }
     

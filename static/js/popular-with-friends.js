@@ -18,11 +18,8 @@ class PopularWithFriendsManager {
             if (data.success) {
                 this.friendsData = data;
                 this.render();
-            } else {
-                console.error('Failed to load popular with friends:', data.error);
             }
         } catch (error) {
-            console.error('Error loading popular with friends:', error);
         }
     }
 

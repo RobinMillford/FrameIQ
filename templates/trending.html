@@ -313,7 +313,6 @@ function loadTrendingMedia() {
             }
         })
         .catch(error => {
-            console.error('Error loading trending media:', error);
             container.innerHTML = '<div class="error-message">Error loading trending media</div>';
         });
 }
@@ -337,7 +336,6 @@ function loadTrendingTags() {
             }
         })
         .catch(error => {
-            console.error('Error loading trending tags:', error);
             container.innerHTML = '<div class="error-message">Error loading trending tags</div>';
         });
 }
@@ -368,7 +366,6 @@ function loadTrendingUsers() {
             }
         })
         .catch(error => {
-            console.error('Error loading trending users:', error);
             container.innerHTML = '<div class="error-message">Error loading trending users</div>';
         });
 }

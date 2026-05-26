@@ -163,18 +163,25 @@
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
                     <div class="relative" id="profile-dropdown">
-                        <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-                            <i class="fas fa-user"></i>
+                        <button id="profile-button"
+                                class="flex items-center space-x-1 text-white hover:text-gray-300"
+                                aria-haspopup="true"
+                                aria-expanded="false"
+                                aria-controls="profile-menu">
+                            <i class="fas fa-user" aria-hidden="true"></i>
                             <span>{{ current_user.username }}</span>
-                            <i class="fas fa-caret-down"></i>
+                            <i class="fas fa-caret-down" aria-hidden="true"></i>
                         </button>
-                        <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
-                            <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
-                            <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
-                            <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
-                            <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
-                            <a href="{{ url_for('main.stats_dashboard') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">My Stats</a>
-                            <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
+                        <div id="profile-menu"
+                             class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10"
+                             role="menu"
+                             aria-labelledby="profile-button">
+                            <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">Profile</a>
+                            <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">Watchlist</a>
+                            <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">Wishlist</a>
+                            <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">Viewed</a>
+                            <a href="{{ url_for('main.stats_dashboard') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">My Stats</a>
+                            <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700" role="menuitem">Logout</a>
                         </div>
                     </div>
                     {% else %}
@@ -185,8 +192,8 @@
                     {% endif %}
                     
                     <!-- Mobile Menu Toggle -->
-                    <button id="mobile-menu-button" class="md:hidden text-white">
-                        <i class="fas fa-bars text-2xl"></i>
+                    <button id="mobile-menu-button" class="md:hidden text-white" aria-label="Open navigation menu" aria-expanded="false">
+                        <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>
@@ -246,13 +253,25 @@
 
             if (profileButton && profileMenu) {
                 profileButton.addEventListener('click', function() {
+                    const isOpen = !profileMenu.classList.contains('hidden');
                     profileMenu.classList.toggle('hidden');
+                    profileButton.setAttribute('aria-expanded', String(!isOpen));
                 });
 
                 // Close dropdown when clicking outside
                 document.addEventListener('click', function(event) {
                     if (!profileButton.contains(event.target) && !profileMenu.contains(event.target)) {
                         profileMenu.classList.add('hidden');
+                        profileButton.setAttribute('aria-expanded', 'false');
+                    }
+                });
+
+                // Close on Escape key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && !profileMenu.classList.contains('hidden')) {
+                        profileMenu.classList.add('hidden');
+                        profileButton.setAttribute('aria-expanded', 'false');
+                        profileButton.focus();
                     }
                 });
             }

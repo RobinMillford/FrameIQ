@@ -1074,7 +1074,6 @@
                         autocompleteItems.classList.add('hidden');
                     }
                 } catch (error) {
-                    console.error('Error fetching autocomplete:', error);
                     autocompleteItems.classList.add('hidden');
                 }
             });
@@ -1091,12 +1090,8 @@
             const viewFullCastButton = document.getElementById('view-full-cast');
             const fullCastGrid = document.getElementById('full-cast-grid');
             
-            console.log('View Full Cast Button:', viewFullCastButton);
-            console.log('Full Cast Grid:', fullCastGrid);
-            
             if (viewFullCastButton && fullCastGrid) {
                 viewFullCastButton.addEventListener('click', () => {
-                    console.log('View Full Cast button clicked!');
                     if (fullCastGrid.classList.contains('hidden')) {
                         fullCastGrid.classList.remove('hidden');
                         viewFullCastButton.textContent = 'Show Less';
@@ -1105,9 +1100,6 @@
                         viewFullCastButton.textContent = 'View Full Cast & Crew';
                     }
                 });
-                console.log('View Full Cast event listener attached');
-            } else {
-                console.error('View Full Cast elements not found!');
             }
 
             // ===== REVIEW FORM FUNCTIONALITY =====
@@ -1351,7 +1343,6 @@
                         }
                     }
                 } catch (error) {
-                    console.error('Error loading user reviews:', error);
                     userReviewsGrid.innerHTML = `
                         <div class="col-span-full text-center py-12">
                             <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
@@ -1496,7 +1487,6 @@
                                 }
                             }
                         } catch (error) {
-                            console.error('Error liking review:', error);
                         }
                     });
                 });
@@ -1657,7 +1647,6 @@
                         alert(data.error || 'Failed to post comment');
                     }
                 } catch (error) {
-                    console.error('Error posting comment:', error);
                 }
             }
             
@@ -1709,7 +1698,6 @@
                     alert(data.error || 'Failed to log to diary');
                 }
             } catch (error) {
-                console.error('Error logging to diary:', error);
                 alert('An error occurred');
             }
         }
@@ -1744,7 +1732,6 @@
                     listSelect.appendChild(option);
                 });
             } catch (error) {
-                console.error('Error loading lists:', error);
             }
         }
         
@@ -1774,7 +1761,6 @@
                     alert(data.error || 'Failed to add to list');
                 }
             } catch (error) {
-                console.error('Error adding to list:', error);
                 alert('An error occurred');
             }
         }

@@ -11,7 +11,6 @@ class ProfileEnhancementsManager {
     async loadBadges(containerId) {
         const container = document.getElementById(containerId);
         if (!container) {
-            console.error('Badges container not found');
             return;
         }
 
@@ -25,7 +24,6 @@ class ProfileEnhancementsManager {
                 container.innerHTML = '<p>Unable to load badges</p>';
             }
         } catch (error) {
-            console.error('Error loading badges:', error);
             container.innerHTML = '<p>Error loading badges</p>';
         }
     }
@@ -58,7 +56,6 @@ class ProfileEnhancementsManager {
     async loadAchievements(containerId) {
         const container = document.getElementById(containerId);
         if (!container) {
-            console.error('Achievements container not found');
             return;
         }
 
@@ -72,7 +69,6 @@ class ProfileEnhancementsManager {
                 container.innerHTML = '<p>Unable to load achievements</p>';
             }
         } catch (error) {
-            console.error('Error loading achievements:', error);
             container.innerHTML = '<p>Error loading achievements</p>';
         }
     }
@@ -129,7 +125,6 @@ class ProfileEnhancementsManager {
     async loadEnhancedStats(containerId) {
         const container = document.getElementById(containerId);
         if (!container) {
-            console.error('Enhanced stats container not found');
             return;
         }
 
@@ -143,7 +138,6 @@ class ProfileEnhancementsManager {
                 container.innerHTML = '<p>Unable to load statistics</p>';
             }
         } catch (error) {
-            console.error('Error loading stats:', error);
             container.innerHTML = '<p>Error loading statistics</p>';
         }
     }

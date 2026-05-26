@@ -3,8 +3,6 @@
  * Handles season overview, episode tracking with real-time database sync
  */
 
-console.log('TV Seasons script loaded!');
-
 class TVSeasonsManager {
     constructor(showId, apiKey) {
         this.showId = showId;
@@ -12,12 +10,10 @@ class TVSeasonsManager {
         this.seasons = [];
         this.watchedEpisodes = new Set();
         this.showProgress = null;
-        console.log('TVSeasonsManager initialized', { showId, hasApiKey: !!apiKey });
     }
 
     async initialize() {
         try {
-            console.log('TVSeasonsManager: Initializing...');
             const container = document.getElementById('seasons-list');
             if (container) {
                 container.innerHTML = '<div class="text-center py-8"><div class="animate-spin w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto"></div><p class="text-gray-400 mt-4">Loading seasons...</p></div>';
@@ -29,15 +25,8 @@ class TVSeasonsManager {
                 this.loadShowProgress()
             ]);
 
-            console.log('TVSeasonsManager: Data loaded', {
-                seasons: this.seasons.length,
-                watchedEpisodes: this.watchedEpisodes.size,
-                hasProgress: !!this.showProgress
-            });
-
             this.renderSeasonsList();
         } catch (error) {
-            console.error('TVSeasonsManager: Initialization error:', error);
             const container = document.getElementById('seasons-list');
             if (container) {
                 container.innerHTML = `
@@ -54,7 +43,6 @@ class TVSeasonsManager {
     }
 
     async loadShowDetails() {
-        console.log('TVSeasonsManager: Fetching show details from TMDb...');
         const response = await fetch(`/api/tmdb/proxy?path=${encodeURIComponent('/tv/' + this.showId)}`);
         
         if (!response.ok) {
@@ -63,44 +51,31 @@ class TVSeasonsManager {
         
         const data = await response.json();
         this.seasons = data.seasons.filter(s => s.season_number !== 0);
-        console.log(`TVSeasonsManager: Loaded ${this.seasons.length} seasons`);
     }
 
     async loadWatchedEpisodes() {
-        console.log('TVSeasonsManager: Loading watched episodes from database...');
         this.watchedEpisodes.clear();
-        
+
         const timestamp = Date.now();
-        console.log(`TVSeasonsManager: Fetching /api/tv/${this.showId}/watched-episodes?_=${timestamp}`);
-        
         const response = await fetch(`/api/tv/${this.showId}/watched-episodes?_=${timestamp}`);
         const data = await response.json();
-        
-        console.log('TVSeasonsManager: API response:', data);
-        
+
         if (data.success) {
             data.episodes.forEach(ep => {
                 this.watchedEpisodes.add(`${ep.season_number}-${ep.episode_number}`);
             });
-            console.log(`TVSeasonsManager: Loaded ${data.episodes.length} watched episodes from database`);
-            console.log('TVSeasonsManager: Watched episodes set:', Array.from(this.watchedEpisodes));
-        } else {
-            console.error('TVSeasonsManager: Failed to load episodes:', data.error);
         }
     }
 
     async loadShowProgress() {
-        console.log('TVSeasonsManager: Loading progress from database...');
         const timestamp = Date.now();
         const response = await fetch(`/api/tv/${this.showId}/progress?_=${timestamp}`);
         const data = await response.json();
-        
+
         this.showProgress = data.progress;
-        console.log('TVSeasonsManager: Progress loaded from database:', this.showProgress);
     }
 
     async refresh() {
-        console.log('TVSeasonsManager: Refreshing data from database...');
         await this.loadWatchedEpisodes();
         await this.loadShowProgress();
         this.renderSeasonsList();
@@ -110,7 +85,6 @@ class TVSeasonsManager {
         const container = document.getElementById('seasons-list');
         
         if (!container) {
-            console.error('TVSeasonsManager: seasons-list container not found');
             return;
         }
         
@@ -119,8 +93,6 @@ class TVSeasonsManager {
             return;
         }
 
-        console.log('TVSeasonsManager: Rendering seasons...');
-        
         container.innerHTML = this.seasons.map(season => {
             const watchedCount = this.getWatchedCountForSeason(season.season_number);
             const totalEpisodes = season.episode_count;
@@ -209,8 +181,6 @@ class TVSeasonsManager {
                 </div>
             `;
         }).join('');
-
-        console.log('TVSeasonsManager: Seasons rendered');
     }
 
     getWatchedCountForSeason(seasonNumber) {
@@ -232,8 +202,6 @@ class TVSeasonsManager {
             const season = this.seasons.find(s => s.season_number === seasonNumber);
             if (!season) return;
 
-            console.log(`TVSeasonsManager: Marking season ${seasonNumber} as watched (${season.episode_count} episodes)...`);
-
             // Optimistic UI update
             for (let i = 1; i <= season.episode_count; i++) {
                 this.watchedEpisodes.add(`${seasonNumber}-${i}`);
@@ -254,37 +222,24 @@ class TVSeasonsManager {
             const data = await response.json();
 
             if (data.success) {
-                console.log('TVSeasonsManager: Mark season API SUCCESS:', data);
-                
                 const episodeText = data.marked_episodes === 1 ? 'episode' : 'episodes';
                 this.showNotification(`✓ Season ${seasonNumber} marked as watched! (${data.marked_episodes} ${episodeText})`, 'success');
-                
+
                 // Reload fresh data from database
-                console.log('TVSeasonsManager: Reloading data from database after 300ms delay...');
                 await new Promise(resolve => setTimeout(resolve, 300));
-                
-                console.log('TVSeasonsManager: Calling loadWatchedEpisodes()...');
                 await this.loadWatchedEpisodes();
-                
-                console.log('TVSeasonsManager: Calling loadShowProgress()...');
                 await this.loadShowProgress();
-                
-                console.log('TVSeasonsManager: Calling renderSeasonsList()...');
                 this.renderSeasonsList();
 
                 // Update tracker
                 if (window.tvTracker) {
-                    console.log('TVSeasonsManager: Updating tvTracker UI...');
                     window.tvTracker.progress = data.progress;
                     window.tvTracker.renderTrackingUI();
                 }
-                
-                console.log('TVSeasonsManager: Mark season complete!');
             } else {
                 throw new Error(data.error || 'Failed to mark season');
             }
         } catch (error) {
-            console.error('TVSeasonsManager: Error marking season:', error);
             this.showNotification('Failed to mark season: ' + error.message, 'error');
             
             // Rollback UI
@@ -301,8 +256,6 @@ class TVSeasonsManager {
         try {
             const season = this.seasons.find(s => s.season_number === seasonNumber);
             if (!season) return;
-
-            console.log(`TVSeasonsManager: Unmarking season ${seasonNumber}...`);
 
             // Optimistic UI update
             for (let i = 1; i <= season.episode_count; i++) {
@@ -324,9 +277,8 @@ class TVSeasonsManager {
 
             if (data.success) {
                 this.showNotification(`✓ Season ${seasonNumber} unmarked`, 'success');
-                
+
                 // Reload fresh data from database
-                console.log('TVSeasonsManager: Reloading data from database...');
                 await new Promise(resolve => setTimeout(resolve, 200));
                 await this.loadWatchedEpisodes();
                 await this.loadShowProgress();
@@ -341,7 +293,6 @@ class TVSeasonsManager {
                 throw new Error(data.error || 'Failed to unmark season');
             }
         } catch (error) {
-            console.error('TVSeasonsManager: Error unmarking season:', error);
             this.showNotification('Failed to unmark season: ' + error.message, 'error');
             
             // Rollback UI
@@ -356,8 +307,6 @@ class TVSeasonsManager {
         }
 
         try {
-            console.log('TVSeasonsManager: Marking all episodes as watched...');
-
             const response = await fetch(`/api/tv/${this.showId}/mark-all-watched`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -382,7 +331,6 @@ class TVSeasonsManager {
                 this.showNotification('Error: ' + (data.error || 'Failed to mark all episodes'), 'error');
             }
         } catch (error) {
-            console.error('TVSeasonsManager: Error marking all watched:', error);
             this.showNotification('Failed to mark all episodes as watched', 'error');
         }
     }
@@ -416,8 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const showId = showIdElement.value;
         const apiKey = window.TMDB_API_KEY;
         
-        console.log('Initializing TV Seasons Manager', { showId, hasApiKey: !!apiKey });
-        
         if (apiKey) {
             tvSeasonsManager = new TVSeasonsManager(showId, apiKey);
             window.tvSeasonsManager = tvSeasonsManager;
@@ -429,7 +375,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 markAllBtn.addEventListener('click', () => tvSeasonsManager.markAllWatched());
             }
         } else {
-            console.error('TMDB API Key is missing!');
             const container = document.getElementById('seasons-list');
             if (container) {
                 container.innerHTML = '<p class="text-red-400 text-center py-4">ERROR: TMDB API Key is missing!</p>';

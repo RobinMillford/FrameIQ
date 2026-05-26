@@ -175,7 +175,6 @@ async function loadEpisodeData() {
         setupNavigation();
         
     } catch (error) {
-        console.error('Error loading episode data:', error);
     }
 }
 
@@ -195,7 +194,6 @@ async function checkWatchStatus() {
             }
         }
     } catch (error) {
-        console.error('Error checking watch status:', error);
     }
 }
 
@@ -319,7 +317,6 @@ async function markWatched() {
             showNotification('✓ Episode marked as watched!', 'success');
         }
     } catch (error) {
-        console.error('Error marking episode watched:', error);
         showNotification('Failed to mark episode', 'error');
     }
 }
@@ -339,7 +336,6 @@ async function unmarkWatched() {
             showNotification('Episode unmarked', 'success');
         }
     } catch (error) {
-        console.error('Error unmarking episode:', error);
         showNotification('Failed to unmark episode', 'error');
     }
 }
@@ -376,7 +372,6 @@ async function saveRating() {
             showNotification('✓ Rating and notes saved!', 'success');
         }
     } catch (error) {
-        console.error('Error saving rating:', error);
         showNotification('Failed to save rating', 'error');
     }
 }

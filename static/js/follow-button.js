@@ -66,7 +66,6 @@ class FollowButton {
                 this.showToast(data.error || 'Failed to update follow status', 'error');
             }
         } catch (error) {
-            console.error('Error toggling follow:', error);
             this.showToast('Network error. Please try again.', 'error');
         } finally {
             this.setLoading(false);

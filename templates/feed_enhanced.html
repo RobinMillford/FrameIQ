@@ -425,7 +425,6 @@ function loadFeed(reset = false) {
             }
         })
         .catch(error => {
-            console.error('Error loading feed:', error);
             container.innerHTML = '<div class="no-activities"><h3>Error loading feed</h3></div>';
         });
 }
@@ -442,7 +441,6 @@ function loadStats() {
                 document.getElementById('stats-bar').style.display = 'flex';
             }
         })
-        .catch(error => console.error('Error loading stats:', error));
 }
 
 function createActivityCard(activity) {

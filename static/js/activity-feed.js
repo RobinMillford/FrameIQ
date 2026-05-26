@@ -95,7 +95,6 @@ class ActivityFeed {
                 this.showError(data.error || 'Failed to load activities');
             }
         } catch (error) {
-            console.error('Error loading activity feed:', error);
             this.showError('Network error. Please try again.');
         } finally {
             this.isLoading = false;
@@ -217,13 +216,21 @@ class ActivityFeed {
     }
     
     showError(message) {
-        this.container.innerHTML = `
-            <div class="col-span-full text-center py-12 text-red-400">
-                <i class="fas fa-exclamation-circle text-4xl mb-4"></i>
-                <p>${message}</p>
-                <button onclick="window.location.reload()" class="mt-4 text-sm underline">Retry</button>
-            </div>
-        `;
+        this.container.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'col-span-full text-center py-12 text-red-400';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-exclamation-circle text-4xl mb-4';
+        const msg = document.createElement('p');
+        msg.textContent = message;
+        const retry = document.createElement('button');
+        retry.className = 'mt-4 text-sm underline';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', () => window.location.reload());
+        wrap.appendChild(icon);
+        wrap.appendChild(msg);
+        wrap.appendChild(retry);
+        this.container.appendChild(wrap);
     }
 }
 

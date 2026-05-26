@@ -136,7 +136,6 @@ function loadCalendar() {
             renderCalendar(data.calendar);
         })
         .catch(error => {
-            console.error('Error loading calendar:', error);
             document.getElementById('loadingState').classList.add('hidden');
             alert('Failed to load calendar');
         });

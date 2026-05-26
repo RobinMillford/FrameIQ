@@ -121,7 +121,6 @@ async function loadSeasonData() {
         renderEpisodes();
         
     } catch (error) {
-        console.error('Error loading season data:', error);
         document.getElementById('episodes-list').innerHTML = `
             <div class="text-center py-12">
                 <p class="text-red-400">Error loading season data</p>
@@ -143,7 +142,6 @@ async function loadWatchedEpisodes() {
             });
         }
     } catch (error) {
-        console.error('Error loading watched episodes:', error);
     }
 }
 
@@ -278,46 +276,38 @@ function renderEpisodes() {
 
 async function markEpisodeWatched(episodeNumber) {
     try {
-        console.log(`Marking episode ${episodeNumber} as watched...`);
         const response = await fetch(`/api/tv/${SHOW_ID}/episode/${SEASON_NUMBER}/${episodeNumber}/mark-watched?_=${Date.now()}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-        
-        console.log('Response status:', response.status);
+
         const data = await response.json();
-        console.log('Response data:', data);
-        
+
         if (response.ok && data.success) {
             watchedEpisodes.add(episodeNumber);
             updateProgress();
             renderEpisodes();
             showNotification('✓ Episode marked as watched!', 'success');
         } else {
-            console.error('Failed response:', data);
             showNotification(data.error || 'Failed to mark episode', 'error');
         }
     } catch (error) {
-        console.error('Error marking episode watched:', error);
-        showNotification('Failed to mark episode: ' + error.message, 'error');
+        showNotification('Failed to mark episode. Please try again.', 'error');
     }
 }
 
 async function unmarkEpisodeWatched(episodeNumber) {
     try {
-        console.log(`Unmarking episode ${episodeNumber}...`);
         const response = await fetch(`/api/tv/${SHOW_ID}/episode/${SEASON_NUMBER}/${episodeNumber}/unmark-watched?_=${Date.now()}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-        
-        console.log('Response status:', response.status);
+
         const data = await response.json();
-        console.log('Response data:', data);
         
         if (response.ok && data.success) {
             watchedEpisodes.delete(episodeNumber);
@@ -325,11 +315,9 @@ async function unmarkEpisodeWatched(episodeNumber) {
             renderEpisodes();
             showNotification('Episode unmarked', 'success');
         } else {
-            console.error('Failed response:', data);
             showNotification(data.error || 'Failed to unmark episode', 'error');
         }
     } catch (error) {
-        console.error('Error unmarking episode:', error);
         showNotification('Failed to unmark episode: ' + error.message, 'error');
     }
 }
@@ -352,7 +340,6 @@ async function markSeasonWatched() {
             showNotification('✓ Season completed!', 'success');
         }
     } catch (error) {
-        console.error('Error marking season watched:', error);
         showNotification('Failed to mark season', 'error');
     }
 }
@@ -375,7 +362,6 @@ async function unmarkSeasonWatched() {
             showNotification('Season unmarked', 'success');
         }
     } catch (error) {
-        console.error('Error unmarking season:', error);
         showNotification('Failed to unmark season', 'error');
     }
 }

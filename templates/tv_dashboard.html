@@ -301,7 +301,6 @@ async function loadDashboard() {
         loadByStatus('plan_to_watch');
         
     } catch (error) {
-        console.error('Error loading dashboard:', error);
     }
 }
 
@@ -405,7 +404,6 @@ async function loadUpcomingWeek() {
             </div>
         `).join('');
     } catch (error) {
-        console.error('Error loading upcoming:', error);
     }
 }
 
@@ -431,7 +429,6 @@ async function fetchShowDetails(showId) {
         const response = await fetch(tmdbUrl(`/tv/${showId}`));
         return await response.json();
     } catch (error) {
-        console.error('Error fetching show details:', error);
         return { name: 'Unknown Show', poster_path: null };
     }
 }
@@ -561,7 +558,6 @@ async function loadCalendarView() {
         
         container.innerHTML = html;
     } catch (error) {
-        console.error('Error loading calendar:', error);
         container.innerHTML = `
             <div class="text-center py-12">
                 <p class="text-red-400 mb-4">Error loading upcoming episodes</p>

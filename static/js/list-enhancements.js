@@ -122,7 +122,6 @@ class ListEnhancementsManager {
                 this.showMessage(data.error || 'Failed to reorder list', 'error');
             }
         } catch (error) {
-            console.error('Error reordering list:', error);
             this.showMessage('Failed to reorder list', 'error');
         }
     }
@@ -168,7 +167,6 @@ class ListEnhancementsManager {
             reader.readAsDataURL(file);
             
         } catch (error) {
-            console.error('Error uploading cover image:', error);
             this.showMessage('Failed to upload cover image', 'error');
         }
     }
@@ -197,7 +195,6 @@ class ListEnhancementsManager {
                 this.showMessage(data.error || 'Failed to update cover image', 'error');
             }
         } catch (error) {
-            console.error('Error updating cover image:', error);
             this.showMessage('Failed to update cover image', 'error');
         }
     }
@@ -248,7 +245,6 @@ class ListEnhancementsManager {
             }, 2000);
             
         } catch (error) {
-            console.error('Error copying to clipboard:', error);
             this.showMessage('Failed to copy link', 'error');
         }
     }

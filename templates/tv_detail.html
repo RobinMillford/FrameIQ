@@ -1218,7 +1218,6 @@
                             attachCommentListeners();
                         }
                     }
-                } catch (e) { console.error(e); }
             }
 
             function createReviewCard(review) {
@@ -1418,7 +1417,6 @@
                     alert(data.error || 'Failed to log to diary');
                 }
             } catch (error) {
-                console.error('Error logging to diary:', error);
                 alert('An error occurred');
             }
         }
@@ -1453,7 +1451,6 @@
                     listSelect.appendChild(option);
                 });
             } catch (error) {
-                console.error('Error loading lists:', error);
             }
         }
         
@@ -1483,7 +1480,6 @@
                     alert(data.error || 'Failed to add to list');
                 }
             } catch (error) {
-                console.error('Error adding to list:', error);
                 alert('An error occurred');
             }
         }

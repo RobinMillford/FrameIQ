@@ -27,7 +27,6 @@ class TagManager {
             const data = await response.json();
             this.tags = data.tags || [];
         } catch (error) {
-            console.error('Error loading tags:', error);
         }
     }
 
@@ -40,7 +39,6 @@ class TagManager {
             const data = await response.json();
             this.userTags = data.tags || [];
         } catch (error) {
-            console.error('Error loading user tags:', error);
         }
     }
 
@@ -52,7 +50,6 @@ class TagManager {
             const data = await response.json();
             return data.tags || [];
         } catch (error) {
-            console.error('Error searching tags:', error);
             return [];
         }
     }

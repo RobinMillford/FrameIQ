@@ -1854,55 +1854,47 @@
 
                   autocompleteItems.innerHTML = '';
 
-                  // Movies
-                  data.movies.forEach(movie => {
+                  function buildACItem(posterPath, title, subtitle, href) {
                       const item = document.createElement('div');
                       item.className = 'p-2 flex items-center gap-2 hover:bg-indigo-900/50 cursor-pointer';
-                      item.innerHTML = `
-                          <img src="https://image.tmdb.org/t/p/w92${movie.poster_path}" alt="${movie.title}" class="w-10 h-15 object-cover rounded">
-                          <div>
-                              <p class="text-[#F5F6F5] text-sm">${movie.title}</p>
-                              <p class="text-[#A9B8B5] text-xs">${movie.release_date || 'N/A'}</p>
-                          </div>
-                      `;
-                      item.addEventListener('click', () => {
-                          window.location.href = `/movie/${movie.id}`;
-                      });
-                      autocompleteItems.appendChild(item);
+                      const img = document.createElement('img');
+                      img.src = posterPath ? `https://image.tmdb.org/t/p/w92${posterPath}` : '/static/images/no-poster.svg';
+                      img.alt = title || '';
+                      img.className = 'w-10 h-15 object-cover rounded';
+                      const info = document.createElement('div');
+                      const titleEl = document.createElement('p');
+                      titleEl.className = 'text-[#F5F6F5] text-sm';
+                      titleEl.textContent = title || '';
+                      const subEl = document.createElement('p');
+                      subEl.className = 'text-[#A9B8B5] text-xs';
+                      subEl.textContent = subtitle || 'N/A';
+                      info.appendChild(titleEl);
+                      info.appendChild(subEl);
+                      item.appendChild(img);
+                      item.appendChild(info);
+                      item.addEventListener('click', () => { window.location.href = href; });
+                      return item;
+                  }
+
+                  // Movies
+                  data.movies.forEach(movie => {
+                      autocompleteItems.appendChild(
+                          buildACItem(movie.poster_path, movie.title, movie.release_date, `/movie/${movie.id}`)
+                      );
                   });
 
                   // TV Shows
                   data.shows.forEach(show => {
-                      const item = document.createElement('div');
-                      item.className = 'p-2 flex items-center gap-2 hover:bg-indigo-900/50 cursor-pointer';
-                      item.innerHTML = `
-                          <img src="https://image.tmdb.org/t/p/w92${show.poster_path}" alt="${show.name}" class="w-10 h-15 object-cover rounded">
-                          <div>
-                              <p class="text-[#F5F6F5] text-sm">${show.name}</p>
-                              <p class="text-[#A9B8B5] text-xs">${show.first_air_date || 'N/A'}</p>
-                          </div>
-                      `;
-                      item.addEventListener('click', () => {
-                          window.location.href = `/tv/${show.id}`;
-                      });
-                      autocompleteItems.appendChild(item);
+                      autocompleteItems.appendChild(
+                          buildACItem(show.poster_path, show.name, show.first_air_date, `/tv/${show.id}`)
+                      );
                   });
 
                   // People
                   data.people.forEach(person => {
-                      const item = document.createElement('div');
-                      item.className = 'p-2 flex items-center gap-2 hover:bg-indigo-900/50 cursor-pointer';
-                      item.innerHTML = `
-                          <img src="https://image.tmdb.org/t/p/w92${person.profile_path}" alt="${person.name}" class="w-10 h-15 object-cover rounded">
-                          <div>
-                              <p class="text-[#F5F6F5] text-sm">${person.name}</p>
-                              <p class="text-[#A9B8B5] text-xs">${person.known_for || 'N/A'}</p>
-                          </div>
-                      `;
-                      item.addEventListener('click', () => {
-                          window.location.href = `/actor/${person.id}`;
-                      });
-                      autocompleteItems.appendChild(item);
+                      autocompleteItems.appendChild(
+                          buildACItem(person.profile_path, person.name, person.known_for, `/actor/${person.id}`)
+                      );
                   });
 
                   if (autocompleteItems.children.length > 0) {
@@ -1911,7 +1903,6 @@
                       autocompleteItems.classList.add('hidden');
                   }
               } catch (error) {
-                  console.error('Error fetching autocomplete:', error);
                   autocompleteItems.classList.add('hidden');
               }
           });

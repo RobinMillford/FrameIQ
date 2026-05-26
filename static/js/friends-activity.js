@@ -13,7 +13,6 @@ class FriendsActivityManager {
     async init(containerId) {
         this.container = document.getElementById(containerId);
         if (!this.container) {
-            console.error('Friends activity container not found:', containerId);
             return;
         }
 
@@ -33,7 +32,6 @@ class FriendsActivityManager {
                 this.container.innerHTML = '<p>Unable to load friends activity</p>';
             }
         } catch (error) {
-            console.error('Error loading friends activity:', error);
             this.container.innerHTML = '<p>Error loading friends activity</p>';
         }
     }

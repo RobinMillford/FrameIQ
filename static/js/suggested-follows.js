@@ -31,11 +31,9 @@ class SuggestedFollows {
             if (response.ok) {
                 this.render(data.suggestions);
             } else {
-                console.error('Failed to fetch suggested follows:', data.error);
                 this.container.innerHTML = '<p class="text-gray-500 italic">Could not load suggestions.</p>';
             }
         } catch (error) {
-            console.error('Error fetching suggested follows:', error);
             this.container.innerHTML = '<p class="text-gray-500 italic">Network error.</p>';
         } finally {
             this.setLoading(false);

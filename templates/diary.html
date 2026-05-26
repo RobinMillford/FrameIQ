@@ -154,7 +154,6 @@
                 document.getElementById('load-more').classList.toggle('hidden', !hasMore);
 
             } catch (error) {
-                console.error('Error loading diary entries:', error);
                 document.getElementById('diary-entries').innerHTML = `
                     <div class="text-center py-20 text-red-400">
                         <p>Error loading diary entries. Please try again.</p>

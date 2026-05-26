@@ -76,7 +76,6 @@ class UserDiscoveryManager {
             });
             
         } catch (error) {
-            console.error('Search error:', error);
             this.showToast('Failed to search users', 'error');
         }
     }
@@ -101,7 +100,6 @@ class UserDiscoveryManager {
             });
             
         } catch (error) {
-            console.error('Suggestions error:', error);
             this.suggestedContainer.innerHTML = '<p class="error-message">Failed to load suggestions</p>';
         }
     }
@@ -133,7 +131,6 @@ class UserDiscoveryManager {
             this.renderPagination(data);
             
         } catch (error) {
-            console.error('Popular users error:', error);
             this.popularContainer.innerHTML = '<p class="error-message">Failed to load users</p>';
         }
     }
@@ -223,7 +220,6 @@ class UserDiscoveryManager {
             }
             
         } catch (error) {
-            console.error('Follow error:', error);
             this.showToast('Failed to update follow status', 'error');
         }
     }

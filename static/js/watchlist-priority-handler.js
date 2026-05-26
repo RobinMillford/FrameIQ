@@ -55,8 +55,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     throw new Error(data.error || 'Failed to update priority');
                 }
             } catch (error) {
-                console.error('Error updating priority:', error);
-                
                 // Show error message
                 const message = document.createElement('div');
                 message.className = 'fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';

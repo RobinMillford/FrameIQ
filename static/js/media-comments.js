@@ -23,7 +23,6 @@ class MediaCommentsManager {
                 this.comments = data.comments || [];
             }
         } catch (error) {
-            console.error('Error loading comments:', error);
         }
     }
 
@@ -115,7 +114,6 @@ class MediaCommentsManager {
                 this.showMessage(error.error || 'Failed to add comment', 'error');
             }
         } catch (error) {
-            console.error('Error adding comment:', error);
             this.showMessage('An error occurred', 'error');
         }
     }
@@ -147,7 +145,6 @@ class MediaCommentsManager {
                 this.showMessage(error.error || 'Failed to update comment', 'error');
             }
         } catch (error) {
-            console.error('Error updating comment:', error);
             this.showMessage('An error occurred', 'error');
         }
     }
@@ -169,7 +166,6 @@ class MediaCommentsManager {
                 this.showMessage(error.error || 'Failed to delete comment', 'error');
             }
         } catch (error) {
-            console.error('Error deleting comment:', error);
             this.showMessage('An error occurred', 'error');
         }
     }
