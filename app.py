@@ -134,7 +134,14 @@ def create_app() -> Flask:
         # Database
         SQLALCHEMY_DATABASE_URI=_build_db_url(os.getenv("DATABASE_URL", "")),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "pool_pre_ping": True,
+            "pool_recycle": 300,
+            "connect_args": {
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=15000",
+            },
+        },
         # Mail
         MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
         MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),

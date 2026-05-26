@@ -297,21 +297,33 @@ def edit_profile():
 
 @auth.route('/verify-email/<token>')
 def verify_email(token):
+    logger.info("verify_email: start")
     from utils.email import verify_email_token
+    logger.info("verify_email: decoding token")
     email = verify_email_token(token)
+    logger.info("verify_email: token decoded → %s", bool(email))
     if not email:
         flash('Verification link is invalid or has expired.')
         return redirect(url_for('auth.login'))
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        flash('User not found.')
-        return redirect(url_for('auth.login'))
-    if user.email_verified:
-        flash('Email already verified. You can log in.')
-    else:
-        user.email_verified = True
-        db.session.commit()
-        flash('Email verified! You can now log in.')
+    try:
+        logger.info("verify_email: querying user")
+        user = User.query.filter_by(email=email).first()
+        logger.info("verify_email: user found → %s", bool(user))
+        if not user:
+            flash('User not found.')
+            return redirect(url_for('auth.login'))
+        if user.email_verified:
+            flash('Email already verified. You can log in.')
+        else:
+            logger.info("verify_email: committing")
+            user.email_verified = True
+            db.session.commit()
+            logger.info("verify_email: commit done")
+            flash('Email verified! You can now log in.')
+    except Exception as exc:
+        db.session.rollback()
+        logger.error("verify_email: error — %s", exc)
+        flash('An error occurred. Please try again.')
     return redirect(url_for('auth.login'))
 
 
