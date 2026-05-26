@@ -13,6 +13,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
 
       # ── App ────────────────────────────────────────────────────────────────
+      APP_ENV: "production"
       SECRET_KEY: ${SECRET_KEY}
       FLASK_DEBUG: "false"
 

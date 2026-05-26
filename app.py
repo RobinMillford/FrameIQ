@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ── Local ─────────────────────────────────────────────────────────────────────
 from extensions import limiter, mail
@@ -110,8 +111,13 @@ _CSP = (
 def create_app() -> Flask:
     app = Flask(__name__)
 
+    # ── Proxy fix (nginx → gunicorn) ──────────────────────────────────────────
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # ── Config ────────────────────────────────────────────────────────────────
-    is_production = bool(os.getenv("RENDER") or os.getenv("K_SERVICE"))
+    is_production = bool(
+        os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("APP_ENV") == "production"
+    )
 
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
