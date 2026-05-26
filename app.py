@@ -7,7 +7,6 @@ create_app() is the application factory.
 # ── Standard library ──────────────────────────────────────────────────────────
 import logging
 import os
-import urllib.parse
 from datetime import timedelta
 
 # ── Third-party ───────────────────────────────────────────────────────────────
@@ -137,10 +136,7 @@ def create_app() -> Flask:
         SQLALCHEMY_ENGINE_OPTIONS={
             "pool_pre_ping": True,
             "pool_recycle": 300,
-            "connect_args": {
-                "connect_timeout": 10,
-                "options": "-c statement_timeout=15000",
-            },
+            "connect_args": {"connect_timeout": 10},
         },
         # Mail
         MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
