@@ -164,30 +164,45 @@ def trending_page():
 
 @main.route('/news')
 def news():
-    # NewsAPI call with refined query
+    if not NEWS_API_KEY:
+        return render_template('news.html', articles=[], error="News API key not configured.")
+
     news_url = (
-        f"https://newsapi.org/v2/everything?"
-        f"q=movies OR 'TV shows' OR 'movie actors' OR 'TV actors' OR actresses "
-        f"-sports -politics -business -tech "
+        "https://newsapi.org/v2/everything?"
+        "q=movies OR 'TV shows' OR 'movie actors' OR 'TV actors' OR actresses "
+        "-sports -politics -business -tech "
         f"&apiKey={NEWS_API_KEY}&language=en&sortBy=publishedAt&pageSize=50"
     )
-    news_response = requests.get(news_url)
-    news_data = news_response.json()
-    articles = news_data.get('articles', [])
-    filtered_articles = [
-        {
+    try:
+        news_response = requests.get(news_url, timeout=8)
+        news_response.raise_for_status()
+        news_data = news_response.json()
+    except requests.exceptions.Timeout:
+        return render_template('news.html', articles=[], error="News feed timed out. Try again shortly.")
+    except Exception:
+        return render_template('news.html', articles=[], error="Could not load news right now.")
+
+    _KEYWORDS = {
+        'movie', 'tv', 'actor', 'actress', 'show', 'film', 'series',
+        'cinema', 'television', 'star', 'celebrity', 'director',
+        'producer', 'screenplay', 'premiere', 'release', 'cast',
+        'episode', 'season',
+    }
+    filtered_articles = []
+    for article in news_data.get('articles', []):
+        if not (article.get('title') and article.get('url')):
+            continue
+        text = (article.get('title', '') + ' ' + (article.get('description') or '')).lower()
+        if not any(kw in text for kw in _KEYWORDS):
+            continue
+        filtered_articles.append({
             'title': article['title'],
-            'description': article['description'] or 'No description available',
+            'description': article.get('description') or 'No description available',
             'url': article['url'],
-            'urlToImage': article['urlToImage'],
-            'publishedAt': article['publishedAt']
-        } for article in articles 
-        if article.get('title') and article.get('url') and article.get('urlToImage') and  # Require image
-           any(keyword in article['title'].lower() or keyword in (article['description'] or '').lower() 
-               for keyword in ['movie', 'tv', 'actor', 'actress', 'show', 'film', 'series', 'cinema', 
-                               'television', 'star', 'celebrity', 'director', 'producer', 'screenplay', 
-                               'premiere', 'release', 'cast', 'episode', 'season'])
-    ]
+            'urlToImage': article.get('urlToImage'),
+            'publishedAt': article.get('publishedAt', ''),
+        })
+
     return render_template('news.html', articles=filtered_articles)
 
 @main.route('/movies')

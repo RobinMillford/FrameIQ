@@ -1,219 +1,219 @@
 """
-Enhanced API service layer with production features.
+Agent service layer — orchestrates the LangGraph workflow.
 
-Includes error handling, monitoring, conversation memory, and streaming support.
+Key improvements vs. original:
+- _build_user_context() injects personalisation from watch history / ratings.
+- initial state includes user_context on every invocation.
+- Streaming generator scoping bug fixed (messages variable captured correctly).
+- session_id always derived from user ID, never from IP.
 """
 
-from typing import Dict, Any, Generator
-from langchain_core.messages import HumanMessage, AIMessage
+import logging
+from typing import Dict, Any, Generator, Optional
+
+from langchain_core.messages import HumanMessage
+
 from src.agents.graph import get_agent_graph
 from src.agents.state import GraphState
 from src.agents.error_handling import retry_on_error, get_fallback_response
-from src.agents.memory import (
-    update_conversation_metadata,
-    get_conversation_context,
-    save_conversation_to_disk
-)
-from src.agents.monitoring import (
-    track_performance,
-    log_agent_decision,
-    get_performance_metrics
-)
-import logging
+from src.agents.memory import update_conversation_metadata, get_conversation_context
+from src.agents.monitoring import track_performance, log_agent_decision, get_performance_metrics
 
 logger = logging.getLogger(__name__)
 
+
+# ── Personalisation ───────────────────────────────────────────────────────────
+
+def _build_user_context(session_id: str) -> str:
+    """
+    Build a personalisation string from the user's watch history and ratings.
+
+    Queries the DB for the 8 most-recently rated items so the agent can
+    tailor recommendations without exposing raw DB objects to the graph.
+    Returns an empty string if the user has no history or on any error.
+    """
+    if not session_id.startswith("user_"):
+        return ""
+    try:
+        user_id = int(session_id.split("_")[1])
+    except (IndexError, ValueError):
+        return ""
+
+    try:
+        from models import Review, db  # noqa: F401 — imported inside fn to avoid circular import
+        from flask import has_app_context
+
+        if not has_app_context():
+            return ""
+
+        reviews = (
+            Review.query
+            .filter_by(user_id=user_id)
+            .order_by(Review.created_at.desc())
+            .limit(8)
+            .all()
+        )
+        if not reviews:
+            return ""
+
+        lines = ["User's recent watch history (use to personalise):"]
+        for r in reviews:
+            try:
+                title = r.media.title if r.media else "Unknown"
+                # Ratings stored as 0.5–5.0 stars; convert to /10 for LLM clarity
+                score = f"{r.rating * 2:.1f}/10" if r.rating else "unrated"
+                lines.append(f"  - {title} ({r.media_type}): {score}")
+            except Exception:
+                continue
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug("Could not build user context: %s", e)
+        return ""
+
+
+def _build_initial_state(
+    user_message: str, session_id: str, user_context: Optional[str] = None
+) -> GraphState:
+    """Construct a fresh GraphState for a new invocation."""
+    ctx = user_context if user_context is not None else _build_user_context(session_id)
+    return {
+        "messages": [HumanMessage(content=user_message)],
+        "user_intent": None,
+        "next_step": None,
+        "retrieved_context": [],
+        "final_response_metadata": {"movies": [], "tv_shows": []},
+        "user_context": ctx,
+    }
+
+
+# ── Non-streaming ─────────────────────────────────────────────────────────────
 
 @track_performance
 @retry_on_error(max_retries=2, delay=1.0)
 def run_agent_chat(user_message: str, session_id: str) -> Dict[str, Any]:
     """
-    Run the LangGraph agent workflow for a user message.
-    
-    Enhanced with error handling, monitoring, and conversation memory.
-    
-    Args:
-        user_message: User's chat message
-        session_id: Session identifier for state persistence
-    
-    Returns:
-        Dictionary with:
-            - reply: AI response text
-            - movies: List of movie metadata (optional)
-            - tv_shows: List of TV show metadata (optional)
-            - metadata: Performance and conversation metadata
+    Run the LangGraph agent workflow synchronously.
+
+    Returns a dict with:
+        reply     — AI response text
+        movies    — (optional) list of movie metadata dicts
+        tv_shows  — (optional) list of TV show metadata dicts
+        metadata  — session / routing diagnostics
     """
-    # Get the compiled graph
     graph = get_agent_graph()
-    
-    # Get conversation context
     context = get_conversation_context(session_id)
-    logger.info(f"Session context: {context}")
-    
-    # Create initial state
-    initial_state: GraphState = {
-        "messages": [HumanMessage(content=user_message)],
-        "user_intent": None,
-        "next_step": None,
-        "retrieved_context": [],
-        "final_response_metadata": {"movies": [], "tv_shows": []}
-    }
-    
-    # Configure with session-based checkpointing and recursion limit
+    logger.info("Session context: %s", context)
+
+    initial_state = _build_initial_state(user_message, session_id)
     config = {
-        "configurable": {
-            "thread_id": session_id
-        },
-        "recursion_limit": 15  # Prevent infinite loops while allowing multi-turn
+        "configurable": {"thread_id": session_id},
+        "recursion_limit": 15,
     }
-    
+
     try:
-        # Run the graph
         final_state = graph.invoke(initial_state, config)
-        
-        # Extract the final AI message
+
         messages = final_state["messages"]
-        final_reply = ""
-        for msg in reversed(messages):
-            if hasattr(msg, 'content') and msg.content:
-                final_reply = msg.content
-                break
-        
-        # Update conversation memory
+        final_reply = next(
+            (m.content for m in reversed(messages) if getattr(m, "content", None)),
+            "",
+        )
+
         update_conversation_metadata(
             session_id,
             message_count=len(messages),
             metadata={
                 "last_intent": final_state.get("user_intent"),
-                "last_route": final_state.get("next_step")
-            }
+                "last_route": final_state.get("next_step"),
+            },
         )
-        
-        # Log the routing decision
+
         log_agent_decision(
             node_name="supervisor",
             decision=final_state.get("next_step", "unknown"),
             reasoning=f"Intent: {final_state.get('user_intent')}",
-            metadata={"session_id": session_id}
+            metadata={"session_id": session_id},
         )
-        
-        # Save conversation to disk (optional persistence)
-        save_conversation_to_disk(session_id, final_state)
-        
-        # Build response
-        response = {
+
+        response: Dict[str, Any] = {
             "reply": final_reply,
             "metadata": {
                 "session_id": session_id,
                 "message_count": len(messages),
                 "route": final_state.get("next_step"),
-                "intent": final_state.get("user_intent")
-            }
+                "intent": final_state.get("user_intent"),
+            },
         }
-        
-        # Add enriched metadata if available
-        metadata = final_state.get("final_response_metadata", {})
-        if metadata.get("movies"):
-            response["movies"] = metadata["movies"]
-        if metadata.get("tv_shows"):
-            response["tv_shows"] = metadata["tv_shows"]
-        
+        enriched = final_state.get("final_response_metadata", {})
+        if enriched.get("movies"):
+            response["movies"] = enriched["movies"]
+        if enriched.get("tv_shows"):
+            response["tv_shows"] = enriched["tv_shows"]
         return response
-    
+
     except Exception as e:
-        logger.error(f"Error in agent workflow: {e}", exc_info=True)
-        
-        # Determine error type
-        error_type = "llm_error"
-        if "rate" in str(e).lower() or "429" in str(e):
-            error_type = "rate_limit"
-        elif "timeout" in str(e).lower():
-            error_type = "timeout"
-        
-        # Return fallback response
+        logger.error("Agent workflow error: %s", e, exc_info=True)
+        error_type = "rate_limit" if "rate" in str(e).lower() or "429" in str(e) else (
+            "timeout" if "timeout" in str(e).lower() else "llm_error"
+        )
         return {
             "reply": get_fallback_response(error_type, user_message),
             "error": str(e),
-            "metadata": {
-                "session_id": session_id,
-                "error_type": error_type
-            }
+            "metadata": {"session_id": session_id, "error_type": error_type},
         }
 
 
+# ── Streaming ─────────────────────────────────────────────────────────────────
+
 def run_agent_chat_streaming(
-    user_message: str,
-    session_id: str
+    user_message: str, session_id: str
 ) -> Generator[Dict[str, Any], None, None]:
     """
-    Run the agent workflow with streaming support.
-    
-    Yields state updates as they occur for real-time UI updates.
-    
-    Args:
-        user_message: User's chat message
-        session_id: Session identifier
-    
-    Yields:
-        State updates with node names and partial results
+    Stream LangGraph node-level updates for real-time progress UI.
+
+    Yields one dict per node completion:
+        node, message, intent, next_step, metadata
+
+    Note: this is *graph-level* streaming (one event per node), not
+    token-level streaming. For true token streaming, migrate to
+    graph.astream_events() with on_chat_model_stream filtering.
     """
     graph = get_agent_graph()
-    
-    initial_state: GraphState = {
-        "messages": [HumanMessage(content=user_message)],
-        "user_intent": None,
-        "next_step": None,
-        "retrieved_context": [],
-        "final_response_metadata": {"movies": [], "tv_shows": []}
-    }
-    
+    initial_state = _build_initial_state(user_message, session_id)
     config = {
-        "configurable": {
-            "thread_id": session_id
-        },
-        "recursion_limit": 15
+        "configurable": {"thread_id": session_id},
+        "recursion_limit": 15,
     }
-    
+
+    final_message_count = 0
     try:
-        # Stream state updates
         for state_update in graph.stream(initial_state, config):
-            # Extract node name and state
             for node_name, node_state in state_update.items():
-                # Get the latest message if available
-                messages = node_state.get("messages", [])
+                node_messages = node_state.get("messages", [])
                 latest_message = ""
-                
-                if messages:
-                    last_msg = messages[-1]
-                    if hasattr(last_msg, 'content'):
-                        latest_message = last_msg.content
-                
-                # Yield update
+                if node_messages:
+                    last = node_messages[-1]
+                    latest_message = getattr(last, "content", "") or ""
+                final_message_count = len(node_messages)
+
                 yield {
                     "node": node_name,
                     "message": latest_message,
                     "intent": node_state.get("user_intent"),
                     "next_step": node_state.get("next_step"),
-                    "metadata": node_state.get("final_response_metadata", {})
+                    "metadata": node_state.get("final_response_metadata", {}),
                 }
-        
-        # Update conversation memory after streaming completes
-        update_conversation_metadata(session_id, message_count=len(messages))
-    
     except Exception as e:
-        logger.error(f"Streaming error: {e}", exc_info=True)
+        logger.error("Streaming error: %s", e, exc_info=True)
         yield {
             "node": "error",
             "message": get_fallback_response("llm_error", user_message),
-            "error": str(e)
+            "error": str(e),
         }
+    finally:
+        update_conversation_metadata(session_id, message_count=final_message_count)
 
 
 def get_agent_metrics() -> Dict[str, Any]:
-    """
-    Get performance metrics for the agent system.
-    
-    Returns:
-        Dictionary with performance statistics
-    """
+    """Return accumulated performance metrics for the agent system."""
     return get_performance_metrics()

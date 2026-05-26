@@ -8,6 +8,11 @@
     --surface: #1e293b;
     --text: #f8fafc;
     --text-secondary: #94a3b8;
+    /* aliases used by discover-users.css and other feature stylesheets */
+    --text-primary: #f8fafc;
+    --bg-secondary: #1e293b;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --primary-color: #4f46e5;
 }
 
 /* Animations */

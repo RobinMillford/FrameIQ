@@ -35,6 +35,13 @@ implementation_plan.md.resolved
 README.md
 LICENSE
 
+# Exclude Docker / ops files (not needed inside the image)
+Makefile
+docker-compose.yml
+nginx/
+.env.example
+gunicorn.conf.py.bak
+
 # Exclude database files
 *.db
 *.sqlite3

@@ -1,292 +1,218 @@
-# ============================================================================
-# FrameIQ - Movie & TV Show Tracking Platform
-# ============================================================================
+"""
+FrameIQ — Flask application entry point.
 
-# Standard Library Imports
+create_app() is the application factory.
+"""
+
+# ── Standard library ──────────────────────────────────────────────────────────
+import logging
 import os
 import urllib.parse
 from datetime import timedelta
 
-# Third-Party Imports
+# ── Third-party ───────────────────────────────────────────────────────────────
+from dotenv import load_dotenv
 from flask import Flask
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
-from dotenv import load_dotenv
-from extensions import limiter, mail
 
-# Local Imports - Models
+# ── Local ─────────────────────────────────────────────────────────────────────
+from extensions import limiter, mail
 from models import db, User
 
-# Local Imports - Core Routes
+# ── Routes: core ──────────────────────────────────────────────────────────────
 from routes.auth import auth
 from routes.main import main
 from routes.details import details
-
-# Local Imports - Feature Routes
-from routes.chat import chat
 from routes.oauth import oauth
 
-# Local Imports - Content Management
+# ── Routes: features ──────────────────────────────────────────────────────────
+from routes.chat import chat
 from routes.reviews import reviews
+from routes.reviews_enhanced import reviews_enhanced_bp
 from routes.lists import lists
+from routes.lists_advanced import lists_advanced
 from routes.diary import diary
+from routes.tags import tags_bp
+from routes.likes import likes_bp
+from routes.media_comments import media_comments_bp
+from routes.watchlist_priorities import priorities_bp
+from routes.tmdb_proxy import tmdb_proxy_bp
 
-# Local Imports - Social Features
+# ── Routes: social & discovery ────────────────────────────────────────────────
 from routes.social import social
 from routes.analytics import analytics
 from routes.trending import trending
 from routes.activity_feed import activity_feed
 from routes.friends_activity import friends_activity
 from routes.profile_enhancements import profile_enhancements
+from routes.user_discovery import user_discovery
+from routes.popular_with_friends import popular_bp
+from routes.recommendations import recommendations_bp
 
-# Local Imports - Letterboxd-Style Features
-from routes.tags import tags_bp
-from routes.likes import likes_bp
-from routes.media_comments import media_comments_bp
-from routes.watchlist_priorities import priorities_bp
-from routes.lists_advanced import lists_advanced  # Week 2b
-
-# Local Imports - AI Agent
-from src.api.flask_integration import agent_chat
-from routes.reviews_enhanced import reviews_enhanced_bp
-from routes.tmdb_proxy import tmdb_proxy_bp
-
-# Week 3: Film Stats & Analytics
+# ── Routes: stats, TV, watch ──────────────────────────────────────────────────
 from routes.stats import stats_bp
-
-# TV Show Tracking System
 from routes.tv_tracking import tv_tracking
+from routes.watch import watch_bp
 
+# ── Routes: AI ────────────────────────────────────────────────────────────────
+from src.api.flask_integration import agent_chat
 
-# ============================================================================
-# Environment & Configuration
-# ============================================================================
-
+# ── Environment ───────────────────────────────────────────────────────────────
 load_dotenv()
 
-import logging
-_startup_logger = logging.getLogger("app.startup")
+_log = logging.getLogger("app.startup")
 
-_REQUIRED_VARS = ["SECRET_KEY", "DATABASE_URL", "TMDB_API_KEY"]
-_OPTIONAL_VARS = ["CLOUDINARY_URL", "RATELIMIT_STORAGE_URI", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+_REQUIRED_ENV = ["SECRET_KEY", "DATABASE_URL", "TMDB_API_KEY"]
+_OPTIONAL_ENV = ["CLOUDINARY_URL", "RATELIMIT_STORAGE_URI",
+                 "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 
-for _var in _REQUIRED_VARS:
+for _var in _REQUIRED_ENV:
     if not os.getenv(_var):
-        raise RuntimeError(f"Required environment variable {_var!r} is not set")
+        raise RuntimeError(f"Required env var {_var!r} is not set")
 
-for _var in _OPTIONAL_VARS:
+for _var in _OPTIONAL_ENV:
     if not os.getenv(_var):
-        _startup_logger.warning("Optional env var %r not set — related feature may be disabled", _var)
+        _log.warning("Optional env var %r not set — related feature may be disabled", _var)
 
 
-# ============================================================================
-# Flask Application Setup
-# ============================================================================
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv("SECRET_KEY")
-app.config['TMDB_API_KEY'] = os.getenv("TMDB_API_KEY")
+def _build_db_url(raw_url: str) -> str:
+    """Normalise DATABASE_URL: add sslmode on Render, strip it for local dev."""
+    if not raw_url.startswith("postgresql://"):
+        return raw_url
+    is_production = bool(os.getenv("RENDER") or os.getenv("K_SERVICE"))
+    parsed = urllib.parse.urlparse(raw_url)
+    if is_production:
+        if not parsed.query:
+            return raw_url + "?sslmode=require"
+        if "sslmode" not in parsed.query:
+            return raw_url + "&sslmode=require"
+    else:
+        raw_url = raw_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+    return raw_url
 
-# CSRF protection
-csrf = CSRFProtect(app)
-
-# Rate limiting
-limiter.init_app(app)
-
-# Email (Flask-Mail) — configure via env vars; gracefully disabled if MAIL_SERVER not set
-app.config['MAIL_SERVER']   = os.getenv('MAIL_SERVER', '')
-app.config['MAIL_PORT']     = int(os.getenv('MAIL_PORT', '587'))
-app.config['MAIL_USE_TLS']  = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', '')
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@frameiq.app')
-mail.init_app(app)
-
-# File upload size cap (5 MB)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
-
-# Session cookie security — HTTPS-only in production, allow HTTP in local dev
-_is_production = bool(os.getenv('RENDER') or os.getenv('K_SERVICE'))
-app.config['SESSION_COOKIE_SECURE'] = _is_production
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['WTF_CSRF_TIME_LIMIT'] = 3600
-
-
-# ============================================================================
-# OAuth Configuration
-# ============================================================================
-
-app.config['GOOGLE_CLIENT_ID'] = os.getenv("GOOGLE_CLIENT_ID")
-app.config['GOOGLE_CLIENT_SECRET'] = os.getenv("GOOGLE_CLIENT_SECRET")
-
-
-# ============================================================================
-# Database Configuration
-# ============================================================================
-
-database_url = os.getenv("DATABASE_URL")
-
-if database_url:
-    if database_url.startswith("postgresql://"):
-        is_local = 'RENDER' not in os.environ
-        parsed = urllib.parse.urlparse(database_url)
-        
-        if not is_local:
-            if not parsed.query:
-                database_url += "?sslmode=require"
-            elif "sslmode" not in parsed.query:
-                database_url += "&sslmode=require"
-        else:
-            if "sslmode=require" in database_url:
-                database_url = database_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
-
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    "pool_pre_ping": True,
-    "pool_recycle": 300,
-}
-
-_startup_logger.debug("Database URI configured")
-
-
-# ============================================================================
-# Database Initialization
-# ============================================================================
-
-db.init_app(app)
-
-
-# ============================================================================
-# Authentication Setup
-# ============================================================================
-
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'auth.login'  # type: ignore
-login_manager.login_message = 'Please log in to access this page.'  # type: ignore
-login_manager.remember_cookie_duration = timedelta(days=30)  # type: ignore
-
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    """Load user for Flask-Login"""
-    return User.query.get(int(user_id))
-
-
-# ============================================================================
-# Blueprint Registration
-# ============================================================================
-
-# Core
-app.register_blueprint(auth)
-app.register_blueprint(main)
-app.register_blueprint(details)
-
-# Features
-app.register_blueprint(chat)
-app.register_blueprint(oauth)
-
-# Content
-app.register_blueprint(reviews)
-app.register_blueprint(lists)
-app.register_blueprint(diary)
-
-# Social
-app.register_blueprint(social)
-app.register_blueprint(analytics)
-app.register_blueprint(trending)
-app.register_blueprint(activity_feed)
-app.register_blueprint(friends_activity)
-app.register_blueprint(profile_enhancements)
-
-# Letterboxd-Style
-app.register_blueprint(tags_bp)
-app.register_blueprint(likes_bp)
-app.register_blueprint(media_comments_bp)
-app.register_blueprint(priorities_bp)
-app.register_blueprint(lists_advanced)
-app.register_blueprint(reviews_enhanced_bp)
-app.register_blueprint(tmdb_proxy_bp)
-
-# Week 4: User Discovery
-from routes.user_discovery import user_discovery
-app.register_blueprint(user_discovery)
-
-# Week 3: Stats & Analytics
-app.register_blueprint(stats_bp)
-
-# TV Show Tracking
-app.register_blueprint(tv_tracking)
-
-# Enhanced Features: Popular with Friends
-from routes.popular_with_friends import popular_bp
-app.register_blueprint(popular_bp)
-
-# Enhanced Features: More Like This Recommendations
-from routes.recommendations import recommendations_bp
-app.register_blueprint(recommendations_bp)
-
-# AI
-app.register_blueprint(agent_chat)
-
-# Video Streaming
-from routes.watch import watch_bp
-app.register_blueprint(watch_bp)
-
-
-# ============================================================================
-# Route Handlers
-# ============================================================================
 
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com; "
-    "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com fonts.googleapis.com; "
+    "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net "
+    "           cdnjs.cloudflare.com fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
-    "img-src 'self' data: blob: image.tmdb.org res.cloudinary.com via.placeholder.com; "
+    "img-src 'self' data: blob: https: via.placeholder.com; "
     "frame-src www.youtube.com youtube.com www.vidking.net vidking.net; "
     "connect-src 'self' db.videasy.net;"
 )
 
 
-@app.after_request
-def set_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = _CSP
-    if _is_production:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    return response
+# ── Application factory ───────────────────────────────────────────────────────
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+
+    # ── Config ────────────────────────────────────────────────────────────────
+    is_production = bool(os.getenv("RENDER") or os.getenv("K_SERVICE"))
+
+    app.config.update(
+        SECRET_KEY=os.getenv("SECRET_KEY"),
+        TMDB_API_KEY=os.getenv("TMDB_API_KEY"),
+        MAX_CONTENT_LENGTH=5 * 1024 * 1024,
+        # Session security
+        SESSION_COOKIE_SECURE=is_production,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        WTF_CSRF_TIME_LIMIT=3600,
+        # OAuth
+        GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID"),
+        GOOGLE_CLIENT_SECRET=os.getenv("GOOGLE_CLIENT_SECRET"),
+        # Database
+        SQLALCHEMY_DATABASE_URI=_build_db_url(os.getenv("DATABASE_URL", "")),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
+        # Mail
+        MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
+        MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
+        MAIL_USE_TLS=os.getenv("MAIL_USE_TLS", "true").lower() == "true",
+        MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
+        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", ""),
+        MAIL_DEFAULT_SENDER=os.getenv("MAIL_DEFAULT_SENDER", "noreply@frameiq.app"),
+    )
+
+    # ── Extensions ────────────────────────────────────────────────────────────
+    CSRFProtect(app)
+    limiter.init_app(app)
+    mail.init_app(app)
+    db.init_app(app)
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = "auth.login"  # type: ignore[assignment]
+    login_manager.login_message = "Please log in to access this page."  # type: ignore[assignment]
+    login_manager.remember_cookie_duration = timedelta(days=30)  # type: ignore[assignment]
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return db.session.get(User, int(user_id))
+
+    # ── Blueprints ────────────────────────────────────────────────────────────
+    blueprints = [
+        # Core
+        auth, main, details, oauth,
+        # Features
+        chat, reviews, reviews_enhanced_bp, lists, lists_advanced,
+        diary, tags_bp, likes_bp, media_comments_bp, priorities_bp, tmdb_proxy_bp,
+        # Social & discovery
+        social, analytics, trending, activity_feed, friends_activity,
+        profile_enhancements, user_discovery, popular_bp, recommendations_bp,
+        # Stats, TV, watch
+        stats_bp, tv_tracking, watch_bp,
+        # AI
+        agent_chat,
+    ]
+    for bp in blueprints:
+        app.register_blueprint(bp)
+
+    # ── Security headers ──────────────────────────────────────────────────────
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = _CSP
+        if is_production:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    @app.route("/health")
+    def health_check():
+        return {"status": "ok"}, 200
+
+    # ── Database init ─────────────────────────────────────────────────────────
+    with app.app_context():
+        _log.info("Database engine: %s",
+                  db.engine.url.render_as_string(hide_password=True))
+        try:
+            db.create_all()
+            _log.info("Database tables created successfully")
+        except Exception as exc:
+            _log.error("Error creating database tables: %s", exc)
+
+    return app
 
 
-@app.route('/health')
-def health_check():
-    """Health check endpoint for deployment monitoring"""
-    return {'status': 'ok'}, 200
+# ── Entry point ───────────────────────────────────────────────────────────────
 
+app = create_app()
 
-# ============================================================================
-# Database Table Creation
-# ============================================================================
-
-with app.app_context():
-    _startup_logger.info("Database engine: %s", db.engine.url.render_as_string(hide_password=True))
-    try:
-        db.create_all()
-        _startup_logger.info("Database tables created successfully")
-    except Exception as e:
-        _startup_logger.error("Error creating database tables: %s", e)
-
-
-# ============================================================================
-# Application Entry Point
-# ============================================================================
-
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true')
-
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=os.getenv("FLASK_DEBUG", "false").lower() == "true",
+    )

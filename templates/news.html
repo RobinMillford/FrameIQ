@@ -387,29 +387,41 @@
     <section class="py-16 bg-[#1A4A4F]">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 gradient-text">Recent Headlines</h2>
+            {% if error %}
+            <div class="text-center py-16 text-[#A9B8B5]">
+                <i class="fas fa-exclamation-circle text-4xl mb-4 text-yellow-400"></i>
+                <p class="text-lg">{{ error }}</p>
+            </div>
+            {% elif not articles %}
+            <div class="text-center py-16 text-[#A9B8B5]">
+                <i class="fas fa-newspaper text-4xl mb-4"></i>
+                <p class="text-lg">No news articles found right now. Check back soon.</p>
+            </div>
+            {% else %}
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="news-grid">
                 {% for article in articles %}
-                <a href="{{ article.url }}" target="_blank" class="news-card glass-effect rounded-lg overflow-hidden">
-                    <img src="{{ article.urlToImage }}" alt="{{ article.title }}" class="news-image w-full" onerror="this.src='https://via.placeholder.com/400x225?text=News+Image'">
+                <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" class="news-card glass-effect rounded-lg overflow-hidden">
+                    <img
+                        src="{{ article.urlToImage or 'https://via.placeholder.com/400x225?text=No+Image' }}"
+                        alt="{{ article.title }}"
+                        class="news-image w-full"
+                        loading="lazy"
+                        onerror="this.src='https://via.placeholder.com/400x225?text=No+Image'"
+                    >
                     <div class="p-4">
                         <h3 class="font-semibold text-[#F5F6F5] transition-colors">{{ article.title }}</h3>
-                        <p class="text-[#A9B8B5] mt-2">{{ article.description[:120] }}{% if article.description and article.description|length > 120 %}...{% endif %}</p>
+                        <p class="text-[#A9B8B5] mt-2">{{ article.description[:120] }}{% if article.description|length > 120 %}...{% endif %}</p>
                         <div class="flex items-center justify-between mt-3">
                             <span class="news-date">
                                 <i class="far fa-calendar"></i>
-                                {{ article.publishedAt[:10] }}
+                                {{ article.publishedAt[:10] if article.publishedAt else '' }}
                             </span>
-                            {% if article.source and article.source.name %}
-                            <span class="news-source">
-                                <i class="fas fa-newspaper"></i>
-                                {{ article.source.name[:15] }}
-                            </span>
-                            {% endif %}
                         </div>
                     </div>
                 </a>
                 {% endfor %}
             </div>
+            {% endif %}
         </div>
     </section>
 

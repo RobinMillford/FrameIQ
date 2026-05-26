@@ -42,19 +42,51 @@
                     <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
                     <a href="/feed" class="text-cyan-400 font-medium">Social Feed</a>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
                     {% if current_user.is_authenticated %}
-                        <a href="/profile" class="flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
+                        <a href="/profile" class="hidden sm:flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
                             <i class="fas fa-user-circle text-gray-400"></i>
                             <span class="text-sm font-medium">{{ current_user.username }}</span>
                         </a>
                     {% else %}
-                        <a href="/login" class="text-sm font-medium hover:text-cyan-400">Login</a>
+                        <a href="/login" class="hidden sm:block text-sm font-medium hover:text-cyan-400">Login</a>
                     {% endif %}
+                    <button id="mobile-menu-button" class="md:hidden p-2 rounded-lg hover:bg-gray-700/50 transition-colors" aria-label="Menu">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
     </nav>
+
+    <!-- Mobile menu -->
+    <div id="mobile-menu" class="fixed top-16 left-0 right-0 z-40 hidden" style="background:rgba(10,47,53,0.97);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.1)">
+        <div class="container mx-auto px-4 py-4 flex flex-col space-y-4">
+            <a href="/" class="hover:text-cyan-400 transition-colors">Home</a>
+            <a href="/movies" class="hover:text-cyan-400 transition-colors">Movies</a>
+            <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
+            <a href="/feed" class="text-cyan-400 font-medium">Social Feed</a>
+            {% if current_user.is_authenticated %}
+                <a href="/profile" class="hover:text-cyan-400 transition-colors">Profile</a>
+            {% else %}
+                <a href="/login" class="hover:text-cyan-400 transition-colors">Login</a>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        (function() {
+            var btn = document.getElementById('mobile-menu-button');
+            var menu = document.getElementById('mobile-menu');
+            if (btn && menu) {
+                btn.addEventListener('click', function() { menu.classList.toggle('hidden'); });
+                document.addEventListener('click', function(e) {
+                    if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.add('hidden');
+                });
+            }
+        })();
+    </script>
 
     <div class="container mx-auto px-4">
         <div class="feed-container">

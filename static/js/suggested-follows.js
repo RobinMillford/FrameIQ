@@ -61,7 +61,7 @@ class SuggestedFollows {
             <div class="glass-effect rounded-xl p-5 flex flex-col items-center text-center animate__animated animate__fadeIn">
                 <a href="/user/${user.id}" class="group mb-3">
                     <div class="w-20 h-20 rounded-full overflow-hidden border-2 border-indigo-500 group-hover:border-indigo-400 transition-colors mb-2">
-                        <img src="${escapeHtml(user.profile_picture || '/static/images/default_avatar.png')}"
+                        <img src="${escapeHtml(user.profile_picture || '/static/images/default_avatar.svg')}"
                              alt="${escapeHtml(user.username)}"
                              class="w-full h-full object-cover">
                     </div>

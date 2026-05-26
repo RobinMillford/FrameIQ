@@ -2,131 +2,105 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  security-events: write  # Required for uploading SARIF results
-  pull-requests: write    # For PR comments
+  security-events: write
+  pull-requests: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12']
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
           cache: 'pip'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov flake8
-      
-      - name: Lint with flake8
+          pip install -r requirements.txt pytest pytest-cov flake8
+
+      - name: Lint
         run: |
-          # Stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
-          # Exit-zero treats all errors as warnings
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
-      
-      - name: Check for tests
-        id: check_tests
-        run: |
-          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-            echo "has_tests=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_tests=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No test files found. Skipping test execution."
-          fi
-      
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
+            --exclude=venv,env,.venv,.env,__pycache__,.git
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 \
+            --statistics --exclude=venv,env,.venv,.env,__pycache__,.git
+
       - name: Run tests
-        if: steps.check_tests.outputs.has_tests == 'true'
         env:
           DATABASE_URL: ${{ secrets.TEST_DATABASE_URL || secrets.DATABASE_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           SECRET_KEY: test-secret-key
-          # AI/Vector DB credentials (required for app initialization)
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
           CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
           CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
         run: |
-          pytest --cov=. --cov-report=xml --cov-report=term -v
-      
-      - name: Upload coverage reports
-        if: steps.check_tests.outputs.has_tests == 'true'
-        uses: codecov/codecov-action@v3
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            pytest --cov=. --cov-report=xml --cov-report=term -v
+          else
+            echo "No test files found — skipping."
+          fi
+
+      - name: Upload coverage
+        if: hashFiles('coverage.xml') != ''
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
 
   deploy-production:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Deploy to Render
+      - uses: actions/checkout@v4
+
+      - name: Trigger Render deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+          curl -fsSX POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
             -d '{"clearCache": false}'
-      
-      - name: Wait for deployment
-        run: sleep 60
-      
-      - name: Health check
+
+      - name: Health check (retry for 3 min)
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" https://tv-movie-recommendations-with-ai.onrender.com/agent_health)
-          if [ $response -eq 200 ]; then
-            echo "✅ Deployment successful - Health check passed"
-          else
-            echo "❌ Deployment failed - Health check returned $response"
-            exit 1
-          fi
+          for i in $(seq 1 18); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://frameiq.studio/health)
+            if [ "$code" = "200" ]; then
+              echo "Health check passed"; exit 0
+            fi
+            echo "Attempt $i — got $code, retrying in 10s…"
+            sleep 10
+          done
+          echo "Health check failed after 3 minutes"; exit 1
 
   security-scan:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Run Trivy security scanner
-        uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@v4
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      
-      - name: Upload Trivy results to GitHub Security
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload results
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif

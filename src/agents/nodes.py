@@ -1,343 +1,336 @@
 """
-Graph node implementations for the LangGraph multi-agent system.
+Graph node implementations for the FrameIQ LangGraph agent.
 
-Each node is a function that takes GraphState and returns updated state.
+- Supervisor: zero-LLM heuristic router (saves 2-3 LLM calls per request).
+- Retriever: module-level react agent singleton (not re-created per call).
+- Enricher: concurrent TMDb lookups, deduplication.
+- retrieved_context: stores actual tool results.
+- user_context from state injected into system prompts for personalisation.
 """
 
-from typing import Literal
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_groq import ChatGroq
-from langgraph.prebuilt import create_react_agent
 import os
-import json
-import re
 import requests
-from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Literal
 
-from .state import GraphState, SupervisorDecision
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+from .state import GraphState
 from .tools import RETRIEVER_TOOLS
 from api.chatbot import extract_media_with_llm, is_recent_release, is_upcoming_release
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("groq_api_key")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
-# Initialize models with optimal selection for each task
-# Supervisor: Fast routing decisions (Llama 3.1 8B Instant)
-SUPERVISOR_MODEL = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=GROQ_API_KEY,
-    temperature=0
+# ── Models ────────────────────────────────────────────────────────────────────
+# gpt-4.1-mini : tool calling — reliable structured output for ReAct
+# gpt-5-mini   : chat — newer gen, high quality prose
+# (supervisor is heuristic — no model needed)
+
+RETRIEVER_MODEL = ChatOpenAI(
+    model="gpt-4.1-mini",
+    api_key=OPENAI_API_KEY,
+    temperature=0,
 )
 
-# Retriever: Fast tool execution and search (Llama 3.1 8B Instant)
-RETRIEVER_MODEL = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=GROQ_API_KEY,
-    temperature=0
+CHAT_MODEL = ChatOpenAI(
+    model="gpt-5-mini",
+    api_key=OPENAI_API_KEY,
+    temperature=0.7,
 )
 
-# Chat: Deep analysis and nuanced recommendations (Llama 3.3 70B Versatile)
-CHAT_MODEL = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    api_key=GROQ_API_KEY,
-    temperature=0.7
-)
+# Module-level singleton — built once, reused across all requests.
+_RETRIEVER_AGENT = create_react_agent(RETRIEVER_MODEL, RETRIEVER_TOOLS)
 
-# Enrichment: Uses Llama 3.3 70B for title extraction (via extract_media_with_llm)
+# Shared HTTP session for TMDb calls (connection pooling).
+_TMDB_SESSION = requests.Session()
+
+
+# ── Supervisor (heuristic — zero LLM calls) ───────────────────────────────────
+
+_GREETINGS = {
+    "hi", "hello", "hey", "hiya", "howdy", "sup", "yo",
+    "thanks", "thank you", "thx", "ty", "cheers",
+    "bye", "goodbye", "cya", "ok", "okay", "cool", "great",
+}
+
+_CHAT_STARTERS = (
+    "what is ", "what are ", "what was ", "explain ", "how does ", "how do ",
+    "why is ", "why are ", "tell me about the history", "history of ",
+    "difference between", "define ", "meaning of",
+)
 
 
 def supervisor_node(state: GraphState) -> GraphState:
     """
-    Supervisor node: Analyzes user intent and routes to appropriate agent.
-    
-    Routes:
-        - "retriever" → User wants movie/TV recommendations or specific info
-        - "chat" → General questions, greetings, explanations
-        - "enricher" → Retrieval complete, needs UI metadata enrichment
-        - "end" → Conversation complete
+    Zero-LLM heuristic router — saves 2-3 LLM round trips vs the old design.
+
+    Logic:
+      greeting / very short pleasantry → "chat" (fast reply, no tools)
+      "what is X" / explanation intent → "chat"
+      everything else                  → "retriever" (has all 7 tools)
     """
     messages = state["messages"]
-    
-    # Check if we just got a response from an agent
-    if len(messages) >= 2:
-        last_message = messages[-1]
-        second_last_message = messages[-2] if len(messages) >= 2 else None
-        
-        # If last message is from AI
-        if isinstance(last_message, AIMessage):
-            content_lower = last_message.content.lower()
-            
-            # Check if it contains movie recommendations (needs enrichment)
-            recommendation_keywords = ["recommend", "suggest", "check out", "might enjoy", "here are", "similar to"]
-            has_recommendations = any(keyword in content_lower for keyword in recommendation_keywords)
-            
-            # Check if it's a simple explanation (should end)
-            is_explanation = any(keyword in content_lower for keyword in ["film noir", "genre", "style", "technique", "director", "cinematography"])
-            is_greeting_response = any(keyword in content_lower for keyword in ["i'd be happy", "i'm here to help", "what can i help"])
-            
-            # If it has movie recommendations, enrich them
-            if has_recommendations and not is_greeting_response:
-                return {
-                    **state,
-                    "next_step": "enricher",
-                    "user_intent": "enrich"
-                }
-            
-            # If it's just an explanation or greeting, end the conversation
-            if (is_explanation or is_greeting_response) and not has_recommendations:
-                return {
-                    **state,
-                    "next_step": "end",
-                    "user_intent": "end"
-                }
-    
-    # For new user messages, route based on intent
-    if len(messages) >= 1 and isinstance(messages[-1], HumanMessage):
-        user_message = messages[-1].content.lower()
-        
-        # Check for recommendation requests
-        if any(keyword in user_message for keyword in ["suggest", "recommend", "like", "similar", "trending", "recent", "new", "what should i watch"]):
-            return {
-                **state,
-                "next_step": "retriever",
-                "user_intent": "search"
-            }
-        
-        # Check for general questions
-        if any(keyword in user_message for keyword in ["what is", "who", "when", "where", "how", "explain", "tell me about"]):
-            return {
-                **state,
-                "next_step": "chat",
-                "user_intent": "chat"
-            }
-        
-        # Check for greetings
-        if any(keyword in user_message for keyword in ["hello", "hi", "hey", "thanks", "thank you", "bye", "goodbye"]):
-            return {
-                **state,
-                "next_step": "chat",
-                "user_intent": "chat"
-            }
-    
-    # Default: use LLM to decide
-    system_prompt = """You are a routing supervisor. Analyze the conversation and decide:
-- "retriever" if user wants movie/TV recommendations
-- "chat" if user asks general questions or greetings
-- "end" if conversation is complete
+    last = messages[-1] if messages else None
+    text = (getattr(last, "content", "") or "").strip()
+    lower = text.lower()
 
-Return your decision."""
-    
-    structured_llm = SUPERVISOR_MODEL.with_structured_output(SupervisorDecision)
-    decision = structured_llm.invoke([
-        SystemMessage(content=system_prompt),
-        *messages[-3:]  # Only last 3 messages to avoid context overflow
-    ])
-    
-    next_step = decision["next_step"]
-    intent_map = {
-        "retriever": "search",
-        "chat": "chat",
-        "enricher": "enrich",
-        "end": "end"
-    }
-    
-    return {
-        **state,
-        "next_step": next_step,
-        "user_intent": intent_map.get(next_step, "end")
-    }
+    # Pure greeting — short pleasantry with no question
+    words = lower.split()
+    if len(words) <= 4 and set(words) & _GREETINGS:
+        return {**state, "next_step": "chat", "user_intent": "chat"}
+
+    # Explanation / definition / history questions → chat (no tools needed)
+    if any(lower.startswith(p) for p in _CHAT_STARTERS):
+        return {**state, "next_step": "chat", "user_intent": "chat"}
+
+    # Everything else → retriever (recommendations, discovery, filmographies, etc.)
+    return {**state, "next_step": "retriever", "user_intent": "search"}
+
+
+# ── Retriever ─────────────────────────────────────────────────────────────────
+
+def _build_retriever_system(user_context: str) -> str:
+    personalisation = (
+        f"\n\nUser context (use to personalise recommendations):\n{user_context}"
+        if user_context
+        else ""
+    )
+    return (
+        "You are a movie/TV research assistant. Choose the RIGHT tool for each query:\n\n"
+        "  search_vector_db    — pure vibe/mood/theme queries ('lonely introspective films',\n"
+        "                        'movies that feel like a dream', 'dark atmospheric cinema')\n"
+        "  search_tmdb         — exact title lookup, release info, cast facts\n"
+        "  search_tmdb_person  — filmography of actor/director ('SRK movies', 'Nolan films',\n"
+        "                        'movies starring X', 'directed by Y')\n"
+        "  discover_movies     — structured movie queries ('best Bollywood 2023', 'top Korean\n"
+        "                        thrillers', 'highest rated comedies', 'action films 90s')\n"
+        "  discover_tv         — structured TV queries ('best Korean dramas', 'top crime shows',\n"
+        "                        'anime 2020s', 'Spanish series')\n"
+        "  get_similar_movies  — 'movies like X', 'similar to X', 'more like X'\n"
+        "  search_tmdb_trending — 'what's trending', 'what's popular now'\n\n"
+        "Rules:\n"
+        "- NEVER use search_vector_db for actor/director queries — use search_tmdb_person\n"
+        "- NEVER use search_vector_db for language/country queries — use discover_movies/tv\n"
+        "- For 'movies like X': use get_similar_movies (TMDb engine), optionally chain with\n"
+        "  search_vector_db for vibe refinement\n"
+        "- Chain tools when useful\n"
+        "- Always label each item as Movie or TV Show\n"
+        "- Explain WHY each title fits the request"
+        + personalisation
+    )
 
 
 def retriever_node(state: GraphState) -> GraphState:
-    """
-    Retriever agent: Uses tools to search ChromaDB and TMDb API.
-    
-    The agent decides which tool(s) to use based on the query.
-    """
+    """ReAct agent that searches ChromaDB and TMDb then formulates a reply."""
     messages = state["messages"]
-    
-    # System prompt for retriever
-    system_prompt = """You are a movie/TV show research assistant with access to:
-1. A vector database of movies/shows (search_vector_db) - for semantic similarity
-2. TMDb API (search_tmdb) - for specific titles and recent releases
-3. Trending data (search_tmdb_trending) - for what's popular now
+    user_context = state.get("user_context") or ""
 
-**Guidelines:**
-- Use search_vector_db for: "movies like X", vibes, themes, genres
-- Use search_tmdb for: specific titles, recent releases (2022-2025), factual info
-- Use search_tmdb_trending for: "what's trending", "what's popular"
-- You can use MULTIPLE tools if needed
-- Provide detailed, conversational recommendations
-- Always mention if something is a Movie or TV Show
-- Explain WHY you're recommending each item (similar themes, genres, style)
+    system_prompt = _build_retriever_system(user_context)
+    result = _RETRIEVER_AGENT.invoke(
+        {"messages": [SystemMessage(content=system_prompt), *list(messages)]}
+    )
 
-Be helpful and thorough!"""
-
-    # Create react agent with tools
-    agent = create_react_agent(RETRIEVER_MODEL, RETRIEVER_TOOLS)
-    
-    # Run the agent
-    result = agent.invoke({
-        "messages": [SystemMessage(content=system_prompt)] + list(messages)
-    })
-    
-    # Extract the final AI message
     agent_messages = result["messages"]
-    final_message = agent_messages[-1] if agent_messages else AIMessage(content="I couldn't find any results.")
-    
-    # Store retrieved context (from tool calls)
+    final_message = (
+        agent_messages[-1]
+        if agent_messages
+        else AIMessage(content="I couldn't find any results.")
+    )
+
+    # Capture actual tool results (ToolMessage contents), not just args.
     retrieved_context = []
     for msg in agent_messages:
-        if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            for tool_call in msg.tool_calls:
-                retrieved_context.append({
-                    "tool": tool_call.get("name"),
-                    "args": tool_call.get("args")
-                })
-    
+        if hasattr(msg, "type") and msg.type == "tool":
+            retrieved_context.append({
+                "tool": getattr(msg, "name", "unknown"),
+                "result": msg.content[:500] if msg.content else "",
+            })
+
     return {
         **state,
-        "messages": state["messages"] + [final_message],
-        "retrieved_context": retrieved_context
+        "messages": list(state["messages"]) + [final_message],
+        "retrieved_context": retrieved_context,
     }
+
+
+# ── Chat ──────────────────────────────────────────────────────────────────────
+
+def _build_chat_system(user_context: str) -> str:
+    personalisation = (
+        f"\n\nUser context:\n{user_context}" if user_context else ""
+    )
+    return (
+        "You are a knowledgeable and friendly movie/TV expert assistant.\n"
+        "Answer questions about films, TV, cinema history, and film concepts.\n"
+        "Be conversational. If the user asks for recommendations, provide them "
+        "with specific titles and reasons."
+        + personalisation
+    )
 
 
 def chat_node(state: GraphState) -> GraphState:
-    """
-    Chat agent: Handles general questions without tools.
-    
-    Uses pure LLM knowledge for explanations, greetings, etc.
-    """
+    """Pure LLM chat node — no tools, uses training knowledge."""
     messages = state["messages"]
-    
-    system_prompt = """You are a friendly movie/TV expert assistant.
+    user_context = state.get("user_context") or ""
 
-Answer general questions about movies, TV shows, cinema history, and film concepts.
-Be conversational and helpful. If the user asks for recommendations, suggest they ask more specifically."""
-
-    response = CHAT_MODEL.invoke([
-        SystemMessage(content=system_prompt),
-        *messages
-    ])
-    
+    response = CHAT_MODEL.invoke(
+        [SystemMessage(content=_build_chat_system(user_context)), *messages]
+    )
     return {
         **state,
-        "messages": state["messages"] + [response]
+        "messages": list(state["messages"]) + [response],
     }
+
+
+# ── Enricher ──────────────────────────────────────────────────────────────────
+
+def _fetch_tmdb_item(title: str, year, media_type: str) -> dict:
+    """Fetch one item from TMDb. Runs in a thread pool."""
+    if not TMDB_API_KEY or not title:
+        return {}
+
+    url = f"https://api.themoviedb.org/3/search/{media_type}"
+    params = {
+        "api_key": TMDB_API_KEY,
+        "query": title,
+        "page": 1,
+        "include_adult": False,
+    }
+    if year:
+        params["year" if media_type == "movie" else "first_air_date_year"] = year
+
+    try:
+        resp = _TMDB_SESSION.get(url, params=params, timeout=5)
+        results = resp.json().get("results", [])
+
+        # Retry without year if empty
+        if not results and year:
+            params.pop("year", None)
+            params.pop("first_air_date_year", None)
+            resp = _TMDB_SESSION.get(url, params=params, timeout=5)
+            results = resp.json().get("results", [])
+
+        if not results:
+            return {
+                "title": title,
+                "year": str(year) if year else "N/A",
+                "poster_url": "https://via.placeholder.com/500x750?text=No+Image",
+                "tmdb_link": "#",
+                "release_status": " (Not found)",
+            }
+
+        info = results[0]
+        poster = info.get("poster_path")
+        date = (
+            info.get("release_date")
+            if media_type == "movie"
+            else info.get("first_air_date")
+        )
+        rel_year = date[:4] if date else "Unknown"
+
+        if is_upcoming_release(date):
+            status = " (UPCOMING)"
+        elif is_recent_release(date):
+            status = " (RECENT)"
+        else:
+            status = ""
+
+        display_title = (
+            info.get("title") if media_type == "movie" else info.get("name")
+        )
+        return {
+            "title": display_title,
+            "year": rel_year,
+            "poster_url": (
+                f"https://image.tmdb.org/t/p/w500{poster}"
+                if poster
+                else "https://via.placeholder.com/500x750?text=No+Image"
+            ),
+            "tmdb_link": f"/{media_type}/{info.get('id')}",
+            "release_status": status,
+        }
+    except Exception as e:
+        print(f"TMDb fetch error for '{title}': {e}")
+        return {}
 
 
 def enricher_node(state: GraphState) -> GraphState:
     """
-    Enricher node: Extracts movie titles from AI response and fetches TMDb metadata.
-    
-    This is a deterministic post-processing step that adds visual cards to the UI.
+    Extract titles from the last AI message, fetch TMDb metadata concurrently.
+    Deduplicates titles before fetching.
     """
     messages = state["messages"]
-    
-    # Get the last AI message
-    last_ai_message = None
-    for msg in reversed(messages):
-        if isinstance(msg, AIMessage):
-            last_ai_message = msg.content
-            break
-    
-    if not last_ai_message:
-        return {
-            **state,
-            "final_response_metadata": {"movies": [], "tv_shows": []}
-        }
-    
-    # Extract movie/TV titles using LLM
+
+    last_ai = next(
+        (m.content for m in reversed(messages) if isinstance(m, AIMessage)),
+        None,
+    )
+    if not last_ai:
+        return {**state, "final_response_metadata": {"movies": [], "tv_shows": []}}
+
     try:
-        movie_data, tv_show_data = extract_media_with_llm(last_ai_message)
+        movie_data, tv_show_data = extract_media_with_llm(last_ai)
     except Exception as e:
-        print(f"Error extracting media: {e}")
+        print(f"Media extraction error: {e}")
         movie_data, tv_show_data = [], []
-    
-    # Fetch metadata from TMDb
-    media_data = {"movies": [], "tv_shows": []}
-    
-    for media_list, media_type, key in [(movie_data, "movie", "movies"), (tv_show_data, "tv", "tv_shows")]:
-        for media in media_list:
-            title = media.get("title")
-            year = media.get("year")
-            
-            if not title:
-                continue
-            
-            # Search TMDb
-            url = f"https://api.themoviedb.org/3/search/{media_type}"
-            params = {
-                "api_key": TMDB_API_KEY,
-                "query": title,
-                "page": 1,
-                "include_adult": True
-            }
-            if year:
-                params["year" if media_type == "movie" else "first_air_date_year"] = year
-            
-            try:
-                response = requests.get(url, params=params, timeout=5)
-                results = response.json().get("results", [])
-                
-                # Retry without year if no results
-                if not results and year:
-                    params.pop("year", None)
-                    params.pop("first_air_date_year", None)
-                    response = requests.get(url, params=params, timeout=5)
-                    results = response.json().get("results", [])
-                
-                if results:
-                    media_info = results[0]
-                    poster_path = media_info.get("poster_path")
-                    release_date = media_info.get("release_date") if media_type == "movie" else media_info.get("first_air_date")
-                    release_year = release_date[:4] if release_date else "Unknown"
-                    
-                    # Determine status
-                    is_recent = is_recent_release(release_date)
-                    is_upcoming = is_upcoming_release(release_date)
-                    release_status = ""
-                    if is_upcoming:
-                        release_status = " (UPCOMING)"
-                    elif is_recent:
-                        release_status = " (RECENT)"
-                    
-                    media_data[key].append({
-                        "title": media_info.get("title") if media_type == "movie" else media_info.get("name"),
-                        "year": release_year,
-                        "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else "https://via.placeholder.com/500x750?text=No+Image",
-                        "tmdb_link": f"/{media_type}/{media_info.get('id')}",
-                        "release_status": release_status
-                    })
+
+    def dedup(items):
+        seen, out = set(), []
+        for item in items:
+            key = (item.get("title", "").lower(), str(item.get("year", "")))
+            if key not in seen:
+                seen.add(key)
+                out.append(item)
+        return out
+
+    movie_data = dedup(movie_data)
+    tv_show_data = dedup(tv_show_data)
+
+    # Build fetch tasks
+    tasks = (
+        [(m, "movie") for m in movie_data]
+        + [(t, "tv") for t in tv_show_data]
+    )
+
+    movies_out, tv_out = [], []
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        future_map = {
+            executor.submit(
+                _fetch_tmdb_item,
+                item.get("title"),
+                item.get("year"),
+                mtype,
+            ): mtype
+            for item, mtype in tasks
+        }
+        for future in as_completed(future_map):
+            mtype = future_map[future]
+            result = future.result()
+            if result:
+                if mtype == "movie":
+                    movies_out.append(result)
                 else:
-                    # Placeholder for not found
-                    media_data[key].append({
-                        "title": title,
-                        "year": year if year else "N/A",
-                        "poster_url": "https://via.placeholder.com/500x750?text=No+Image",
-                        "tmdb_link": "#",
-                        "release_status": " (Not found in database)"
-                    })
-            
-            except Exception as e:
-                print(f"Error fetching TMDb data for {title}: {e}")
-                continue
-    
+                    tv_out.append(result)
+
     return {
         **state,
-        "final_response_metadata": media_data
+        "final_response_metadata": {"movies": movies_out, "tv_shows": tv_out},
     }
 
 
-def should_continue(state: GraphState) -> Literal["retriever", "chat", "enricher", "__end__"]:
-    """
-    Conditional edge function for routing from supervisor.
-    """
+# ── Edge function ─────────────────────────────────────────────────────────────
+
+def should_continue(
+    state: GraphState,
+) -> Literal["retriever", "chat", "__end__"]:
+    """Translate supervisor's next_step into a LangGraph edge target."""
     next_step = state.get("next_step", "end")
-    
     if next_step == "end":
         return "__end__"
-    
     return next_step

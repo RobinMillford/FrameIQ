@@ -40,26 +40,21 @@ def create_agent_graph():
     workflow.add_node("enricher", enricher_node)
     
     # Define edges
-    # Start always goes to supervisor
+    # supervisor → retriever or chat (heuristic, zero LLM calls)
     workflow.add_edge(START, "supervisor")
-    
-    # Supervisor routes conditionally
     workflow.add_conditional_edges(
         "supervisor",
         should_continue,
         {
             "retriever": "retriever",
             "chat": "chat",
-            "enricher": "enricher",
-            "__end__": END
-        }
+            "__end__": END,
+        },
     )
-    
-    # After retriever/chat, go back to supervisor for re-evaluation
-    workflow.add_edge("retriever", "supervisor")
-    workflow.add_edge("chat", "supervisor")
-    
-    # Enricher is terminal - goes to END
+
+    # retriever / chat → enricher (no loop-back to supervisor)
+    workflow.add_edge("retriever", "enricher")
+    workflow.add_edge("chat", "enricher")
     workflow.add_edge("enricher", END)
     
     # Compile with memory checkpointing

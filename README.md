@@ -1,519 +1,284 @@
-# 🎬 FrameIQ - Letterboxd-Style Social Platform with AI
+# FrameIQ
 
-A comprehensive movie and TV show social platform inspired by Letterboxd, featuring LangGraph multi-agent AI system, OpenAI embeddings for semantic search, and complete social discovery features.
+**A social movie & TV platform with an AI chat assistant — inspired by Letterboxd, powered by LangGraph.**
 
-![FrameIQ Interface](images/FrameIQ-Intelligent-Entertainment-Discovery.jpg)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-3.1-black?logo=flask)](https://flask.palletsprojects.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-blueviolet)](https://langchain-ai.github.io/langgraph/)
+[![LLM](https://img.shields.io/badge/LLM-compatible-412991)](https://github.com/RobinMillford/FrameIQ)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 
-![FrameIQ Architecture](images/Gemini_Generated_Image_xoiv4uxoiv4uxoiv.png)
-
-![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
-![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)
-![LangGraph](https://img.shields.io/badge/LangGraph-Latest-purple.svg)
-![OpenAI](https://img.shields.io/badge/OpenAI-Embeddings-orange.svg)
-![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)
-
-**Live Demo**: [FrameIQ on Render](https://tv-movie-recommendations-with-ai.onrender.com)
+**Live →** [frameiq.studio](https://frameiq.studio)
 
 ---
 
-## Feature Comparison with Letterboxd
+## What is FrameIQ?
 
-| Feature | Letterboxd | FrameIQ |
-|---------|-----------|---------|
-| **Reviews & Ratings** | ✅ 0.5-5 stars | ✅ 0.5-5 stars + titles |
-| **Film Diary** | ✅ Movies only | ✅ Movies + TV shows |
-| **Rewatch Tracking** | ✅ Manual | ✅ Auto-detect + manual |
-| **Custom Lists** | ✅ Basic | ✅ With collaborators |
-| **Watchlist** | ✅ Basic | ✅ High/Medium/Low priorities |
-| **Tags** | ✅ Basic | ✅ Autocomplete + trending |
-| **Likes/Hearts** | ✅ Basic | ✅ Animated + real-time |
-| **Comments** | ✅ Basic | ✅ Edit/delete + 5000 chars |
-| **Following System** | ✅ Yes | ✅ Yes |
-| **Activity Feed** | ✅ Single feed | ✅ Multi-tab (Following/Global/Personal) |
-| **User Profiles** | ✅ Basic | ✅ Stats dashboard with charts |
-| **Trending** | ✅ Basic | ✅ Advanced algorithms |
-| **Review Helpful Votes** | ✅ Yes | ✅ Yes |
-| **Friends Activity** | ✅ Basic | ✅ Per-movie/show pages |
-| **Year in Review** | ✅ Basic | ✅ Interactive Chart.js |
-| **Badges/Achievements** | ✅ Patron only | ✅ Free for all |
-| **TV Shows** | ❌ | ✅ Full support |
-| **Anime Detection** | ❌ | ✅ Auto-categorize |
-| **AI Chat Assistant** | ❌ | ✅ Natural language queries |
-| **Semantic Search** | ❌ | ✅ Vector database (5,722 movies) |
-| **OpenAI Embeddings** | ❌ | ✅ Superior search quality |
-| **Multi-Agent System** | ❌ | ✅ LangGraph orchestration |
-| **Episode Tracking** | ❌ | ✅ Track progress per episode |
-| **Season Progress** | ❌ | ✅ Visual season completion |
-| **Episode Calendar** | ❌ | ✅ Upcoming episodes calendar |
-| **Batch Mark Episodes** | ❌ | ✅ Mark entire seasons watched |
-| **Smart Completion** | ❌ | ✅ Detects returning series vs ended |
-| **Auto Episode Refresh** | ❌ | ✅ Updates when new seasons release |
+FrameIQ lets you track, rate, and review everything you watch — movies, TV shows, anime — and share it with a social community. On top of the standard Letterboxd-style features, it ships a multi-agent AI assistant (CineBot) that answers natural-language questions, recommends titles by vibe, and streams its thinking in real time.
 
-### What FrameIQ Offers Beyond Letterboxd
+---
 
-**Complete TV Show Support**
-- Full integration for TV shows, seasons, and episodes
-- Anime auto-detection for both movies and series
-- Creator, network, and cast information
-- Real-time sync with TMDb for latest episode data
+## Features
 
-**Advanced Episode Tracking System (Trakt.tv-Style)**
-- **Episode-by-Episode Tracking**: Mark individual episodes as watched with timestamps
-- **Smart Completion Logic**: Automatically detects if shows are "Ended" vs "Returning Series"
-  - Shows stay in "watching" status even when all current episodes are watched (if series is returning)
-  - Only marks as "completed" when TMDb confirms series has ended
-  - Auto-reverts from "completed" to "watching" when new seasons are released
-- **Auto-Refresh Episode Counts**: System checks TMDb on every page load for new episodes
-  - Updates total episode count automatically when new seasons drop
-  - Maintains accurate progress percentages
-- **Visual Progress Tracking**: 
-  - Per-show progress bars showing completion percentage
-  - Per-season completion indicators
-  - Episode-level watch status with visual checkmarks
-- **Multi-Status System**: 
-  - Watching (currently watching)
-  - Completed (finished, series ended)
-  - Plan to Watch (in watchlist)
-  - On Hold (paused)
-  - Dropped (discontinued)
-- **Batch Operations**: 
-  - Mark entire seasons as watched with one click
-  - Bulk episode management
-- **Upcoming Episodes Calendar**:
-  - Syncs upcoming episodes for next 60 days from tracked shows
-  - Displays episode stills and air dates
-  - Groups episodes by date with countdown timers
-  - Shows which episodes are already watched
-  - Filters based on show tracking status
-- **Interactive TV Dashboard**:
-  - Quick stats overview (total shows, episodes watched, completion %)
-  - Tabbed interface: Overview, Watching, Completed, Plan to Watch, Upcoming
-  - Continue watching section with recent episodes
-  - Most watched shows ranking
-  - Calendar view with 7-day upcoming preview
+### Tracking & Library
+- **Watchlist** with High / Medium / Low priority labels
+- **Diary** — chronological log of everything you've watched with dates
+- **Viewed** and **Wishlist** libraries
+- **Star ratings** (0.5 – 5.0 in half-star increments) and written reviews
+- **Custom lists** — public or private, shareable
+- **Tags** with autocomplete and trending suggestions
 
-**AI-Powered Features**
-- Natural language chat interface with LangGraph agents
-- Semantic search using ChromaDB and OpenAI embeddings
-- Intelligent movie recommendations based on themes and vibes
-- Real-time streaming responses with progress updates
+### TV Show Tracking
+- Episode-by-episode progress with timestamps
+- Season-level batch marking ("Mark entire season watched")
+- Smart completion: a show only moves to *Completed* when TMDb confirms the series has ended — returning shows stay in *Watching* even when you're caught up
+- Auto-refresh episode counts when new seasons drop
+- **Upcoming Episodes calendar** — 60-day view, grouped by date, synced daily via GitHub Actions
 
-**Enhanced Social Features**
-- Priority-based watchlist organization (High/Medium/Low)
-- Multi-tab activity feeds (Following/Global/Personal)
-- Interactive statistics dashboard with Chart.js visualizations
-- Advanced trending algorithms based on activity scores
-- Per-movie friends activity sections
+### Social
+- Follow / unfollow users
+- Activity feed — Following, Global, and Personal tabs
+- Friends' activity on individual movie and show pages
+- Popular With Friends ranking
+- Review likes, comments, and helpful votes
+- User discovery with suggested follows
 
-**All Letterboxd Core Features**
-- Star ratings (0.5-5.0 in 0.5 increments)
-- Written reviews with optional titles
-- Custom lists with public/private options
-- Film diary with viewing dates
-- Tags system with autocomplete
-- Following/followers functionality
-- Activity feed with filters
-- User profiles with statistics
-- Review likes and comments
-- Helpful vote system
+### Watch
+- Stream movies and TV episodes directly in the browser — no redirects
+- Resume playback from where you left off (progress saved per title)
+- Auto-logs a diary entry once you've watched ≥ 85 % of a title
+- Continue Watching row on your dashboard
+- Full watch history with timestamps
+
+### Discovery & Search
+- Genre, year, language, and rating filters via TMDb Discover
+- Trending movies and shows
+- Entertainment news feed (NewsAPI)
+- Semantic similarity search — "movies that feel like a rainy Sunday"
+
+### AI Chat — CineBot
+- Multi-agent LangGraph pipeline: **Supervisor → Retriever / Chat → Enricher**
+- Zero-LLM heuristic supervisor (saves 2–3 API calls per request)
+- **7 tools:** vector DB search, TMDb title lookup, person filmography, movie discover, TV discover, similar movies, trending
+- Streaming responses via SSE — user sees each tool call as it happens
+- Poster and metadata cards injected into replies
+- Conversation memory persisted across turns (LangGraph checkpointing)
+
+### Stats & Analytics
+- Personal dashboard: watch time, genre breakdown, top directors, yearly review
+- Interactive Chart.js visualisations
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Backend** | Flask 3.1, SQLAlchemy 2.0, PostgreSQL |
+| **AI / Agents** | LangGraph 0.2, LangChain, configurable LLM provider |
+| **Vector search** | ChromaDB Cloud, OpenAI-compatible text embeddings (5 700+ movies) |
+| **Auth** | Google OAuth 2.0 (Authlib) + Flask-Login |
+| **Frontend** | Jinja2, Tailwind CSS, Vanilla JS, Chart.js |
+| **Media APIs** | TMDb, Cloudinary (avatars), NewsAPI |
+| **Infra** | Docker, Nginx, GitHub Actions, VPS |
 
 ---
 
 ## Architecture
 
-### LangGraph Agent Workflow
-
 ```
-User Query
-    ↓
-Supervisor (Llama 3.1 8B) → Routes to appropriate agent
-    ↓
-    ├─→ Retriever → ChromaDB vector search + TMDb API
-    ├─→ Chat Agent → Deep analysis with Llama 3.3 70B
-    └─→ Enricher → Fetches posters and metadata
+User message
+     │
+     ▼
+ Supervisor          ← zero-LLM heuristic router
+  │        │
+  ▼        ▼
+Retriever  Chat      ← Retriever uses 7 TMDb / vector tools
+  │        │           Chat uses a capable LLM for open questions
+  └───┬────┘
+      ▼
+  Enricher           ← concurrent TMDb poster & metadata fetch
+      │
+      ▼
+ SSE stream → browser
 ```
 
-### Technology Stack
+| Agent | Role | Recommended capability |
+|---|---|---|
+| Retriever | Structured tool calling, TMDb queries | Fast model with reliable function-calling |
+| Chat | Open-ended film knowledge & recommendations | High-quality reasoning model |
+| Enricher | Title extraction from AI reply | Lightweight / cheap model |
 
-**Backend**
-- Flask 3.0+ - Web framework
-- LangGraph - Multi-agent orchestration
-- LangChain - LLM integration
-- SQLAlchemy + PostgreSQL (Neon) - Data persistence
-- ChromaDB Cloud - Vector database for semantic search
-- OpenAI API - text-embedding-3-small for embeddings
-- Groq API - Fast LLM inference (Llama models)
-
-**Frontend**
-- HTML5 + Tailwind CSS - Responsive UI
-- Vanilla JavaScript - Interactive features
-- Chart.js - Statistics visualizations
-- Server-Sent Events (SSE) - Real-time streaming
-
-**APIs & Services**
-- TMDb API - Movie/TV data and trending content
-- Google OAuth 2.0 - User authentication
-- Cloudinary - Avatar image hosting
-- News API - Entertainment news
+> The specific models used in production are not disclosed. Any provider compatible with the OpenAI Chat Completions API (OpenAI, Azure OpenAI, Groq, Together, Ollama, etc.) will work — set your chosen model names and `OPENAI_API_KEY`-equivalent in `.env`.
 
 ---
-Quick Start
+
+## Getting Started
 
 ### Prerequisites
 
 - Python 3.11+
-- PostgreSQL database (or Neon serverless)
-- Required API keys (see .env setup below)
+- PostgreSQL (local or [Neon](https://neon.tech) serverless)
+- API keys — see [Environment Variables](#environment-variables)
 
-### Installation
+### Local setup
 
-1. Clone the repository
 ```bash
 git clone https://github.com/RobinMillford/FrameIQ.git
 cd FrameIQ
-```
 
-2. Install dependencies
-```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+cp .env.example .env   # fill in your keys
+python app.py          # http://localhost:5000
 ```
 
-3. Configure environment variables
-
-Create `.env` file:
-```env
-# Database
-DATABASE_URL=postgresql://user:password@host/database
-
-# AI & Search
-GROQ_API_KEY=your_groq_api_key
-OPENAI_API_KEY=your_openai_api_key
-CHROMA_API_KEY=your_chroma_api_key
-CHROMA_TENANT=your_tenant_id
-CHROMA_DATABASE=your_database_name
-
-# External APIs
-TMDB_API_KEY=your_tmdb_api_key
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-CLOUDINARY_CLOUD_NAME=your_cloudinary_name
-CLOUDINARY_API_KEY=your_cloudinary_key
-CLOUDINARY_API_SECRET=your_cloudinary_secret
-
-# Flask
-SECRET_KEY=your_secret_key
-```
-
-4. Run the application
-```bash
-python app.py
-# or
-uv rush
-python app.py
-```
-
-Visit `http://localhost:5000`
-
----
-
-##  TV Tracking System
-
-### Core Features
-
-**Episode-by-Episode Tracking**
-- Mark individual episodes as watched with viewing timestamps
-- Track rewatch counts for favorite episodes
-- Episode-level notes and ratings
-- Visual checkmarks for watched episodes
-- Responsive grid layout for all episodes in a season
-
-**Smart Series Management**
-- **Intelligent Completion Detection**:
-  - Queries TMDb API to check if series is "Ended", "Canceled", or "Returning Series"
-  - Only marks show as "completed" if officially ended
-  - Keeps status as "watching" for returning series (even with all current episodes watched)
-  - Prevents shows from disappearing from upcoming episodes calendar
-- **Auto-Refresh System**:
-  - Checks TMDb for updated episode counts on every show page load
-  - Automatically updates total episodes when new seasons release
-  - Auto-reverts "completed" status back to "watching" when new episodes detected
-  - Maintains accurate progress percentages dynamically
-- **Progress Tracking**:
-  - Real-time progress bars (episodes watched / total episodes)
-  - Per-season completion indicators
-  - Overall show completion percentage
-  - Visual season grid with completion status
-
-**Upcoming Episodes Calendar**
-- Automated sync via `scripts/sync_upcoming_episodes.py`
-- Fetches episodes airing in next 60 days for all tracked shows
-- Displays episode stills, descriptions, and air dates
-- Groups by date with "Today", "Tomorrow", "X days" labels
-- Shows watched status for each upcoming episode
-- Only includes shows with status "watching" or "plan_to_watch"
-- Auto-cleanup of past episodes
-
-**TV Dashboard** (`/tv/dashboard`)
-- **Overview Tab**: Continue watching, recently added, most watched shows
-- **Status Tabs**: Separate views for Watching, Completed, Plan to Watch
-- **Calendar Tab**: 7-day upcoming preview with episode cards
-- **Quick Stats**: Total shows tracked, episodes watched, completion percentage
-- **Quick Links**: My Shows, Full Calendar, Browse TV Shows
-
-### Implementation Details
-
-**Database Models**
-- `TVShowProgress`: Tracks user's overall progress per show
-  - Fields: user_id, show_id, status, watched_episodes, total_episodes, total_seasons
-  - Status values: watching, completed, plan_to_watch, on_hold, dropped
-- `TVSeasonProgress`: Tracks completion per season
-  - Fields: progress_id, season_number, episodes_watched, total_episodes
-- `TVEpisodeWatch`: Records individual episode views
-  - Fields: progress_id, season_number, episode_number, watched_date, rewatch_count
-- `UpcomingEpisode`: Stores upcoming episodes from TMDb
-  - Fields: show_id, show_name, season_number, episode_number, air_date, still_path, poster_path, episode_overview
-
-**Key Routes** (`routes/tv_tracking.py`)
-- `/tv/dashboard` - Main TV tracking dashboard
-- `/tv/my-shows` - All tracked shows list
-- `/tv/upcoming` - Full upcoming episodes calendar
-- `/tv/<show_id>` - Show detail with tracking controls
-- `/tv/<show_id>/season/<season_number>` - Season detail with episode list
-- `/api/tv/track` - Start tracking a show
-- `/api/tv/mark-episode` - Mark episode as watched
-- `/api/tv/mark-season` - Mark entire season as watched
-- `/api/tv/upcoming-episodes` - Fetch upcoming episodes for User
-
-**GitHub Actions Setup**:
-The project includes automated CI/CD workflows:
-
-1. **Episode Sync** (`.github/workflows/sync-upcoming-episodes.yml`)
-   - Runs daily at 8:00 AM Bangladesh Time (2:00 AM UTC)
-   - Can be triggered manually from GitHub UI
-   - Syncs upcoming episodes for next 60 days
-   - Creates GitHub issue on failure
-   - Requires secrets: `DATABASE_URL`, `TMDB_API_KEY`, `SECRET_KEY`
-
-2. **CI/CD Pipeline** (`.github/workflows/ci-cd.yml`)
-   - Runs on push to main/develop branches
-   - Tests with Python 3.11 and 3.12
-   - Linting with flake8
-   - Code coverage reports
-   - Auto-deploys to Render on main branch
-   - Triggers episode sync after deployment
-   - Security scanning with Trivy
-
-### User Experience Flow
-
-1. **Discover & Track**: User browses TV shows → clicks "Start Tracking"
-2. **Set Status**: Choose "Watching", "Plan to Watch", etc.
-3. **Mark Progress**: 
-   - Click episodes individually to mark as watched
-   - Or mark entire seasons with "Mark Season Watched" button
-   - Progress bars update in real-time
-4. **Smart Completion**: 
-   - When all current episodes watched → System checks TMDb status
-   - If "Returning Series" → Stays in "watching" status
-   - If "Ended" → Marks as "completed"
-5. **Auto-Update**: 
-   - New season releases → Episode count refreshes on page load
-   - Status auto-reverts from "completed" to "watching"
-   - New episodes appear in upcoming calendar
-6. **Stay Updated**: 
-   - Check dashboard's "Upcoming" tab for next 7 days
-   - Visit full calendar for 60-day view
-   - Episodes show countdown timers ("3 days", "Tomorrow", "Today")
-
----
-
-##�🚀 Deployment
-
-### Production (Render)
-
-**Deployment Size**: 280 KB compressed (optimized from 7.3 GB)
-
-**Key Optimizations**:
-- OpenAI API for embeddings instead of local models
-- ChromaDB Cloud for vector database
-- Removed sentence-transformers (saved 1.5 GB)
-- Enhanced .dockerignore for minimal builds
-
-**Environment Variables** (set in Render dashboard):
-```
-DATABASE_URL, GROQ_API_KEY, OPENAI_API_KEY, TMDB_API_KEY,
-CHROMA_API_KEY, CHROMA_TENANT, CHROMA_DATABASE,
-GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SECRET_KEY,
-CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-```
-
-**Automated Updates**: GitHub Actions runs monthly to fetch new movies and update embeddings
-
-### Local Development
+### Run tests
 
 ```bash
-python app.py
-# or with uv for faster startup
-uv run app.py
+pytest tests/
 ```
 
-### Model Configuration
-
-| Agent          | Model                   | Purpose                         |
-| -------------- | ----------------------- | ------------------------------- |
-| **Supervisor** | Llama 3.1 8B Instant    | Fast routing decisions          |
-| **Retriever**  | Llama 3.1 8B Instant    | Quick tool execution            |
-| **Chat**       | Llama 3.3 70B Versatile | Deep analysis & recommendations |
-| **Enricher**   | Llama 3.3 70B Versatile | Accurate title extraction       |
-
-### Streaming Progress
-
-Users see real-time updates:
-
-- 🔍 "Analyzing your query..."
-- 📊 "Searching vector database (8,945 movies)..."
-- 🎬 "Querying TMDb API..."
-- 🤖 "Generating response..."
-- 🎨 "Fetching movie posters..."
-
-### API Endpoints
-
-| Endpoint          | Method | Description                  |
-| ----------------- | ------ | ---------------------------- |
-| `/chat_api`       | POST   | Streaming chat with progress |
-| `/agent_chat_api` | POST   | Alternative agent endpoint   |
-| `/agent_metrics`  | GET    | Performance metrics          |
-| `/agent_health`   | GET    | System health check          |
-
----AI Agent System
-
-### Model Configuration
-
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| Supervisor | Llama 3.1 8B | Fast query routing |
-| Retriever | Llama 3.1 8B | Tool execution |
-| Chat | Llama 3.3 70B | Analysis & recommendations |
-| Enricher | Llama 3.3 70B | Title extraction |
-
-### Streaming Updates
-
-Real-time progress indicators:
-- "Analyzing your query..."
-- "Searching vector database (5,722 movies)..."
-- "Querying TMDb API..."
-- "Generating response..."
-- "Fetching movie posters..."
-
-### Key Endpoints
-
-- `/chat_api` - Streaming chat with progress updates
-- `/agent_metrics` - Performance metrics
-- `/agent_health` - System health check
-## 🧪 Testing
-
-Test the agent system independently:
-Performance Metrics
-
-**Response Times**
-- Average: 2-3 seconds end-to-end
-- Supervisor routing: 0.3-0.5 seconds
-- Vector search: 0.5-1 second
-- Success rate: 98%+
-
-**Database**
-- Vector database: 5,722 movies with OpenAI embeddings
-- Embedding dimension: 1536 (text-embedding-3-small)
-- Deployment size: 280 KB (99.96% reduction)
-
-**Cost**
-- Embeddings: ~$0.006 per 1000 movies
-- Smart model selection: 30-40% savings on inference
 ---
 
-## 📁 Project Structure
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in every value.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SECRET_KEY` | ✅ | Flask session secret |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `TMDB_API_KEY` | ✅ | [themoviedb.org](https://www.themoviedb.org/settings/api) |
+| `OPENAI_API_KEY` | ✅ | API key for your chosen LLM provider (must be OpenAI-API-compatible) |
+| `CHROMA_API_KEY` | ✅ | ChromaDB Cloud |
+| `CHROMA_TENANT` | ✅ | ChromaDB Cloud tenant |
+| `CHROMA_DATABASE` | ✅ | ChromaDB Cloud database |
+| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth |
+| `CLOUDINARY_CLOUD_NAME` | ✅ | Avatar uploads |
+| `CLOUDINARY_API_KEY` | ✅ | Cloudinary |
+| `CLOUDINARY_API_SECRET` | ✅ | Cloudinary |
+| `NEWS_API_KEY` | optional | Entertainment news feed |
+| `MAIL_SERVER` etc. | optional | Password reset emails |
+
+---
+
+## Docker Deployment (VPS)
+
+```bash
+cp .env.example .env   # fill in production values
+make deploy            # clean build + start (no cache)
+```
+
+Three containers start: **web** (Gunicorn), **db** (Postgres 15), **nginx** (ports 80 / 443).
+
+```bash
+make logs      # tail web container logs
+make restart   # stop + start without rebuild
+make ps        # show running containers
+make clean     # wipe everything including the DB volume ⚠️
+```
+
+### SSL — Let's Encrypt
+
+```bash
+ufw allow 80 && ufw allow 443
+docker compose stop nginx
+certbot certonly --standalone -d frameiq.studio -d www.frameiq.studio
+cp /etc/letsencrypt/live/frameiq.studio/fullchain.pem nginx/ssl/
+cp /etc/letsencrypt/live/frameiq.studio/privkey.pem   nginx/ssl/
+# uncomment the HTTPS server block in nginx/nginx.conf, then:
+docker compose up -d nginx
+```
+
+---
+
+## Project Structure
 
 ```
 FrameIQ/
-├── app.py                 # Flask application entry point
-├── models.py              # Database models (TVShowProgress, TVEpisodeWatch, UpcomingEpisode)
-├── requirements.txt       # Python dependencies
-├── scripts/               # Utility scripts
-│   ├── sync_upcoming_episodes.py  # Syncs upcoming TV episodes from TMDb
-│   ├── collect_media.py   # Collects movie data
-│   └── generate_embeddings.py     # Creates vector embeddings
-├── api/                   # Legacy API utilities
-│   ├── chatbot.py        # LLM utilities (still used)
-│   ├── rag_helper.py     # RAG helpers
-│   ├── vector_db.py      # ChromaDB interface
-│   └── tmdb_client.py    # TMDb API wrapper (TV show details, episode data)
-├── src/                   # LangGraph agent system
-│   ├── agents/
-│   │   ├── state.py      # GraphState schema
-│   │   ├── tools.py      # LangChain tools
-│   │   ├── nodes.py      # Agent nodes
-│   │   ├── graph.py      # StateGraph workflow
-│   │   ├── error_handling.py  # Retry logic
-│   │   ├── memory.py     # Conversation persistence
-│   │   ├── monitoring.py # Performance tracking
-│   │   └── rate_limiter.py    # Request throttling
+├── app.py                      # Application factory (create_app)
+├── models.py                   # All SQLAlchemy models
+├── extensions.py               # Flask extensions (limiter, mail)
+├── requirements.txt
+│
+├── routes/                     # Flask blueprints — one per feature domain
+│   ├── auth.py                 # Login, register, password reset
+│   ├── main.py                 # Home, search, news
+│   ├── details.py              # Movie / TV detail pages
+│   ├── reviews.py              # Reviews & ratings
+│   ├── diary.py                # Watch diary
+│   ├── lists.py / lists_advanced.py
+│   ├── tv_tracking.py          # Episode & season tracking
+│   ├── chat.py                 # SSE streaming chat
+│   └── ...                     # social, stats, trending, analytics, etc.
+│
+├── src/
+│   ├── agents/                 # LangGraph multi-agent system
+│   │   ├── graph.py            # StateGraph definition
+│   │   ├── nodes.py            # Supervisor, Retriever, Chat, Enricher
+│   │   ├── tools.py            # 7 LangChain tools (TMDb + ChromaDB)
+│   │   └── state.py            # GraphState schema
 │   └── api/
-│       ├── agent_service.py   # Main service
-│       └── flask_integration.py  # Flask routes
-├── routes/                # Flask blueprints
-│   ├── tv_tracking.py    # TV show tracking routes & APIs
-│   ├── main.py           # Core routes
-│   ├── auth.py           # Authentication
-│   ├── social.py         # Social features
-│   └── reviews.py        # Review system
-├── templates/             # HTML templates
-│   ├── tv_dashboard.html # TV tracking dashboard
-│   ├── tv_detail.html    # Show detail with tracking
-│   ├── tv_season_detail.html  # Episode list view
-│   ├── tv_upcoming.html  # Upcoming episodes calendar
-│   └── ...               # Other templates
-├── static/                # CSS, JS, images
-│   └── js/
-│       └── tv-seasons.js # Episode tracking JavaScript
-└── test_agent.py          # Agent testing utility
+│       ├── agent_service.py
+│       └── flask_integration.py
+│
+├── api/                        # Shared utilities
+│   ├── tmdb_client.py          # TMDb API wrapper
+│   ├── vector_db.py            # ChromaDB interface
+│   └── chatbot.py              # LLM helpers
+│
+├── templates/                  # Jinja2 templates
+├── static/                     # CSS, JS, images
+│
+├── scripts/                    # Ops scripts (excluded from Docker image)
+│   ├── sync_upcoming_episodes.py
+│   ├── collect_media.py
+│   └── generate_embeddings.py
+│
+├── .github/workflows/          # CI/CD, episode sync, embedding refresh
+├── nginx/nginx.conf            # Reverse proxy config
+├── docker-compose.yml
+├── Dockerfile
+└── Makefile
 ```
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. Please read [CLA.md](CLA.md) before submitting a pull request — by opening a PR you agree to the terms of the Contributor License Agreement, which lets FrameIQ offer a commercial licence alongside AGPL v3.
 
-Example queries:
-- "Suggest movies like Inception"
-- "Recent sci-fi movies from 2024"
-- "Tell me about film noir"
-- "What's trending right now?"uilt with ❤️ using LangGraph and Flask**
-Contributing
+**Good first issues:**
+- Add more languages/regions to the TMDb discover tool
+- Write missing unit tests in `tests/`
+- Improve accessibility (ARIA labels, keyboard navigation)
+- Add more chart types to the stats dashboard
 
-Contributions are welcome! Areas for improvement:
-- UI/UX enhancements
-- Additional AI agent capabilities
-- New analytics and visualizations
-- Mobile responsive improvements
-- Test coverage
+```bash
+# fork → clone → branch
+git checkout -b feat/your-feature
+
+# make changes
+pytest tests/ && flake8 .
+
+git push origin feat/your-feature
+# open a pull request against main
+```
 
 ---
 
 ## License
 
-GNU Affero General Public License v3.0 - see [LICENSE](LICENSE) file
+Licensed under the **GNU Affero General Public License v3.0** — see [LICENSE](LICENSE).
+
+> Commercial use, SaaS hosting, or white-labelling requires a separate licence.  
+> Contact: robinmill4d@gmail.com
 
 ---
 
-## Acknowledgments
+## Acknowledgements
 
-- Letterboxd - Inspiration for social features
-- LangGraph & LangChain - Multi-agent framework
-- Groq - Fast LLM inference
-- OpenAI - Superior embedding quality
-- TMDb - Comprehensive movie/TV data
-- ChromaDB - Efficient vector database
-
----
-
-Built with LangGraph, OpenAI,
+[TMDb](https://www.themoviedb.org) · [LangGraph](https://langchain-ai.github.io/langgraph/) · [ChromaDB](https://www.trychroma.com) · [Letterboxd](https://letterboxd.com) (inspiration)

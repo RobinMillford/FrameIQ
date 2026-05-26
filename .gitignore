@@ -1,22 +1,75 @@
-# .gitignore
+# ── Environment & secrets ──────────────────────────────────────────────────────
+# .env.example is intentionally NOT listed here — it should be committed
 .env
-.venv
-__pycache__/
-*.pyc
-*.pyo
-.DS_Store
-instance/
-myenv
-.extra/
-.pytest_cache/
-.python-version
-uv.lock
+.env.local
+.env.production
+.env.staging
+.env.test
+.env.development
 
-# Data stored on Hugging Face only
-data/
+# ── SSL certificates ───────────────────────────────────────────────────────────
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+
+# ── Claude Code internal files ────────────────────────────────────────────────
+.claude/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+myenv/
+ENV/
+
+# ── Build / packaging artifacts ──────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+wheels/
+
+# ── Test & coverage ───────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Database files ────────────────────────────────────────────────────────────
+*.db
+*.sqlite3
+*.sqlite3.gz
+*.json.gz
+
+# ── Vector DB (local) ─────────────────────────────────────────────────────────
 chroma_db/
 chroma_db_test/
-*.json.gz
-*.sqlite3.gz
+data/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Misc project files ────────────────────────────────────────────────────────
+instance/
+.python-version
+uv.lock
+extra/
+.extra/
 github-actions-key.json
-extra

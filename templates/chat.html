@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <meta
       name="viewport"
       content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
@@ -261,6 +262,49 @@
         font-size: 0.95rem;
       }
 
+      .thinking-panel {
+        align-self: flex-start;
+        background: rgba(15, 40, 50, 0.7);
+        border: 1px solid rgba(0, 196, 204, 0.2);
+        border-radius: 1rem;
+        padding: 0.6rem 1rem;
+        font-size: 0.82rem;
+        color: #7ecfd3;
+        max-width: 80%;
+        margin-bottom: 0.25rem;
+      }
+      .thinking-panel summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #00c4cc;
+        user-select: none;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .thinking-panel summary::before { content: "⚙️"; }
+      .thinking-panel .tool-line {
+        padding: 0.25rem 0 0 1.2rem;
+        color: #a9cfd3;
+        font-family: monospace;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .bot .stream-text { white-space: pre-wrap; }
+      .cursor-blink {
+        display: inline-block;
+        width: 2px;
+        height: 1em;
+        background: #00c4cc;
+        margin-left: 1px;
+        vertical-align: middle;
+        animation: blink 0.7s step-end infinite;
+      }
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
       #input-area {
         display: flex;
         align-items: center;
@@ -500,12 +544,14 @@
           padding: 1rem;
         }
         textarea {
-          font-size: 0.95rem;
+          font-size: 1rem; /* ≥16px prevents iOS Safari zoom */
           padding: 0.875rem 1rem;
         }
         #send-button {
           padding: 0.875rem 1.25rem;
-          font-size: 0.95rem;
+          font-size: 1rem;
+          min-height: 44px;
+          min-width: 44px;
         }
         .media-items {
           grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -634,35 +680,70 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
 
+        function createThinkingPanel() {
+            const panel = document.createElement("details");
+            panel.classList.add("thinking-panel");
+            panel.innerHTML = `<summary>Agent is thinking…</summary>`;
+            chatMessages.appendChild(panel);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return panel;
+        }
+
+        function addToolLine(panel, label, input) {
+            const line = document.createElement("div");
+            line.classList.add("tool-line");
+            line.textContent = input ? `${label}  (${input})` : label;
+            panel.appendChild(line);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function createStreamingBubble() {
+            const wrap = document.createElement("div");
+            wrap.classList.add("message", "bot");
+            const nameEl = document.createElement("div");
+            nameEl.classList.add("font-semibold", "text-indigo-300", "mb-1");
+            nameEl.textContent = BOT_NAME;
+            const textEl = document.createElement("div");
+            textEl.classList.add("stream-text");
+            const cursor = document.createElement("span");
+            cursor.classList.add("cursor-blink");
+            textEl.appendChild(cursor);
+            wrap.appendChild(nameEl);
+            wrap.appendChild(textEl);
+            chatMessages.appendChild(wrap);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return { wrap, textEl, cursor };
+        }
+
+        function appendToken(textEl, cursor, token) {
+            const node = document.createTextNode(token);
+            textEl.insertBefore(node, cursor);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
         async function sendMessage() {
             const userMessage = userInput.value.trim();
             if (!userMessage) return;
 
             addMessage("user", userMessage);
-            userInput.value = "";  
-            userInput.focus();  
+            userInput.value = "";
+            userInput.focus();
+            sendButton.disabled = true;
 
-            // Show typing indicator
-            const typingIndicator = document.createElement("div");
-            typingIndicator.classList.add("message", "typing");
-            typingIndicator.id = "typing-indicator";
-            typingIndicator.textContent = `${BOT_NAME} is thinking...`;
-            chatMessages.appendChild(typingIndicator);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            let thinkingPanel = null;
+            let streamBubble = null;
+            let hasTokens = false;
 
             try {
-                // Use fetch to POST, then stream the response
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch("/chat_api", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
                     body: JSON.stringify({ message: userMessage })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-                // Read the stream
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
@@ -673,54 +754,51 @@
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n\n');
-                    buffer = lines.pop(); // Keep incomplete line in buffer
+                    buffer = lines.pop();
 
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = JSON.parse(line.slice(6));
-                            
-                            if (data.type === 'progress') {
-                                // Update typing indicator with progress
-                                typingIndicator.textContent = data.status;
-                            } else if (data.type === 'final') {
-                                // Remove typing indicator
-                                if (typingIndicator.parentNode) {
-                                    chatMessages.removeChild(typingIndicator);
-                                }
-                                
-                                // Add final message
-                                addMessage("bot", data.reply);
+                        if (!line.startsWith('data: ')) continue;
+                        let data;
+                        try { data = JSON.parse(line.slice(6)); } catch { continue; }
 
-                                // Display media if available
-                                if ((data.movies && data.movies.length > 0) || (data.tv_shows && data.tv_shows.length > 0)) {
-                                    let mediaContainer = document.createElement("div");
-                                    mediaContainer.classList.add("media-container");
+                        if (data.type === 'tool_call') {
+                            if (!thinkingPanel) thinkingPanel = createThinkingPanel();
+                            addToolLine(thinkingPanel, data.label, data.input);
 
-                                    if (data.movies && data.movies.length > 0) {
-                                        displayMedia(data.movies, "Movies", mediaContainer);
-                                    }
-                                    if (data.tv_shows && data.tv_shows.length > 0) {
-                                        displayMedia(data.tv_shows, "TV Shows", mediaContainer);
-                                    }
+                        } else if (data.type === 'token') {
+                            if (!streamBubble) streamBubble = createStreamingBubble();
+                            appendToken(streamBubble.textEl, streamBubble.cursor, data.content);
+                            hasTokens = true;
 
-                                    chatMessages.appendChild(mediaContainer);
-                                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                                }
-                            } else if (data.type === 'error') {
-                                if (typingIndicator.parentNode) {
-                                    chatMessages.removeChild(typingIndicator);
-                                }
-                                addMessage("bot", `Sorry, something went wrong: ${data.error}`);
+                        } else if (data.type === 'final') {
+                            // Remove blinking cursor
+                            if (streamBubble) streamBubble.cursor.remove();
+                            // If retriever path (no token stream), show reply now
+                            if (!hasTokens && data.reply) addMessage("bot", data.reply);
+                            // Collapse thinking panel
+                            if (thinkingPanel) thinkingPanel.open = false;
+                            // Posters
+                            const hasMeta = (data.movies?.length > 0) || (data.tv_shows?.length > 0);
+                            if (hasMeta) {
+                                const mc = document.createElement("div");
+                                mc.classList.add("media-container");
+                                if (data.movies?.length > 0) displayMedia(data.movies, "Movies", mc);
+                                if (data.tv_shows?.length > 0) displayMedia(data.tv_shows, "TV Shows", mc);
+                                chatMessages.appendChild(mc);
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
                             }
+
+                        } else if (data.type === 'error') {
+                            if (streamBubble) streamBubble.cursor.remove();
+                            addMessage("bot", `Sorry, something went wrong: ${data.error}`);
                         }
                     }
                 }
-            } catch (error) {
-                const typingIndicator = document.getElementById("typing-indicator");
-                if (typingIndicator && typingIndicator.parentNode) {
-                    chatMessages.removeChild(typingIndicator);
-                }
+            } catch (err) {
+                if (streamBubble) streamBubble.cursor.remove();
                 addMessage("bot", "Sorry, something went wrong. Please try again.");
+            } finally {
+                sendButton.disabled = false;
             }
         }
       function displayMedia(items, type, container) {
