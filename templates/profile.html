@@ -462,7 +462,7 @@
                     container.innerHTML = '';
                     if (data.recommendations && data.recommendations.length > 0) {
                         const grid = document.createElement('div');
-                        grid.className = 'grid grid-cols-3 gap-4';
+                        grid.className = 'grid grid-cols-2 sm:grid-cols-3 gap-4';
                         data.recommendations.forEach(rec => {
                             const mediaPath = rec.media_type === 'movie' ? 'movie' : 'tv';
                             const a = document.createElement('a');

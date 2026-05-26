@@ -234,6 +234,7 @@
 
     .stats-bar {
         display: flex;
+        flex-wrap: wrap;
         gap: 20px;
         padding: 15px;
         background: rgba(255, 255, 255, 0.05);
@@ -243,6 +244,7 @@
 
     .stat-item {
         flex: 1;
+        min-width: 70px;
         text-align: center;
     }
 
@@ -256,6 +258,14 @@
         font-size: 0.85rem;
         color: rgba(255, 255, 255, 0.7);
         margin-top: 5px;
+    }
+    @media (max-width: 640px) {
+        .feed-container { padding: 12px; }
+        .activity-card { padding: 12px; }
+        .stats-bar { gap: 10px; padding: 10px; }
+        .stat-value { font-size: 1.2rem; }
+        .stat-label { font-size: 0.75rem; }
+        .feed-header h1 { font-size: 1.5rem; }
     }
 </style>
 {% endblock %}

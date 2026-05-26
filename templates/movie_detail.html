@@ -195,27 +195,32 @@
                 min-height: auto;
                 padding-top: 6rem;
             }
-            
+
             .movie-poster {
                 max-width: 250px;
                 margin: 0 auto 2rem;
             }
-            
+
             .movie-info {
                 text-align: center;
             }
-            
+
             .rating-circle {
                 margin: 0 auto 1rem;
             }
-            
+
             .trailer-button {
                 margin: 0 auto 1rem;
             }
-            
+
             .cast-card, .info-card, .recommendation-card {
                 margin-bottom: 1rem;
             }
+        }
+        @media (max-width: 640px) {
+            .rating-circle { width: 60px; height: 60px; font-size: 1.1rem; }
+            .rating-circle::before { width: 52px; height: 52px; }
+            .modal-content { max-width: 95vw; margin: 1rem; }
         }
     </style>
 </head>
