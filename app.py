@@ -79,18 +79,17 @@ for _var in _OPTIONAL_ENV:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_db_url(raw_url: str) -> str:
-    """Normalise DATABASE_URL: add sslmode on Render, strip it for local dev."""
+    """Normalise DATABASE_URL: add sslmode when missing on production hosts."""
     if not raw_url.startswith("postgresql://"):
         return raw_url
+    # URL already has sslmode — trust it exactly as provided (Neon, Supabase, etc.)
+    if "sslmode=" in raw_url:
+        return raw_url
+    # No sslmode in URL — add it only on known production platforms
     is_production = bool(os.getenv("RENDER") or os.getenv("K_SERVICE"))
-    parsed = urllib.parse.urlparse(raw_url)
     if is_production:
-        if not parsed.query:
-            return raw_url + "?sslmode=require"
-        if "sslmode" not in parsed.query:
-            return raw_url + "&sslmode=require"
-    else:
-        raw_url = raw_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        separator = "&" if "?" in raw_url else "?"
+        return raw_url + f"{separator}sslmode=require"
     return raw_url
 
 
