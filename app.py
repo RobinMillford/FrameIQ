@@ -136,7 +136,9 @@ def create_app() -> Flask:
         SQLALCHEMY_ENGINE_OPTIONS={
             "pool_pre_ping": True,
             "pool_recycle": 300,
-            "connect_args": {"connect_timeout": 10},
+            # connect_timeout only valid for psycopg2 (PostgreSQL), not SQLite
+            **({"connect_args": {"connect_timeout": 10}}
+               if os.getenv("DATABASE_URL", "").startswith("postgresql") else {}),
         },
         # Mail
         MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
