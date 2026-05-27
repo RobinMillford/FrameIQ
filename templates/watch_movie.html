@@ -58,26 +58,31 @@
 
 <!-- ── Nav ── -->
 <nav class="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3">
-    <div class="max-w-screen-2xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <a href="javascript:history.back()" class="back-btn flex items-center gap-2 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
-                <i class="fas fa-arrow-left"></i> Back
+    <div class="max-w-screen-2xl mx-auto flex items-center justify-between gap-2">
+        <!-- Left -->
+        <div class="flex items-center gap-2 shrink-0">
+            <a href="javascript:history.back()" class="back-btn flex items-center gap-1 text-gray-400 hover:text-white px-2 py-1.5 rounded-lg text-sm transition-colors">
+                <i class="fas fa-arrow-left"></i>
+                <span class="hidden sm:inline">Back</span>
             </a>
             <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
         </div>
-        <div class="flex items-center gap-3 text-sm text-gray-400">
-            <i class="fas fa-film text-indigo-400"></i>
-            <span class="text-white font-medium truncate max-w-xs">{{ movie.title }}</span>
+        <!-- Center — hidden on mobile, title already shown below player -->
+        <div class="hidden md:flex items-center gap-3 text-sm text-gray-400 min-w-0">
+            <i class="fas fa-film text-indigo-400 shrink-0"></i>
+            <span class="text-white font-medium truncate">{{ movie.title }}</span>
             {% if movie.release_date %}
-                <span class="text-gray-600">{{ movie.release_date[:4] }}</span>
+                <span class="text-gray-600 shrink-0">{{ movie.release_date[:4] }}</span>
             {% endif %}
         </div>
+        <!-- Right -->
         {% if current_user.is_authenticated %}
-        <a href="/profile" class="flex items-center gap-2 text-sm text-gray-400 hover:text-white">
-            <i class="fas fa-user-circle text-indigo-400"></i> {{ current_user.username }}
+        <a href="/profile" class="flex items-center gap-1 text-sm text-gray-400 hover:text-white shrink-0">
+            <i class="fas fa-user-circle text-indigo-400"></i>
+            <span class="hidden sm:inline">{{ current_user.username }}</span>
         </a>
         {% else %}
-        <a href="/login" class="text-sm text-indigo-400 hover:text-indigo-300">Login to save progress</a>
+        <a href="/login" class="text-sm text-indigo-400 hover:text-indigo-300 shrink-0 whitespace-nowrap">Login</a>
         {% endif %}
     </div>
 </nav>
