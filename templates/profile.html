@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Profile - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -96,20 +97,14 @@
                                 {% if current_user.profile_picture.startswith('http') %}
                                     <!-- Cloudinary URL -->
                                     <img src="{{ current_user.profile_picture }}" alt="Profile Picture" class="rounded-full w-24 h-24 mx-auto mb-4 object-cover profile-image">
-                                    <!-- Debug info - only visible when logged in as the user -->
-                                    {% if current_user.id == current_user.id %}
-                                    <p class="text-xs text-gray-400 mt-1">Cloudinary Image</p>
-                                    {% endif %}
                                 {% else %}
                                     <!-- Local file path -->
                                     <img src="{{ url_for('static', filename=current_user.profile_picture) }}" alt="Profile Picture" class="rounded-full w-24 h-24 mx-auto mb-4 object-cover profile-image">
-                                    <p class="text-xs text-gray-400 mt-1">Local Image</p>
                                 {% endif %}
                             {% else %}
                                 <div class="bg-gray-600 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center profile-image">
                                     <span class="text-3xl font-bold">{{ current_user.username[0].upper() }}</span>
                                 </div>
-                                <p class="text-xs text-gray-400 mt-1">Default Avatar</p>
                             {% endif %}
                             <h2 class="text-xl font-bold">{{ current_user.username }}</h2>
                             <p class="text-gray-400">{{ current_user.email }}</p>
@@ -553,9 +548,10 @@
             }
             
             try {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const response = await fetch('/api/lists/create', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                     body: JSON.stringify({
                         title: title,
                         description: description,

@@ -410,7 +410,7 @@
                     >
                     <div class="p-4">
                         <h3 class="font-semibold text-[#F5F6F5] transition-colors">{{ article.title }}</h3>
-                        <p class="text-[#A9B8B5] mt-2">{{ article.description[:120] }}{% if article.description|length > 120 %}...{% endif %}</p>
+                        <p class="text-[#A9B8B5] mt-2">{{ (article.description or '')[:120] }}{% if (article.description or '')|length > 120 %}...{% endif %}</p>
                         <div class="flex items-center justify-between mt-3">
                             <span class="news-date">
                                 <i class="far fa-calendar"></i>

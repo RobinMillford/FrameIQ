@@ -1839,8 +1839,11 @@
           // Autocomplete
           const searchInput = document.getElementById('search-input');
           const autocompleteItems = document.getElementById('autocomplete-items');
+          let autocompleteTimer = null;
 
-          searchInput.addEventListener('input', async function() {
+          searchInput.addEventListener('input', function() {
+              clearTimeout(autocompleteTimer);
+              autocompleteTimer = setTimeout(async () => {
               const query = this.value.trim();
               if (query.length < 2) {
                   autocompleteItems.classList.add('hidden');
@@ -1864,7 +1867,7 @@
                       const img = document.createElement('img');
                       img.src = posterPath ? `https://image.tmdb.org/t/p/w92${posterPath}` : '/static/images/no-poster.svg';
                       img.alt = title || '';
-                      img.className = 'w-10 h-15 object-cover rounded';
+                      img.className = 'w-10 h-14 object-cover rounded';
                       const info = document.createElement('div');
                       const titleEl = document.createElement('p');
                       titleEl.className = 'text-[#F5F6F5] text-sm';
@@ -1909,6 +1912,7 @@
               } catch (error) {
                   autocompleteItems.classList.add('hidden');
               }
+              }, 300);
           });
 
           // Hide autocomplete when clicking outside

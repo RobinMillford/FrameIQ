@@ -5,7 +5,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}" />
     <meta
       name="viewport"
-      content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0"
     />
     <link
       rel="icon"
@@ -816,15 +816,21 @@
           const mediaElement = document.createElement("div");
           mediaElement.classList.add("media");
 
-          // Add release status badge if it exists
-          const releaseStatus = item.release_status || "";
+          const link = document.createElement("a");
+          link.href = item.tmdb_link || "#";
 
-          mediaElement.innerHTML = `
-                    <a href="${item.tmdb_link}">
-                        <img src="${item.poster_url}" alt="${item.title}" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
-                        <div class="media-title-text">${item.title} (${item.year})${releaseStatus}</div>
-                    </a>
-                `;
+          const img = document.createElement("img");
+          img.src = item.poster_url || "";
+          img.alt = item.title || "";
+          img.onerror = function() { this.src = "https://via.placeholder.com/300x450?text=No+Image"; };
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "media-title-text";
+          titleDiv.textContent = `${item.title || ""}${item.year ? " (" + item.year + ")" : ""}${item.release_status || ""}`;
+
+          link.appendChild(img);
+          link.appendChild(titleDiv);
+          mediaElement.appendChild(link);
           itemsContainer.appendChild(mediaElement);
         });
 
