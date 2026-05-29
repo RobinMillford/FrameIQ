@@ -302,9 +302,7 @@
 
       #autocomplete-items {
         z-index: 9999;
-        max-width: calc(100% - 2rem);
-        margin: 0 auto;
-        position: absolute;
+        position: fixed;
       }
 
       #autocomplete-items .hover\:bg-indigo-900\/50:hover {
@@ -590,7 +588,7 @@
             </div>
             <div
               id="autocomplete-items"
-              class="w-full left-0 top-full mt-2 glass-effect rounded-lg hidden max-h-96 overflow-y-auto shadow-2xl"
+              class="glass-effect rounded-lg hidden max-h-96 overflow-y-auto shadow-2xl"
               style="z-index: 9999;"
             ></div>
           </form>
@@ -730,7 +728,7 @@
                 src="{{ movie.poster_path }}"
                 alt="{{ movie.title }}"
                 class="movie-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -893,7 +891,7 @@
                 src="{{ movie.poster_path }}"
                 alt="{{ movie.title }}"
                 class="movie-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -1056,7 +1054,7 @@
                 src="{{ movie.poster_path }}"
                 alt="{{ movie.title }}"
                 class="movie-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -1219,7 +1217,7 @@
                 src="{{ show.poster_path }}"
                 alt="{{ show.name }}"
                 class="show-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -1381,7 +1379,7 @@
                 src="{{ show.poster_path }}"
                 alt="{{ show.name }}"
                 class="show-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -1543,7 +1541,7 @@
                 src="{{ show.poster_path }}"
                 alt="{{ show.name }}"
                 class="show-image w-full"
-                onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+                onerror="this.src='/static/images/no-poster.svg'"
               />
               <div class="p-4">
                 <h3
@@ -1707,7 +1705,7 @@
               src="{{ person.profile_path }}"
               alt="{{ person.name }}"
               class="person-image w-full"
-              onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'"
+              onerror="this.src='/static/images/no-poster.svg'"
             />
             <div class="p-4">
               <h3
@@ -1755,7 +1753,9 @@
           // Mobile menu
           const mobileMenuButton = document.getElementById('mobile-menu-button');
           const mobileMenu = document.createElement('div');
-          mobileMenu.className = 'fixed top-16 left-0 right-0 bg-[#1A4A4F] glass-effect hidden';
+          mobileMenu.className = 'fixed left-0 right-0 bg-[#1A4A4F] glass-effect hidden overflow-y-auto';
+          mobileMenu.style.zIndex = '49';
+          mobileMenu.style.maxHeight = '80vh';
           mobileMenu.innerHTML = `
               <div class="container mx-auto px-4 py-4">
                   <div class="flex flex-col space-y-4">
@@ -1791,6 +1791,8 @@
           document.body.appendChild(mobileMenu);
 
           mobileMenuButton.addEventListener('click', () => {
+              const nav = document.querySelector('nav');
+              mobileMenu.style.top = nav.offsetHeight + 'px';
               mobileMenu.classList.toggle('hidden');
           });
 
@@ -1841,6 +1843,17 @@
           const autocompleteItems = document.getElementById('autocomplete-items');
           let autocompleteTimer = null;
 
+          function positionDropdown() {
+              const rect = searchInput.closest('form').getBoundingClientRect();
+              autocompleteItems.style.top = (rect.bottom + 8) + 'px';
+              autocompleteItems.style.left = rect.left + 'px';
+              autocompleteItems.style.width = rect.width + 'px';
+          }
+
+          window.addEventListener('resize', () => {
+              if (!autocompleteItems.classList.contains('hidden')) positionDropdown();
+          });
+
           searchInput.addEventListener('input', function() {
               clearTimeout(autocompleteTimer);
               autocompleteTimer = setTimeout(async () => {
@@ -1869,11 +1882,12 @@
                       img.alt = title || '';
                       img.className = 'w-10 h-14 object-cover rounded';
                       const info = document.createElement('div');
+                      info.className = 'min-w-0 flex-1 overflow-hidden';
                       const titleEl = document.createElement('p');
-                      titleEl.className = 'text-[#F5F6F5] text-sm';
+                      titleEl.className = 'text-[#F5F6F5] text-sm truncate';
                       titleEl.textContent = title || '';
                       const subEl = document.createElement('p');
-                      subEl.className = 'text-[#A9B8B5] text-xs';
+                      subEl.className = 'text-[#A9B8B5] text-xs truncate';
                       subEl.textContent = subtitle || 'N/A';
                       info.appendChild(titleEl);
                       info.appendChild(subEl);
@@ -1905,6 +1919,7 @@
                   });
 
                   if (autocompleteItems.children.length > 0) {
+                      positionDropdown();
                       autocompleteItems.classList.remove('hidden');
                   } else {
                       autocompleteItems.classList.add('hidden');

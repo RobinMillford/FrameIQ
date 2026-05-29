@@ -223,10 +223,10 @@
                                             {% if poster_url and not poster_url.startswith('http') %}
                                                 {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
                                             {% endif %}
-                                            <img src="{{ poster_url or 'https://via.placeholder.com/100x150?text=No+Poster' }}" 
+                                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}" 
                                                  alt="{{ review.media.title }}" 
                                                  class="w-16 h-24 rounded border border-gray-700 object-cover"
-                                                 onerror="this.src='https://via.placeholder.com/100x150?text=No+Poster'">
+                                                 onerror="this.src='/static/images/no-poster.svg'">
                                             <div>
                                                 <h4 class="text-lg font-bold">
                                                     <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">
@@ -472,12 +472,12 @@
                     if (profilePic && !profilePic.startsWith('http')) {
                         profilePic = '/static/' + profilePic;
                     } else if (!profilePic) {
-                        profilePic = `https://via.placeholder.com/100x100?text=${item.username[0].toUpperCase()}`;
+                        profilePic = `/static/images/default_avatar.svg
                     }
                     html += `
                         <div class="flex items-center justify-between p-2 rounded hover:bg-gray-700 transition-colors">
                             <a href="/user/${item.id}" class="flex items-center gap-3 group">
-                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='/static/images/default_avatar.svg'">
                                 <div>
                                     <div class="font-bold group-hover:text-indigo-400 transition-colors">${item.username}</div>
                                     <div class="text-xs text-gray-400">${item.total_reviews} reviews • ${item.followers_count} followers</div>

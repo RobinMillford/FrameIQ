@@ -822,7 +822,7 @@
           const img = document.createElement("img");
           img.src = item.poster_url || "";
           img.alt = item.title || "";
-          img.onerror = function() { this.src = "https://via.placeholder.com/300x450?text=No+Image"; };
+          img.onerror = function() { this.src = "/static/images/no-poster.svg"; };
 
           const titleDiv = document.createElement("div");
           titleDiv.className = "media-title-text";

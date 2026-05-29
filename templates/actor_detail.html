@@ -210,13 +210,13 @@
     <!-- Hero Section -->
     <section class="hero-section">
         <div class="hero-backdrop"
-            style="background-image: url('{{ actor.backdrop_path|default('https://via.placeholder.com/1920x1080?text=No+Backdrop') }}');">
+            style="background-image: url('{{ actor.backdrop_path|default('/static/images/no-backdrop.svg') }}');">
         </div>
         <div class="hero-overlay"></div>
         <div class="container mx-auto px-4 h-full flex items-center">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
                 <div class="flex justify-center md:justify-start">
-                    <img src="{{ actor.profile_path|default('https://via.placeholder.com/300x450?text=No+Image') }}"
+                    <img src="{{ actor.profile_path|default('/static/images/no-poster.svg') }}"
                         alt="{{ actor.name|default('Actor') }}" class="actor-poster rounded-lg w-64 h-auto">
                 </div>
                 <div class="md:col-span-2 actor-info">
@@ -345,7 +345,7 @@
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
                 {% for image in actor.profile_images %}
                 <div class="photo-card glass-effect rounded-lg overflow-hidden">
-                    <img src="{{ image.file_path|default('https://via.placeholder.com/300x450?text=No+Image') }}"
+                    <img src="{{ image.file_path|default('/static/images/no-poster.svg') }}"
                         alt="{{ actor.name|default('Actor') }} Photo" class="w-full h-auto">
                 </div>
                 {% endfor %}
@@ -366,7 +366,7 @@
                 <div class="tagged-card glass-effect rounded-lg overflow-hidden">
                     <a
                         href="{% if image.media.media_type == 'movie' %}/movie/{{ image.media.id }}{% else %}/tv/{{ image.media.id }}{% endif %}">
-                        <img src="{{ image.file_path|default('https://via.placeholder.com/300x450?text=No+Image') }}"
+                        <img src="{{ image.file_path|default('/static/images/no-poster.svg') }}"
                             alt="{{ image.media.title|default(image.media.name)|default('Tagged Image') }}"
                             class="w-full h-auto">
                         <div class="p-4">
@@ -401,7 +401,7 @@
                 {% for work in actor.known_for_movies %}
                 <div class="known-for-card glass-effect rounded-lg overflow-hidden">
                     <a href="/movie/{{ work.id|default('#') }}">
-                        <img src="{{ 'https://image.tmdb.org/t/p/w300' + work.poster_path if work.poster_path else 'https://via.placeholder.com/300x450?text=No+Image' }}"
+                        <img src="{{ 'https://image.tmdb.org/t/p/w300' + work.poster_path if work.poster_path else '/static/images/no-poster.svg' }}"
                             alt="{{ work.title|default('Unknown') }}" class="w-full h-auto">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm">{{ work.title|default('Unknown') }}</h3>
@@ -427,7 +427,7 @@
                 {% for work in actor.known_for_tv %}
                 <div class="known-for-card glass-effect rounded-lg overflow-hidden">
                     <a href="/tv/{{ work.id|default('#') }}">
-                        <img src="{{ 'https://image.tmdb.org/t/p/w300' + work.poster_path if work.poster_path else 'https://via.placeholder.com/300x450?text=No+Image' }}"
+                        <img src="{{ 'https://image.tmdb.org/t/p/w300' + work.poster_path if work.poster_path else '/static/images/no-poster.svg' }}"
                             alt="{{ work.name|default('Unknown') }}" class="w-full h-auto">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm">{{ work.name|default('Unknown') }}</h3>

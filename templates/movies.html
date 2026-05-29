@@ -357,7 +357,7 @@
                 data.results.forEach(movie => {
                     const posterUrl = movie.poster_path 
                         ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` 
-                        : "https://via.placeholder.com/500x750?text=No+Image";
+                        : "/static/images/no-poster.svg";
                     
                     const movieCard = document.createElement("div");
                     movieCard.className = "movie-card flex-shrink-0 w-48 glass-effect rounded-lg overflow-hidden";
@@ -459,14 +459,14 @@ async function fetchMovieTrailer(movieId) {
                     const suggestion = document.createElement("div");
                     const posterUrl = movie.poster_path 
                         ? `https://image.tmdb.org/t/p/w92/${movie.poster_path}` 
-                        : "https://via.placeholder.com/92x138?text=No+Image";
+                        : "/static/images/no-poster.svg";
                     
                     suggestion.className = "autocomplete-item flex items-center p-2 glass-effect";
                     suggestion.innerHTML = `
-                        <img src="${posterUrl}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3">
-                        <div>
-                            <div class="font-medium">${movie.title}</div>
-                            <div class="text-sm text-gray-400">${movie.release_date}</div>
+                        <img src="${posterUrl}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3 flex-shrink-0">
+                        <div class="min-w-0 flex-1 overflow-hidden">
+                            <div class="font-medium truncate">${movie.title}</div>
+                            <div class="text-sm text-gray-400 truncate">${movie.release_date}</div>
                         </div>
                     `;
                     
@@ -514,7 +514,7 @@ async function fetchMovieTrailer(movieId) {
                     data.results.slice(0, 5).forEach(movie => {
                         const posterUrl = movie.poster_path 
                             ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` 
-                            : "https://via.placeholder.com/500x750?text=No+Image";
+                            : "/static/images/no-poster.svg";
                         
                         const movieCard = document.createElement("div");
                         movieCard.className = "movie-card flex-shrink-0 w-32 glass-effect rounded-lg overflow-hidden";

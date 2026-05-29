@@ -258,10 +258,10 @@
                                             {% if poster_url and not poster_url.startswith('http') %}
                                                 {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
                                             {% endif %}
-                                            <img src="{{ poster_url or 'https://via.placeholder.com/100x150?text=No+Poster' }}" 
+                                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}" 
                                                  alt="{{ review.media.title }}" 
                                                  class="w-16 h-24 rounded border border-gray-600 object-cover"
-                                                 onerror="this.src='https://via.placeholder.com/100x150?text=No+Poster'">
+                                                 onerror="this.src='/static/images/no-poster.svg'">
                                             <div>
                                                 <h4 class="text-lg font-bold">
                                                     <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">

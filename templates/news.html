@@ -402,11 +402,11 @@
                 {% for article in articles %}
                 <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" class="news-card glass-effect rounded-lg overflow-hidden">
                     <img
-                        src="{{ article.urlToImage or 'https://via.placeholder.com/400x225?text=No+Image' }}"
+                        src="{{ article.urlToImage or '/static/images/default_avatar.svg' }}"
                         alt="{{ article.title }}"
                         class="news-image w-full"
                         loading="lazy"
-                        onerror="this.src='https://via.placeholder.com/400x225?text=No+Image'"
+                        onerror="this.src='/static/images/default_avatar.svg'"
                     >
                     <div class="p-4">
                         <h3 class="font-semibold text-[#F5F6F5] transition-colors">{{ article.title }}</h3>

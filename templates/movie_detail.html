@@ -611,7 +611,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6" id="cast-grid">
             {% for cast in movie.cast[:6] %}
             <a href="/actor/{{ cast.id }}" class="cast-card glass-effect rounded-lg overflow-hidden block">
-                <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='https://via.placeholder.com/300x300?text=No+Image'">
+                <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='/static/images/no-poster.svg'">
                 <div class="p-4">
                     <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ cast.name }}</h3>
                     <p class="text-gray-400 text-xs">{{ cast.character }}</p>
@@ -625,7 +625,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 hidden" id="full-cast-grid">
             {% for cast in movie.cast[6:] %}
             <a href="/actor/{{ cast.id }}" class="cast-card glass-effect rounded-lg overflow-hidden block">
-                <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='https://via.placeholder.com/300x300?text=No+Image'">
+                <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='/static/images/no-poster.svg'">
                 <div class="p-4">
                     <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ cast.name }}</h3>
                     <p class="text-gray-400 text-xs">{{ cast.character }}</p>
@@ -805,7 +805,7 @@
                     {% for review in movie.reviews[:4] %}
                     <div class="glass-effect rounded-lg p-6">
                         <div class="flex items-center mb-4">
-                            <img src="{{ review.author_avatar }}" alt="{{ review.author }}" class="w-10 h-10 rounded-full mr-4" onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                            <img src="{{ review.author_avatar }}" alt="{{ review.author }}" class="w-10 h-10 rounded-full mr-4" onerror="this.src='/static/images/default_avatar.svg'">
                             <div>
                                 <h3 class="font-semibold">{{ review.author }}</h3>
                                 <div class="flex items-center">
@@ -1381,10 +1381,10 @@
                         <div class="flex items-start justify-between mb-4">
                             <div class="flex items-center">
                                 <a href="/user/${review.user.id}">
-                                    <img src="${review.user.profile_picture || 'https://via.placeholder.com/100x100?text=' + review.user.username.charAt(0)}" 
+                                    <img src="${review.user.profile_picture || '/static/images/default_avatar.svg' + review.user.username.charAt(0)}" 
                                          alt="${review.user.username}" 
                                          class="w-10 h-10 rounded-full mr-4 hover:opacity-80 transition-opacity" 
-                                         onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                                         onerror="this.src='/static/images/default_avatar.svg'">
                                 </a>
                                 <div>
                                     <div class="flex items-center gap-2">
@@ -1557,8 +1557,8 @@
                     return `
                         <div class="comment-item ${depth > 0 ? 'ml-6 mt-4 border-l-2 border-gray-800 pl-4' : ''}" id="comment-${comment.id}">
                             <div class="flex items-start space-x-3">
-                                <img src="${comment.user.profile_picture || 'https://via.placeholder.com/100x100?text=' + comment.user.username.charAt(0)}" 
-                                     class="w-7 h-7 rounded-full" onerror="this.src='https://via.placeholder.com/100x100?text=U'">
+                                <img src="${comment.user.profile_picture || '/static/images/default_avatar.svg' + comment.user.username.charAt(0)}" 
+                                     class="w-7 h-7 rounded-full" onerror="this.src='/static/images/default_avatar.svg'">
                                 <div class="flex-1">
                                     <div class="flex items-center space-x-2">
                                         <span class="text-indigo-400 text-xs font-semibold">${comment.user.username}</span>

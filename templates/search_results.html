@@ -185,7 +185,7 @@
                 {% for movie in movies %}
                 <div class="result-card glass-effect rounded-lg overflow-hidden">
                     <a href="/movie/{{ movie.id }}">
-                        <img src="https://image.tmdb.org/t/p/w500{{ movie.poster_path }}" alt="{{ movie.title }}" class="result-image w-full" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'" style="display: {{ 'block' if movie.poster_path else 'none' }}">
+                        <img src="https://image.tmdb.org/t/p/w500{{ movie.poster_path }}" alt="{{ movie.title }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if movie.poster_path else 'none' }}">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ movie.title }}</h3>
                             <p class="text-gray-400 text-xs">{{ movie.release_date }}</p>
@@ -264,7 +264,7 @@
                 {% for show in shows %}
                 <div class="result-card glass-effect rounded-lg overflow-hidden">
                     <a href="/tv/{{ show.id }}">
-                        <img src="https://image.tmdb.org/t/p/w500{{ show.poster_path }}" alt="{{ show.name }}" class="result-image w-full" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'" style="display: {{ 'block' if show.poster_path else 'none' }}">
+                        <img src="https://image.tmdb.org/t/p/w500{{ show.poster_path }}" alt="{{ show.name }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if show.poster_path else 'none' }}">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ show.name }}</h3>
                             <p class="text-gray-400 text-xs">{{ show.first_air_date }}</p>
@@ -342,7 +342,7 @@
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
                 {% for person in people %}
                 <a href="/actor/{{ person.id }}" class="result-card glass-effect rounded-lg overflow-hidden">
-                    <img src="https://image.tmdb.org/t/p/w500{{ person.profile_path }}" alt="{{ person.name }}" class="result-image w-full" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'" style="display: {{ 'block' if person.profile_path else 'none' }}">
+                    <img src="https://image.tmdb.org/t/p/w500{{ person.profile_path }}" alt="{{ person.name }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if person.profile_path else 'none' }}">
                     <div class="p-4">
                         <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ person.name }}</h3>
                         <p class="text-gray-400 text-xs">{{ person.known_for }}</p>

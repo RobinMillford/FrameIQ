@@ -688,7 +688,7 @@
                 {% for season in show.seasons %}
                 <div class="season-card glass-effect rounded-lg overflow-hidden">
                     <img src="{{ season.poster_path }}" alt="{{ season.name }}" class="w-full h-auto"
-                        onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
+                        onerror="this.src='/static/images/no-poster.svg'">
                     <div class="p-4">
                         <h3 class="font-semibold">{{ season.name }}</h3>
                         <p class="text-gray-400 text-sm">{{ season.air_date }}</p>
@@ -709,7 +709,7 @@
                 <div class="cast-card glass-effect rounded-lg overflow-hidden">
                     <a href="/actor/{{ cast.id }}">
                         <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full"
-                            onerror="this.src='https://via.placeholder.com/300x300?text=No+Image'">
+                            onerror="this.src='/static/images/no-poster.svg'">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm">{{ cast.name }}</h3>
                             <p class="text-gray-400 text-xs">{{ cast.character }}</p>
@@ -727,7 +727,7 @@
                 <div class="cast-card glass-effect rounded-lg overflow-hidden">
                     <a href="/actor/{{ cast.id }}">
                         <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full"
-                            onerror="this.src='https://via.placeholder.com/300x300?text=No+Image'">
+                            onerror="this.src='/static/images/no-poster.svg'">
                         <div class="p-4">
                             <h3 class="font-semibold text-sm">{{ cast.name }}</h3>
                             <p class="text-gray-400 text-xs">{{ cast.character }}</p>
@@ -904,7 +904,7 @@
                         <div class="flex items-center mb-6">
                             <img src="{{ review.author_avatar }}" alt="{{ review.author }}" 
                                  class="w-12 h-12 rounded-full mr-4 border-2 border-indigo-500/30" 
-                                 onerror="this.src='https://via.placeholder.com/100x100?text=User'">
+                                 onerror="this.src='/static/images/default_avatar.svg'">
                             <div>
                                 <h3 class="font-bold text-gray-100">{{ review.author }}</h3>
                                 <div class="flex items-center">
@@ -1234,7 +1234,7 @@
                     <div class="glass-effect rounded-lg p-6 flex flex-col h-full bg-gray-800/40">
                         <div class="flex justify-between items-start mb-4">
                             <div class="flex items-center">
-                                <img src="${review.user.profile_picture || 'https://via.placeholder.com/40'}" class="w-10 h-10 rounded-full mr-3 border border-indigo-500/30">
+                                <img src="${review.user.profile_picture || '/static/images/default_avatar.svg'}" class="w-10 h-10 rounded-full mr-3 border border-indigo-500/30">
                                 <div>
                                     <h4 class="font-bold text-gray-100">${review.user.username}</h4>
                                     <div class="flex items-center text-xs text-gray-500">
@@ -1318,7 +1318,7 @@
                 return comments.filter(c => c.parent_id === parentId).map(c => `
                     <div class="comment ${depth > 0 ? 'ml-4 border-l border-gray-700 pl-3' : ''}">
                         <div class="flex items-start space-x-2">
-                            <img src="${c.user.profile_picture || 'https://via.placeholder.com/20'}" class="w-5 h-5 rounded-full mt-0.5">
+                            <img src="${c.user.profile_picture || '/static/images/default_avatar.svg'}" class="w-5 h-5 rounded-full mt-0.5">
                             <div class="flex-1">
                                 <div class="flex items-center space-x-2">
                                     <span class="text-[10px] font-bold text-indigo-300">${c.user.username}</span>
