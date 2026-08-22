@@ -593,3 +593,39 @@ def format_currency(amount):
     if not amount:
         return "N/A"
     return f"{amount:,}"
+
+
+def search_media(query, media_type='movie', include_adult=False):
+    """Cached TMDb search.
+
+    media_type: 'movie', 'tv', or 'person'.
+    Returns the raw 'results' list (empty list on failure).
+    """
+    url = (
+        f"https://api.themoviedb.org/3/search/{media_type}"
+        f"?api_key={TMDB_API_KEY}&language=en-US&query={query}&page=1"
+    )
+    if include_adult:
+        url += "&include_adult=true"
+    try:
+        data = cached_tmdb_request(url)
+        return data.get('results', [])
+    except Exception as e:
+        logger.warning("TMDb search failed (%s, %s): %s", media_type, query, e)
+        return []
+
+
+def fetch_media_details(media_type, media_id):
+    """Lightweight cached TMDb details for movie/tv (no append_to_response).
+
+    Returns dict or None if unavailable.
+    """
+    url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&language=en-US"
+    try:
+        data = cached_tmdb_request(url)
+    except Exception as e:
+        logger.warning("TMDb details fetch failed (%s/%s): %s", media_type, media_id, e)
+        return None
+    if data.get('success') is False:
+        return None
+    return data

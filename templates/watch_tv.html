@@ -12,7 +12,23 @@
         * { font-family: 'Inter', sans-serif; }
         body { background: #080808; color: #e5e7eb; }
 
-        /* Layout */
+        /* ── Backdrop hero ── */
+        #backdrop-hero {
+            position: fixed; inset: 0; z-index: -10; overflow: hidden;
+        }
+        #backdrop-hero img {
+            width: 100%; height: 100%; object-fit: cover;
+            filter: blur(28px) brightness(.45) saturate(1.1);
+            transform: scale(1.15);
+        }
+        #backdrop-hero::after {
+            content: ''; position: absolute; inset: 0;
+            background:
+                linear-gradient(to bottom, rgba(8,8,8,.35) 0%, rgba(8,8,8,.75) 55%, #080808 100%),
+                radial-gradient(ellipse at 50% 0%, {% if media_type == 'anime' %}rgba(236,72,153,.12){% else %}rgba(99,102,241,.12){% endif %}, transparent 60%);
+        }
+
+        /* ── Layout ── */
         .watch-layout {
             display: grid;
             grid-template-columns: 1fr 320px;
@@ -27,46 +43,105 @@
             .episode-sidebar { max-height: 50vh; }
         }
 
-        /* Player */
+        /* ── Player ── */
         .player-wrap { position: relative; width: 100%; padding-top: 56.25%; background: #000; }
         .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
 
-        /* Sidebar */
+        .player-skeleton {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 12px;
+            background: linear-gradient(110deg, #0d0d12 30%, #16161f 45%, #0d0d12 60%);
+            background-size: 200% 100%;
+            animation: shimmer 1.6s linear infinite;
+            z-index: 5;
+        }
+        @keyframes shimmer { to { background-position-x: -200%; } }
+
+        /* ── Theater mode ── */
+        body.theater #player-shell {
+            position: fixed; inset: 0; z-index: 200;
+            margin: 0 !important; padding: 16px !important;
+            background: #000;
+            display: flex; flex-direction: column;
+        }
+        #theater-bar { display: none; }
+        body.theater #theater-bar {
+            display: flex;
+            opacity: 0; pointer-events: none;
+            transition: opacity .25s;
+            position: absolute; top: 0; left: 0; right: 0; z-index: 210;
+            padding: 12px 16px;
+            background: linear-gradient(to bottom, rgba(0,0,0,.75), transparent);
+        }
+        body.theater #theater-bar:hover,
+        body.theater #theater-bar:focus-within { opacity: 1; pointer-events: auto; }
+        body.theater .player-wrap {
+            padding-top: 0; flex: 1; min-height: 0; border-radius: 0;
+            box-shadow: none;
+        }
+        body.theater nav, body.theater #tv-info,
+        body.theater .episode-sidebar,
+        body.theater #backdrop-hero { display: none !important; }
+        body.theater.idle-cursor { cursor: none; }
+        body.theater.idle-cursor #theater-bar { opacity: 0; }
+
+        /* ── Sidebar ── */
         .episode-sidebar {
-            background: #111; border: 1px solid rgba(255,255,255,.07);
+            background: rgba(17,17,17,.85); backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,.07);
             border-radius: 12px; overflow: hidden;
             height: calc(100vh - 120px);
             display: flex; flex-direction: column;
             position: sticky; top: 72px;
         }
-        .sidebar-header { background: #181818; border-bottom: 1px solid rgba(255,255,255,.07); }
+        .sidebar-header { background: rgba(24,24,24,.9); border-bottom: 1px solid rgba(255,255,255,.07); }
         .episodes-list { overflow-y: auto; flex: 1; }
         .episodes-list::-webkit-scrollbar { width: 4px; }
         .episodes-list::-webkit-scrollbar-track { background: #111; }
         .episodes-list::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
 
-        /* Episode item */
-        .ep-item { border-bottom: 1px solid rgba(255,255,255,.04); transition: background .15s; cursor: pointer; }
+        .ep-item { border-bottom: 1px solid rgba(255,255,255,.04); transition: background .15s; cursor: pointer; position: relative; }
         .ep-item:hover { background: rgba(255,255,255,.05); }
-        .ep-item.active { background: rgba(99,102,241,.15); border-left: 2px solid #6366f1; }
+        .ep-item.active { background: rgba(99,102,241,.15); box-shadow: inset 2px 0 0 #6366f1; }
+        .watched-badge {
+            position: absolute; right: 10px; top: 50%;
+            transform: translateY(-50%);
+            color: #34d399; font-size: 11px;
+        }
 
-        /* Season tabs */
         .season-tab { transition: all .2s; }
         .season-tab.active { background: #6366f1; color: white; }
         .season-tab:not(.active) { color: #6b7280; }
         .season-tab:not(.active):hover { background: rgba(255,255,255,.07); color: white; }
 
         /* Progress bar */
-        .progress-bar { height: 2px; background: #1f2937; }
+        .progress-bar { height: 2px; background: rgba(255,255,255,.08); }
         .progress-fill { height: 100%; background: linear-gradient(90deg,#6366f1,#a855f7); transition: width .3s; }
 
         /* Genre pill */
         .genre-pill { background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); color: #a5b4fc; }
 
+        /* Meta chips */
+        .meta-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.09);
+            padding: 4px 10px; border-radius: 999px;
+            font-size: 12px; color: #cbd5e1;
+        }
+
+        /* Source switcher */
+        .src-btn { transition: all .15s; }
+        .src-btn.active { background: #6366f1; color: white; box-shadow: 0 2px 12px rgba(99,102,241,.4); }
+        .src-btn:not(.active) { background: rgba(255,255,255,.07); color: #9ca3af; }
+        .src-btn:not(.active):hover { background: rgba(255,255,255,.14); color: white; }
+
         /* Next ep banner */
         #next-ep-banner {
             position: fixed; bottom: 80px; right: 24px; z-index: 50;
-            background: #1f2937; border: 1px solid #374151; border-radius: 12px;
+            background: rgba(31,41,55,.95); backdrop-filter: blur(8px);
+            border: 1px solid #374151; border-radius: 12px;
             padding: 16px 20px; width: 280px;
             transform: translateY(120px); opacity: 0; transition: all .4s;
         }
@@ -78,15 +153,23 @@
             background: #1f2937; border: 1px solid #374151;
             padding: 12px 20px; border-radius: 10px;
             display: flex; align-items: center; gap: 10px;
-            transform: translateY(80px); opacity: 0; transition: all .3s;
+            transform: translateY(80px); opacity: 0;
+            transition: all .3s;
         }
         #toast.show { transform: translateY(0); opacity: 1; }
     </style>
 </head>
 <body>
 
+<!-- ── Backdrop hero ── -->
+<div id="backdrop-hero">
+    {% if show.backdrop_path %}
+    <img src="{{ show.backdrop_path }}" alt="" aria-hidden="true">
+    {% endif %}
+</div>
+
 <!-- ── Nav ── -->
-<nav class="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3">
+<nav class="sticky top-0 z-50 bg-black/70 backdrop-blur-md border-b border-white/5 px-4 py-3">
     <div class="max-w-screen-2xl mx-auto flex items-center justify-between gap-2">
         <!-- Left -->
         <div class="flex items-center gap-2 shrink-0">
@@ -96,7 +179,7 @@
             </a>
             <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
         </div>
-        <!-- Center — hidden on mobile -->
+        <!-- Center -->
         <div class="hidden md:flex items-center gap-3 text-sm text-gray-400 min-w-0">
             {% if media_type == 'anime' %}
                 <i class="fas fa-dragon text-pink-400 shrink-0"></i>
@@ -119,73 +202,132 @@
 </nav>
 
 <!-- ── Main layout ── -->
-<div class="max-w-screen-2xl mx-auto px-4 py-4">
+<div class="max-w-screen-2xl mx-auto px-4 py-4 relative">
     <div class="watch-layout">
 
         <!-- Left: player + info -->
         <div>
-            <!-- Player -->
-            <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5 mb-4">
-                <iframe id="player-frame"
-                        src="{{ embed_url }}{% if resume_time > 0 %}?t={{ resume_time }}{% endif %}"
-                        allowfullscreen
-                        allow="autoplay; fullscreen; picture-in-picture"
-                        referrerpolicy="origin">
-                </iframe>
+            <!-- Player shell (theater target) -->
+            <div id="player-shell">
+                <!-- Theater bar (overlay in theater mode) -->
+                <div id="theater-bar" class="flex items-center justify-between gap-3 mb-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        {% if media_type == 'anime' %}
+                            <i class="fas fa-dragon text-pink-400 shrink-0"></i>
+                        {% else %}
+                            <i class="fas fa-tv text-indigo-400 shrink-0"></i>
+                        {% endif %}
+                        <span class="text-sm text-white font-medium truncate">{{ show.name }}</span>
+                        <span class="text-gray-500 text-xs shrink-0">S{{ season }} E{{ episode }}</span>
+                    </div>
+                    <button onclick="toggleTheater(false)"
+                            class="flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-gray-300 transition-colors shrink-0">
+                        <i class="fas fa-compress"></i> Exit Theater <kbd class="text-[10px] bg-black/40 px-1.5 py-0.5 rounded">Esc</kbd>
+                    </button>
+                </div>
+
+                <!-- Source switcher -->
+                <div id="source-switcher" class="flex flex-wrap items-center gap-2 mb-3">
+                    <span class="text-xs text-gray-500 uppercase tracking-wide mr-1">Servers</span>
+                    {% for src in sources %}
+                    <button onclick="switchSource('{{ src.key }}')" data-key="{{ src.key }}"
+                            class="src-btn text-xs px-3.5 py-1.5 rounded-full font-medium
+                                   {% if src.key == active_provider %}active{% endif %}">
+                        {{ src.label }}
+                    </button>
+                    {% endfor %}
+                    <button onclick="toggleTheater()" title="Theater mode (T)"
+                            class="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors">
+                        <i class="fas fa-expand"></i><span class="hidden sm:inline">Theater</span>
+                    </button>
+                </div>
+
+                <!-- Player -->
+                <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 mb-4">
+                    <div id="player-skeleton">
+                        <i class="fas fa-circle-notch fa-spin text-indigo-400 text-xl"></i>
+                        <p class="text-xs text-gray-500">Connecting to server…</p>
+                    </div>
+                    <iframe id="player-frame"
+                            src="{{ embed_url }}"
+                            allowfullscreen
+                            allow="autoplay; fullscreen; picture-in-picture"
+                            referrerpolicy="origin">
+                    </iframe>
+                </div>
             </div>
 
-            <!-- Episode title bar -->
-            <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <div>
-                    <h1 class="text-xl font-bold text-white">
-                        <span class="text-indigo-400">S{{ season }}:E{{ episode }}</span>
-                        <span id="ep-title" class="ml-2">{{ show.name }}</span>
-                    </h1>
-                    <div class="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-400">
-                        <span>{{ show.name }}</span>
-                        {% if show.vote_average %}<span class="text-gray-600">·</span>
-                        <span class="flex items-center gap-1 text-yellow-400"><i class="fas fa-star text-xs"></i>{{ show.vote_average }}</span>{% endif %}
-                        {% if show.status %}<span class="text-gray-600">·</span>
-                        <span class="{% if show.status == 'Ended' %}text-red-400{% else %}text-green-400{% endif %}">{{ show.status }}</span>{% endif %}
+            <!-- Episode info -->
+            <div id="tv-info">
+                <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+                    <div>
+                        <h1 class="text-xl font-bold text-white">
+                            <span class="text-indigo-400">S{{ season }}:E{{ episode }}</span>
+                            <span id="ep-title" class="ml-2">{{ show.name }}</span>
+                        </h1>
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                            {% if show.vote_average %}
+                            <span class="meta-chip"><i class="fas fa-star text-yellow-400 text-[10px]"></i>{{ show.vote_average }}<span class="text-gray-500">/10</span></span>
+                            {% endif %}
+                            {% if show.status %}
+                            <span class="meta-chip {% if show.status == 'Ended' %}border-red-500/30 text-red-300{% else %}border-green-500/30 text-green-300{% endif %}">
+                                {{ show.status }}
+                            </span>
+                            {% endif %}
+                            <span class="meta-chip"><i class="fas fa-tv text-[10px]"></i>S{{ season }} · E{{ episode }}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        {% if current_user.is_authenticated %}
+                        <button onclick="markWatched()" id="mark-btn"
+                                class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                            <i class="fas fa-check"></i> Mark Watched
+                        </button>
+                        <button id="watchlist-btn" onclick="toggleWatchlist()"
+                                class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+                                       {% if in_watchlist %}bg-green-600/90 hover:bg-green-500 text-white{% else %}bg-white/10 hover:bg-white/20 text-white{% endif %}">
+                            <i id="watchlist-icon" class="fas {% if in_watchlist %}fa-check{% else %}fa-plus{% endif %}"></i>
+                            <span id="watchlist-label">{% if in_watchlist %}In Watchlist{% else %}Watchlist{% endif %}</span>
+                        </button>
+                        <button onclick="sharePage()"
+                                class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                            <i class="fas fa-share-alt"></i><span class="hidden sm:inline"> Share</span>
+                        </button>
+                        {% endif %}
+                        <a href="/tv/{{ tmdb_id }}" class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                            <i class="fas fa-info-circle"></i> Details
+                        </a>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <a href="/tv/{{ tmdb_id }}" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                        <i class="fas fa-info-circle"></i> Show Details
-                    </a>
-                    {% if current_user.is_authenticated %}
-                    <button onclick="markWatched()" id="mark-btn"
-                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                        <i class="fas fa-check"></i> Mark Watched
-                    </button>
-                    {% endif %}
+
+                <!-- Progress bar -->
+                <div class="progress-bar rounded-full mb-4">
+                    <div class="progress-fill rounded-full" id="progress-display" style="width:0%"></div>
                 </div>
-            </div>
 
-            <!-- Progress bar -->
-            <div class="progress-bar rounded-full mb-4">
-                <div class="progress-fill rounded-full" id="progress-display" style="width:0%"></div>
-            </div>
+                <!-- Overview -->
+                {% if show.overview %}
+                <p class="text-gray-400 text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
+                {% endif %}
 
-            <!-- Overview -->
-            {% if show.overview %}
-            <p class="text-gray-400 text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
-            {% endif %}
-
-            <!-- Genres -->
-            {% if show.genres %}
-            <div class="flex flex-wrap gap-2">
-                {% for genre in show.genres %}
-                <span class="genre-pill text-xs px-3 py-1 rounded-full">{{ genre }}</span>
-                {% endfor %}
+                <!-- Genres -->
+                {% if show.genres %}
+                <div class="flex flex-wrap gap-2">
+                    {% for genre in show.genres %}
+                    <span class="genre-pill text-xs px-3 py-1 rounded-full">{{ genre }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
 
         <!-- Right: episode sidebar -->
-        <div class="episode-sidebar">
+        <aside class="episode-sidebar">
             <div class="sidebar-header p-3">
-                <h3 class="text-white font-semibold text-sm mb-3">Episodes</h3>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-white font-semibold text-sm">Episodes</h3>
+                    <span id="watched-count" class="text-[11px] text-emerald-400"></span>
+                </div>
                 <!-- Season tabs -->
                 <div class="flex flex-wrap gap-1" id="season-tabs">
                     {% for s in show.seasons %}
@@ -206,7 +348,7 @@
                     <i class="fas fa-spinner fa-spin mb-2"></i><br>Loading episodes...
                 </div>
             </div>
-        </div>
+        </aside>
     </div>
 </div>
 
@@ -244,12 +386,17 @@
     const CUR_SEASON = {{ season }};
     const CUR_EP     = {{ episode }};
     const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
-    const EMBED_BASE = 'https://www.vidking.net';
+    const ALLOWED_ORIGINS = {{ allowed_origins | tojson }};
+    const SOURCES = {{ sources | tojson }};
 
-    let allEpisodes  = {};   // season → [episode]
-    let nextEp       = null;
-    let lastSaved    = 0;
+    let allEpisodes     = {};   // season → [episode]
+    let watchedEps      = new Set(); // "s-e" keys
+    let nextEp          = null;
+    let lastSaved       = 0;
     let currentProgress = 0;
+    let idleTimer       = null;
+
+    const frame = document.getElementById('player-frame');
 
     function escHtml(s) {
         return String(s)
@@ -257,9 +404,48 @@
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // ── Player skeleton → hide on iframe load ────────────────────
+    frame.addEventListener('load', () => {
+        document.getElementById('player-skeleton').style.display = 'none';
+    });
+
+    // ── Source switching ─────────────────────────────────────────
+    function switchSource(key) {
+        const src = SOURCES.find(s => s.key === key);
+        if (!src || frame.src === src.url) return;
+
+        document.getElementById('player-skeleton').style.display = 'flex';
+        frame.src = src.url;
+
+        document.querySelectorAll('#source-switcher .src-btn')
+            .forEach(b => b.classList.toggle('active', b.dataset.key === key));
+    }
+
+    // ── Theater mode ─────────────────────────────────────────────
+    function toggleTheater(on) {
+        const enable = on === undefined ? !document.body.classList.contains('theater') : on;
+        document.body.classList.toggle('theater', enable);
+        if (!enable) document.body.classList.remove('idle-cursor');
+    }
+
+    document.addEventListener('mousemove', () => {
+        if (!document.body.classList.contains('theater')) return;
+        document.body.classList.remove('idle-cursor');
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => document.body.classList.add('idle-cursor'), 2500);
+    });
+
+    // ── Keyboard shortcuts ───────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+        if (/input|textarea/i.test(e.target.tagName)) return;
+        if (e.key === 'Escape') return toggleTheater(false);
+        if (e.key.toLowerCase() === 't') return toggleTheater();
+        const n = parseInt(e.key, 10);
+        if (n >= 1 && n <= SOURCES.length) switchSource(SOURCES[n - 1].key);
+    });
+
     // ── Load episodes for a season ───────────────────────────────
     async function loadSeason(season) {
-        // Update tab styles
         document.querySelectorAll('.season-tab').forEach(t => t.classList.remove('active'));
         const tab = document.getElementById('tab-' + season);
         if (tab) tab.classList.add('active');
@@ -279,6 +465,10 @@
         }
     }
 
+    function isWatched(season, epNum) {
+        return watchedEps.has(`${season}-${epNum}`);
+    }
+
     function renderEpisodes(season) {
         const eps = allEpisodes[season] || [];
         const list = document.getElementById('episodes-list');
@@ -288,25 +478,27 @@
             return;
         }
 
-        list.innerHTML = eps.map((ep, i) => {
+        list.innerHTML = eps.map((ep) => {
             const isActive = season === CUR_SEASON && ep.episode_number === CUR_EP;
+            const isSeen   = IS_AUTH && isWatched(season, ep.episode_number);
             const still = ep.still_path
-                ? `<img src="https://image.tmdb.org/t/p/w185${ep.still_path}" class="w-16 h-10 object-cover rounded flex-shrink-0 opacity-80">`
+                ? `<img src="https://image.tmdb.org/t/p/w185${ep.still_path}" class="w-16 h-10 object-cover rounded flex-shrink-0 ${isSeen ? 'opacity-40' : 'opacity-80'}">`
                 : `<div class="w-16 h-10 bg-gray-800 rounded flex-shrink-0 flex items-center justify-center"><i class="fas fa-play text-gray-600 text-xs"></i></div>`;
             return `
             <div class="ep-item px-3 py-2.5 ${isActive ? 'active' : ''}"
                  onclick="navigateTo(${season}, ${ep.episode_number})">
-                <div class="flex gap-3 items-start">
+                <div class="flex gap-3 items-start pr-6">
                     <div class="relative">${still}
                         ${isActive ? '<div class="absolute inset-0 flex items-center justify-center"><i class="fas fa-play text-indigo-400 text-xs drop-shadow"></i></div>' : ''}
                     </div>
                     <div class="min-w-0 flex-1">
-                        <p class="text-xs font-semibold ${isActive ? 'text-indigo-300' : 'text-gray-300'} truncate">
+                        <p class="text-xs font-semibold truncate ${isSeen ? 'text-gray-500 line-through' : isActive ? 'text-indigo-300' : 'text-gray-300'}">
                             ${ep.episode_number}. ${escHtml(ep.name || 'Episode ' + ep.episode_number)}
                         </p>
-                        <p class="text-xs text-gray-600 mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}</p>
+                        <p class="text-xs text-gray-600 mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}${isSeen ? ' · watched' : ''}</p>
                     </div>
                 </div>
+                ${isSeen ? '<i class="fas fa-check-circle watched-badge"></i>' : ''}
             </div>`;
         }).join('');
 
@@ -319,11 +511,35 @@
         if (season === CUR_SEASON && curIdx !== -1 && curIdx + 1 < eps.length) {
             nextEp = { season, episode: eps[curIdx + 1].episode_number, name: eps[curIdx + 1].name || '' };
         } else {
-            // Next season ep 1
             const seasons = {{ show.seasons | tojson }};
             const nextSeason = seasons.find(s => s.season_number === season + 1);
             if (nextSeason) nextEp = { season: season + 1, episode: 1, name: 'Episode 1' };
         }
+
+        updateWatchedCount();
+    }
+
+    function updateWatchedCount() {
+        const el = document.getElementById('watched-count');
+        if (!el || !IS_AUTH) return;
+        const total = (allEpisodes[CUR_SEASON] || []).length;
+        const seen  = (allEpisodes[CUR_SEASON] || [])
+            .filter(e => isWatched(CUR_SEASON, e.episode_number)).length;
+        el.textContent = seen > 0 ? `${seen}/${total} watched` : '';
+    }
+
+    // ── Watched episodes sync ────────────────────────────────────
+    async function loadWatched() {
+        if (!IS_AUTH) return;
+        try {
+            const r = await fetch(`/api/tv/${TMDB_ID}/watched-episodes`);
+            if (!r.ok) return;
+            const data = await r.json();
+            watchedEps = new Set(
+                (data.episodes || []).map(e => `${e.season_number}-${e.episode_number}`)
+            );
+            if (allEpisodes[CUR_SEASON]) renderEpisodes(CUR_SEASON);
+        } catch { /* non-critical */ }
     }
 
     function navigateTo(season, episode) {
@@ -337,26 +553,24 @@
 
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
-        if (e.origin !== 'https://www.vidking.net') return;
+        if (!ALLOWED_ORIGINS.includes(e.origin)) return;
         let data;
         try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
         catch { return; }
-        if (!data || data.id == null) return;
+        if (!data || data.id == null || data.currentTime == null) return;
 
         currentProgress = data.progress || 0;
 
-        // Progress bar
         const bar = document.getElementById('progress-display');
         if (bar) bar.style.width = currentProgress + '%';
 
-        // Show next ep banner at 85%
         if (currentProgress >= 85 && nextEp) {
             const banner = document.getElementById('next-ep-banner');
-            document.getElementById('next-ep-label').textContent = `S${nextEp.season} E${nextEp.episode}${nextEp.name ? ': ' + nextEp.name : ''}`;
+            document.getElementById('next-ep-label').textContent =
+                `S${nextEp.season} E${nextEp.episode}${nextEp.name ? ': ' + escHtml(nextEp.name) : ''}`;
             banner.classList.add('show');
         }
 
-        // Save progress (throttled 15s)
         const now = Date.now();
         if (!IS_AUTH || now - lastSaved < 15000) return;
         lastSaved = now;
@@ -381,6 +595,7 @@
         .catch(() => {});
     });
 
+    // ── Mark watched ─────────────────────────────────────────────
     function markWatched() {
         fetch(`/api/tv/${TMDB_ID}/episode/${CUR_SEASON}/${CUR_EP}/mark-watched`, {
             method: 'POST',
@@ -394,10 +609,53 @@
                 btn.classList.replace('bg-indigo-600','bg-green-600');
                 btn.classList.replace('hover:bg-indigo-500','hover:bg-green-500');
                 btn.innerHTML = '<i class="fas fa-check-double"></i> Watched';
+                watchedEps.add(`${CUR_SEASON}-${CUR_EP}`);
+                if (allEpisodes[CUR_SEASON]) renderEpisodes(CUR_SEASON);
                 showToast('Episode marked as watched!');
             }
         })
         .catch(() => showToast('Could not mark as watched'));
+    }
+
+    // ── Watchlist (state-aware) ──────────────────────────────────
+    let inWatchlist = {{ 'true' if in_watchlist else 'false' }};
+    const wlBtn = document.getElementById('watchlist-btn');
+
+    function renderWatchlistBtn() {
+        if (!wlBtn) return;
+        wlBtn.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ' +
+            (inWatchlist ? 'bg-green-600/90 hover:bg-green-500 text-white'
+                         : 'bg-white/10 hover:bg-white/20 text-white');
+        document.getElementById('watchlist-icon').className =
+            'fas ' + (inWatchlist ? 'fa-check' : 'fa-plus');
+        document.getElementById('watchlist-label').textContent =
+            inWatchlist ? 'In Watchlist' : 'Watchlist';
+    }
+
+    function toggleWatchlist() {
+        const url = inWatchlist
+            ? `/remove_from_watchlist/${TMDB_ID}/${MEDIA_TYPE}`
+            : `/add_to_watchlist/${TMDB_ID}/${MEDIA_TYPE}`;
+        fetch(url)
+            .then(r => { if (!r.ok) throw new Error(); })
+            .then(() => {
+                inWatchlist = !inWatchlist;
+                renderWatchlistBtn();
+                showToast(inWatchlist ? 'Added to watchlist' : 'Removed from watchlist');
+            })
+            .catch(() => showToast('Could not update watchlist'));
+    }
+
+    // ── Share ────────────────────────────────────────────────────
+    function sharePage() {
+        const url = window.location.href;
+        if (navigator.share) {
+            navigator.share({ title: {{ show.name | tojson }}, url }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(url)
+                .then(() => showToast('Link copied'))
+                .catch(() => showToast('Could not copy link'));
+        }
     }
 
     function getCsrf() {
@@ -416,6 +674,7 @@
 
     // ── Init ────────────────────────────────────────────────────
     loadSeason(CUR_SEASON);
+    loadWatched();
 </script>
 </body>
 </html>

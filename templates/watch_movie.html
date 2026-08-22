@@ -12,7 +12,23 @@
         * { font-family: 'Inter', sans-serif; }
         body { background: #080808; color: #e5e7eb; }
 
-        /* Player */
+        /* ── Backdrop hero ── */
+        #backdrop-hero {
+            position: fixed; inset: 0; z-index: -10; overflow: hidden;
+        }
+        #backdrop-hero img {
+            width: 100%; height: 100%; object-fit: cover;
+            filter: blur(28px) brightness(.45) saturate(1.1);
+            transform: scale(1.15);
+        }
+        #backdrop-hero::after {
+            content: ''; position: absolute; inset: 0;
+            background:
+                linear-gradient(to bottom, rgba(8,8,8,.35) 0%, rgba(8,8,8,.75) 55%, #080808 100%),
+                radial-gradient(ellipse at 50% 0%, rgba(99,102,241,.12), transparent 60%);
+        }
+
+        /* ── Player ── */
         .player-wrap {
             position: relative;
             width: 100%;
@@ -20,23 +36,88 @@
             background: #000;
         }
         .player-wrap iframe {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
             border: none;
         }
 
-        /* Progress bar on cards */
-        .progress-bar { height: 3px; background: #374151; border-radius: 2px; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg,#6366f1,#a855f7); border-radius: 2px; transition: width .3s; }
+        /* Loading skeleton */
+        .player-skeleton {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 12px;
+            background: linear-gradient(110deg, #0d0d12 30%, #16161f 45%, #0d0d12 60%);
+            background-size: 200% 100%;
+            animation: shimmer 1.6s linear infinite;
+            z-index: 5;
+        }
+        @keyframes shimmer { to { background-position-x: -200%; } }
+
+        /* ── Theater mode ── */
+        body.theater #player-zone {
+            position: fixed; inset: 0; z-index: 200;
+            max-width: none !important; padding: 0 !important;
+            margin: 0 !important; background: #000;
+            display: flex; flex-direction: column;
+        }
+        #theater-bar { display: none; }
+        body.theater #theater-bar {
+            display: flex;
+            opacity: 0; pointer-events: none;
+            transition: opacity .25s;
+            position: absolute; top: 0; left: 0; right: 0; z-index: 210;
+            padding: 12px 16px;
+            background: linear-gradient(to bottom, rgba(0,0,0,.75), transparent);
+        }
+        body.theater #theater-bar:hover,
+        body.theater #theater-bar:focus-within { opacity: 1; pointer-events: auto; }
+        body.theater .player-wrap {
+            padding-top: 0; flex: 1; min-height: 0; border-radius: 0;
+            box-shadow: none;
+        }
+        body.theater nav, body.theater #info-section,
+        body.theater #recs-section, body.theater #backdrop-hero { display: none !important; }
+        body.theater.idle-cursor { cursor: none; }
+        body.theater.idle-cursor #theater-bar { opacity: 0; }
+
+        /* ── Meta chips ── */
+        .meta-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.09);
+            padding: 4px 10px; border-radius: 999px;
+            font-size: 12px; color: #cbd5e1;
+        }
 
         /* Genre pill */
         .genre-pill { background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); color: #a5b4fc; }
 
-        /* Rec card hover */
-        .rec-card { transition: transform .2s, box-shadow .2s; }
-        .rec-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(99,102,241,.25); }
+        /* ── Recommendations carousel ── */
+        .recs-strip {
+            display: flex; gap: 14px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            padding-bottom: 8px;
+            scrollbar-width: none;
+        }
+        .recs-strip::-webkit-scrollbar { display: none; }
+        .rec-card { scroll-snap-align: start; flex-shrink: 0; width: 148px; transition: transform .2s; }
+        .rec-card:hover { transform: translateY(-4px); }
+        .rec-card .poster-box { position: relative; overflow: hidden; border-radius: 10px; }
+        .rec-card .play-overlay {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(8,8,8,.45);
+            opacity: 0; transition: opacity .2s;
+        }
+        .rec-card:hover .play-overlay { opacity: 1; }
+
+        /* Source switcher buttons */
+        .src-btn { transition: all .15s; }
+        .src-btn.active { background: #6366f1; color: white; box-shadow: 0 2px 12px rgba(99,102,241,.4); }
+        .src-btn:not(.active) { background: rgba(255,255,255,.07); color: #9ca3af; }
+        .src-btn:not(.active):hover { background: rgba(255,255,255,.14); color: white; }
 
         /* Toast */
         #toast {
@@ -48,26 +129,29 @@
             transition: all .3s;
         }
         #toast.show { transform: translateY(0); opacity: 1; }
-
-        /* Back button */
-        .back-btn { transition: background .2s; }
-        .back-btn:hover { background: rgba(255,255,255,.1); }
     </style>
 </head>
 <body>
 
+<!-- ── Backdrop hero ── -->
+<div id="backdrop-hero">
+    {% if movie.backdrop_path %}
+    <img src="{{ movie.backdrop_path }}" alt="" aria-hidden="true">
+    {% endif %}
+</div>
+
 <!-- ── Nav ── -->
-<nav class="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3">
+<nav class="sticky top-0 z-50 bg-black/70 backdrop-blur-md border-b border-white/5 px-4 py-3">
     <div class="max-w-screen-2xl mx-auto flex items-center justify-between gap-2">
         <!-- Left -->
         <div class="flex items-center gap-2 shrink-0">
-            <a href="javascript:history.back()" class="back-btn flex items-center gap-1 text-gray-400 hover:text-white px-2 py-1.5 rounded-lg text-sm transition-colors">
+            <a href="javascript:history.back()" class="flex items-center gap-1 text-gray-400 hover:text-white px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/10">
                 <i class="fas fa-arrow-left"></i>
                 <span class="hidden sm:inline">Back</span>
             </a>
             <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
         </div>
-        <!-- Center — hidden on mobile, title already shown below player -->
+        <!-- Center -->
         <div class="hidden md:flex items-center gap-3 text-sm text-gray-400 min-w-0">
             <i class="fas fa-film text-indigo-400 shrink-0"></i>
             <span class="text-white font-medium truncate">{{ movie.title }}</span>
@@ -87,55 +171,97 @@
     </div>
 </nav>
 
-<!-- ── Player ── -->
-<div class="max-w-screen-2xl mx-auto px-4 py-4">
-    <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5">
+<!-- ── Player zone ── -->
+<div id="player-zone" class="max-w-screen-2xl mx-auto px-4 py-4">
+    <!-- Theater bar (only visible overlay in theater mode) -->
+    <div id="theater-bar" class="flex items-center justify-between gap-3 mb-3">
+        <div class="flex items-center gap-2 min-w-0">
+            <i class="fas fa-film text-indigo-400 shrink-0"></i>
+            <span class="text-sm text-white font-medium truncate">{{ movie.title }}</span>
+        </div>
+        <button onclick="toggleTheater(false)"
+                class="flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-gray-300 transition-colors shrink-0">
+            <i class="fas fa-compress"></i> Exit Theater <kbd class="text-[10px] bg-black/40 px-1.5 py-0.5 rounded">Esc</kbd>
+        </button>
+    </div>
+
+    <!-- Source switcher (normal mode) -->
+    <div id="source-switcher" class="flex flex-wrap items-center gap-2 mb-3">
+        <span class="text-xs text-gray-500 uppercase tracking-wide mr-1">Servers</span>
+        {% for src in sources %}
+        <button onclick="switchSource('{{ src.key }}')" data-key="{{ src.key }}"
+                class="src-btn text-xs px-3.5 py-1.5 rounded-full font-medium
+                       {% if src.key == active_provider %}active{% endif %}">
+            {{ src.label }}
+        </button>
+        {% endfor %}
+        <button onclick="toggleTheater()" title="Theater mode (T)"
+                class="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors">
+            <i class="fas fa-expand"></i><span class="hidden sm:inline">Theater</span>
+        </button>
+    </div>
+
+    <!-- Player -->
+    <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10">
+        <div id="player-skeleton">
+            <i class="fas fa-circle-notch fa-spin text-indigo-400 text-xl"></i>
+            <p class="text-xs text-gray-500">Connecting to server…</p>
+        </div>
         <iframe id="player-frame"
-                src="{{ embed_url }}{% if resume_time > 0 %}?t={{ resume_time }}{% endif %}"
+                src="{{ embed_url }}"
                 allowfullscreen
                 allow="autoplay; fullscreen; picture-in-picture"
                 referrerpolicy="origin">
         </iframe>
     </div>
+    <p class="mt-2 text-[11px] text-gray-600">
+        If a server doesn't load or buffers, try another one above.
+        Shortcuts: <kbd class="bg-white/10 px-1 rounded">1–{{ sources|length }}</kbd> servers ·
+        <kbd class="bg-white/10 px-1 rounded">T</kbd> theater
+    </p>
 </div>
 
-<!-- ── Movie info ── -->
-<div class="max-w-screen-2xl mx-auto px-4 py-6">
+<!-- ── Info section ── -->
+<div id="info-section" class="max-w-screen-2xl mx-auto px-4 py-6 relative">
     <div class="flex flex-col md:flex-row gap-8">
 
-        <!-- Poster (hidden on mobile) -->
-        <div class="hidden md:block flex-shrink-0 w-40">
+        <!-- Poster -->
+        <div class="flex-shrink-0 w-32 md:w-44 mx-auto md:mx-0">
             {% if movie.poster_path %}
             <img src="{{ movie.poster_path }}" alt="{{ movie.title }}"
-                 class="w-full rounded-xl shadow-lg ring-1 ring-white/10">
+                 class="w-full rounded-xl shadow-lg shadow-black/50 ring-1 ring-white/10">
+            {% endif %}
+            {% if resume_time > 0 %}
+            <div class="mt-3">
+                <p class="text-[11px] text-gray-500 mb-1">Resuming from {{ (resume_time // 60) }}m {{ (resume_time % 60) }}s</p>
+                <div class="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div id="progress-display" class="h-full w-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300"></div>
+                </div>
+            </div>
             {% endif %}
         </div>
 
         <!-- Details -->
         <div class="flex-1 min-w-0">
-            <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-white mb-1">{{ movie.title }}</h1>
-                    <div class="flex flex-wrap items-center gap-3 text-sm text-gray-400">
-                        {% if movie.release_date %}<span>{{ movie.release_date[:4] }}</span>{% endif %}
-                        {% if movie.runtime %}<span class="text-gray-600">·</span><span>{{ movie.runtime }}</span>{% endif %}
-                        {% if movie.vote_average %}<span class="text-gray-600">·</span>
-                        <span class="flex items-center gap-1 text-yellow-400"><i class="fas fa-star text-xs"></i>{{ movie.vote_average }}</span>{% endif %}
-                        {% if movie.certification %}<span class="text-gray-600">·</span>
-                        <span class="border border-gray-600 px-1.5 py-0.5 rounded text-xs">{{ movie.certification }}</span>{% endif %}
-                    </div>
-                </div>
-                <!-- Action buttons -->
-                <div class="flex gap-2">
-                    <a href="/movie/{{ tmdb_id }}" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                        <i class="fas fa-info-circle"></i> Details
-                    </a>
-                    {% if current_user.is_authenticated %}
-                    <button onclick="addToWatchlist()" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                        <i class="fas fa-bookmark"></i> Watchlist
-                    </button>
-                    {% endif %}
-                </div>
+            <h1 class="text-3xl md:text-4xl font-bold text-white mb-1 leading-tight">{{ movie.title }}</h1>
+            {% if movie.tagline %}
+            <p class="text-gray-400 italic text-sm mb-3">“{{ movie.tagline }}”</p>
+            {% endif %}
+
+            <!-- Meta chips -->
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+                {% if movie.release_date %}
+                <span class="meta-chip"><i class="far fa-calendar text-[10px]"></i>{{ movie.release_date[:4] }}</span>
+                {% endif %}
+                {% if movie.runtime %}
+                <span class="meta-chip"><i class="far fa-clock text-[10px]"></i>{{ movie.runtime }}</span>
+                {% endif %}
+                {% if movie.vote_average %}
+                <span class="meta-chip"><i class="fas fa-star text-yellow-400 text-[10px]"></i>{{ movie.vote_average }}<span class="text-gray-500">/10</span></span>
+                {% endif %}
+                {% if movie.certification %}
+                <span class="meta-chip border-gray-500 text-gray-300 font-semibold">{{ movie.certification }}</span>
+                {% endif %}
             </div>
 
             <!-- Genres -->
@@ -147,60 +273,88 @@
             </div>
             {% endif %}
 
+            <!-- Action buttons -->
+            {% if current_user.is_authenticated %}
+            <div class="flex flex-wrap gap-2 mb-5">
+                <button id="watchlist-btn" onclick="toggleWatchlist()"
+                        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+                               {% if in_watchlist %}bg-green-600/90 hover:bg-green-500 text-white{% else %}bg-white/10 hover:bg-white/20 text-white{% endif %}">
+                    <i id="watchlist-icon" class="fas {% if in_watchlist %}fa-check{% else %}fa-plus{% endif %}"></i>
+                    <span id="watchlist-label">{% if in_watchlist %}In Watchlist{% else %}Watchlist{% endif %}</span>
+                </button>
+                <button onclick="sharePage()"
+                        class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                    <i class="fas fa-share-alt"></i> Share
+                </button>
+                <a href="/movie/{{ tmdb_id }}"
+                   class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                    <i class="fas fa-info-circle"></i> Details
+                </a>
+            </div>
+            {% endif %}
+
             <!-- Overview -->
             {% if movie.overview %}
             <p class="text-gray-300 leading-relaxed text-sm max-w-3xl">{{ movie.overview }}</p>
             {% endif %}
 
             <!-- Director / Cast row -->
-            <div class="flex flex-wrap gap-6 mt-4 text-sm">
+            <div class="flex flex-wrap gap-8 mt-5 text-sm">
                 {% if movie.director %}
-                <div><span class="text-gray-500">Director</span><br><span class="text-white font-medium">{{ movie.director }}</span></div>
+                <div>
+                    <span class="text-gray-500 text-xs uppercase tracking-wide">Director</span><br>
+                    <span class="text-white font-medium">{{ movie.director }}</span>
+                </div>
                 {% endif %}
                 {% if movie.cast %}
-                <div>
-                    <span class="text-gray-500">Cast</span><br>
+                <div class="min-w-0">
+                    <span class="text-gray-500 text-xs uppercase tracking-wide">Starring</span><br>
                     <span class="text-white font-medium">{{ movie.cast[:4] | map(attribute='name') | join(', ') }}</span>
                 </div>
                 {% endif %}
             </div>
-
-            <!-- Progress bar (shown if resuming) -->
-            {% if resume_time > 0 %}
-            <div class="mt-4 max-w-sm">
-                <div class="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>Resuming from {{ (resume_time // 60) }}m {{ (resume_time % 60) }}s</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-display" style="width:0%"></div>
-                </div>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>
 
-<!-- ── Recommendations ── -->
+<!-- ── Recommendations carousel ── -->
 {% if movie.recommendations %}
-<div class="max-w-screen-2xl mx-auto px-4 pb-12">
-    <h2 class="text-xl font-semibold text-white mb-4">More Like This</h2>
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {% for rec in movie.recommendations[:12] %}
-        <a href="/watch/movie/{{ rec.id }}" class="rec-card block group">
-            <div class="rounded-lg overflow-hidden bg-gray-900 ring-1 ring-white/5">
-                {% if rec.poster_path %}
-                <img src="{{ rec.poster_path }}" alt="{{ rec.title }}"
-                     class="w-full aspect-[2/3] object-cover group-hover:scale-105 transition-transform duration-300">
-                {% else %}
-                <div class="w-full aspect-[2/3] bg-gray-800 flex items-center justify-center">
-                    <i class="fas fa-film text-gray-600 text-2xl"></i>
+<div id="recs-section" class="max-w-screen-2xl mx-auto px-4 pb-12">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-white">More Like This</h2>
+        <div class="hidden sm:flex gap-1">
+            <button onclick="scrollRecs(-1)" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-chevron-left text-xs"></i>
+            </button>
+            <button onclick="scrollRecs(1)" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-chevron-right text-xs"></i>
+            </button>
+        </div>
+    </div>
+    <div class="relative">
+        <div id="recs-strip" class="recs-strip -mx-1 px-1">
+            {% for rec in movie.recommendations[:18] %}
+            <a href="/watch/movie/{{ rec.id }}" class="rec-card group block">
+                <div class="poster-box bg-gray-900 ring-1 ring-white/10 aspect-[2/3]">
+                    {% if rec.poster_path %}
+                    <img src="{{ rec.poster_path }}" alt="{{ rec.title }}" loading="lazy"
+                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                    {% else %}
+                    <div class="w-full h-full bg-gray-800 flex items-center justify-center">
+                        <i class="fas fa-film text-gray-600 text-2xl"></i>
+                    </div>
+                    {% endif %}
+                    <div class="play-overlay">
+                        <span class="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center shadow-lg">
+                            <i class="fas fa-play text-white text-xs ml-0.5"></i>
+                        </span>
+                    </div>
                 </div>
-                {% endif %}
-            </div>
-            <p class="mt-2 text-xs text-gray-400 line-clamp-2 group-hover:text-white transition-colors">{{ rec.title }}</p>
-            {% if rec.release_date %}<p class="text-xs text-gray-600">{{ rec.release_date[:4] }}</p>{% endif %}
-        </a>
-        {% endfor %}
+                <p class="mt-2 text-xs text-gray-400 line-clamp-1 group-hover:text-white transition-colors">{{ rec.title }}</p>
+                {% if rec.release_date %}<p class="text-[11px] text-gray-600">{{ rec.release_date[:4] }}</p>{% endif %}
+            </a>
+            {% endfor %}
+        </div>
     </div>
 </div>
 {% endif %}
@@ -216,17 +370,62 @@
     const MEDIA_TYPE = 'movie';
     const RESUME_TIME = {{ resume_time }};
     const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
+    const ALLOWED_ORIGINS = {{ allowed_origins | tojson }};
+    const SOURCES = {{ sources | tojson }};
 
-    let lastSaved = 0;
+    let lastSaved   = 0;
+    let idleTimer   = null;
+
+    // ── Player skeleton → hide on iframe load ────────────────────
+    const frame = document.getElementById('player-frame');
+    frame.addEventListener('load', () => {
+        document.getElementById('player-skeleton').style.display = 'none';
+    });
+
+    // ── Source switching ─────────────────────────────────────────
+    function switchSource(key) {
+        const src = SOURCES.find(s => s.key === key);
+        if (!src || frame.src === src.url) return;
+
+        // Re-show skeleton while the new server loads
+        document.getElementById('player-skeleton').style.display = 'flex';
+        frame.src = src.url;
+
+        document.querySelectorAll('#source-switcher .src-btn, #theater-bar .src-btn')
+            .forEach(b => b.classList.toggle('active', b.dataset.key === key));
+    }
+
+    // ── Theater mode ─────────────────────────────────────────────
+    function toggleTheater(on) {
+        const enable = on === undefined ? !document.body.classList.contains('theater') : on;
+        document.body.classList.toggle('theater', enable);
+        if (!enable) document.body.classList.remove('idle-cursor');
+    }
+
+    document.addEventListener('mousemove', () => {
+        if (!document.body.classList.contains('theater')) return;
+        document.body.classList.remove('idle-cursor');
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => document.body.classList.add('idle-cursor'), 2500);
+    });
+
+    // ── Keyboard shortcuts ───────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+        if (/input|textarea/i.test(e.target.tagName)) return;
+        if (e.key === 'Escape') return toggleTheater(false);
+        if (e.key.toLowerCase() === 't') return toggleTheater();
+        const n = parseInt(e.key, 10);
+        if (n >= 1 && n <= SOURCES.length) switchSource(SOURCES[n - 1].key);
+    });
 
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
-        if (e.origin !== 'https://www.vidking.net') return;
+        if (!ALLOWED_ORIGINS.includes(e.origin)) return;
         let data;
         try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
         catch { return; }
 
-        if (!data || data.id == null) return;
+        if (!data || data.id == null || data.currentTime == null) return;
 
         // Update local progress bar
         if (data.progress != null) {
@@ -259,6 +458,53 @@
         .catch(() => {});
     });
 
+    // ── Watchlist (state-aware) ──────────────────────────────────
+    let inWatchlist = {{ 'true' if in_watchlist else 'false' }};
+    const wlBtn     = document.getElementById('watchlist-btn');
+
+    function renderWatchlistBtn() {
+        if (!wlBtn) return;
+        wlBtn.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ' +
+            (inWatchlist ? 'bg-green-600/90 hover:bg-green-500 text-white'
+                         : 'bg-white/10 hover:bg-white/20 text-white');
+        document.getElementById('watchlist-icon').className =
+            'fas ' + (inWatchlist ? 'fa-check' : 'fa-plus');
+        document.getElementById('watchlist-label').textContent =
+            inWatchlist ? 'In Watchlist' : 'Watchlist';
+    }
+
+    function toggleWatchlist() {
+        const url = inWatchlist
+            ? `/remove_from_watchlist/${TMDB_ID}/${MEDIA_TYPE}`
+            : `/add_to_watchlist/${TMDB_ID}/${MEDIA_TYPE}`;
+        fetch(url)
+            .then(r => { if (!r.ok) throw new Error(); })
+            .then(() => {
+                inWatchlist = !inWatchlist;
+                renderWatchlistBtn();
+                showToast(inWatchlist ? 'Added to watchlist' : 'Removed from watchlist');
+            })
+            .catch(() => showToast('Could not update watchlist'));
+    }
+
+    // ── Share ────────────────────────────────────────────────────
+    function sharePage() {
+        const url = window.location.href;
+        if (navigator.share) {
+            navigator.share({ title: {{ movie.title | tojson }}, url }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(url)
+                .then(() => showToast('Link copied'))
+                .catch(() => showToast('Could not copy link'));
+        }
+    }
+
+    // ── Recommendations carousel ─────────────────────────────────
+    function scrollRecs(dir) {
+        const strip = document.getElementById('recs-strip');
+        if (strip) strip.scrollBy({ left: dir * 480, behavior: 'smooth' });
+    }
+
     function getCsrf() {
         const m = document.cookie.match(/csrf_token=([^;]+)/);
         if (m) return m[1];
@@ -272,19 +518,6 @@
         t.classList.add('show');
         setTimeout(() => t.classList.remove('show'), 3000);
     }
-
-    function addToWatchlist() {
-        fetch('/api/watchlist/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({ media_id: TMDB_ID, media_type: 'movie' })
-        })
-        .then(r => r.json())
-        .then(() => showToast('Added to watchlist'))
-        .catch(() => showToast('Could not add to watchlist'));
-    }
-
-    // Progress bar starts at 0; postMessage events from player update it in real time
 </script>
 </body>
 </html>

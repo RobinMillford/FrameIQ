@@ -9,17 +9,36 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 
-from models import db, WatchProgress, MediaItem, DiaryEntry
+from models import db, WatchProgress, MediaItem, DiaryEntry, user_watchlist
 from extensions import limiter
+from api.stream_providers import (
+    PROVIDERS, DEFAULT_PROVIDER, ALLOWED_ORIGINS, get_sources,
+)
 
 watch_bp = Blueprint('watch', __name__)
 logger = logging.getLogger(__name__)
 
 TMDB_API_KEY = os.getenv('TMDB_API_KEY')
-EMBED_BASE = 'https://www.vidking.net'
 
 
 # ── Page routes ──────────────────────────────────────────────────────────────
+
+def _is_in_watchlist(tmdb_id, media_type):
+    """Whether the current user already has this TMDb item watchlisted."""
+    if not current_user.is_authenticated:
+        return False
+    media = MediaItem.query.filter_by(
+        tmdb_id=tmdb_id, media_type=media_type
+    ).first()
+    if not media:
+        return False
+    stmt = db.select(user_watchlist.c.user_id).where(
+        user_watchlist.c.user_id == current_user.id,
+        user_watchlist.c.media_id == media.id,
+        user_watchlist.c.media_type == media_type,
+    )
+    return db.session.execute(stmt).fetchone() is not None
+
 
 @watch_bp.route('/watch/movie/<int:tmdb_id>')
 def watch_movie(tmdb_id):
@@ -41,10 +60,19 @@ def watch_movie(tmdb_id):
         if wp and wp.progress_pct < 90:
             resume_time = int(wp.current_time)
 
-    embed_url = f'{EMBED_BASE}/embed/movie/{tmdb_id}'
+    provider = request.args.get('provider', DEFAULT_PROVIDER)
+    if provider not in PROVIDERS:
+        provider = DEFAULT_PROVIDER
+    sources = get_sources('movie', tmdb_id, resume_time=resume_time)
+    embed_url = next(
+        (s['url'] for s in sources if s['key'] == provider), sources[0]['url']
+    )
     return render_template('watch_movie.html',
                            movie=movie, tmdb_id=tmdb_id,
-                           embed_url=embed_url, resume_time=resume_time)
+                           sources=sources, active_provider=provider,
+                           allowed_origins=ALLOWED_ORIGINS,
+                           embed_url=embed_url, resume_time=resume_time,
+                           in_watchlist=_is_in_watchlist(tmdb_id, 'movie'))
 
 
 @watch_bp.route('/watch/tv/<int:tmdb_id>/<int:season>/<int:episode>')
@@ -69,12 +97,25 @@ def watch_tv(tmdb_id, season, episode):
         if wp and wp.progress_pct < 90:
             resume_time = int(wp.current_time)
 
-    embed_url = f'{EMBED_BASE}/embed/tv/{tmdb_id}/{season}/{episode}'
+    provider = request.args.get('provider', DEFAULT_PROVIDER)
+    if provider not in PROVIDERS:
+        provider = DEFAULT_PROVIDER
+    # Always build TV-style embeds here, even when type=anime
+    sources = get_sources(
+        'tv', tmdb_id, season=season, episode=episode,
+        resume_time=resume_time,
+    )
+    embed_url = next(
+        (s['url'] for s in sources if s['key'] == provider), sources[0]['url']
+    )
     return render_template('watch_tv.html',
                            show=show, tmdb_id=tmdb_id,
                            season=season, episode=episode,
                            media_type=media_type,
-                           embed_url=embed_url, resume_time=resume_time)
+                           sources=sources, active_provider=provider,
+                           allowed_origins=ALLOWED_ORIGINS,
+                           embed_url=embed_url, resume_time=resume_time,
+                           in_watchlist=_is_in_watchlist(tmdb_id, media_type))
 
 
 # ── API routes ────────────────────────────────────────────────────────────────

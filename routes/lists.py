@@ -6,18 +6,15 @@ import logging
 
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
-from models import db, User, UserList, UserListItem, MediaItem
+from models import db, User, UserList, UserListItem
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
-import requests
-import os
 import re
+from utils.collections import get_or_create_media_item
 
 logger = logging.getLogger(__name__)
 
 lists = Blueprint('lists', __name__)
-
-TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
 
 def generate_slug(title, list_id=None):
@@ -204,37 +201,9 @@ def add_to_list(list_id):
     
     try:
         # Check if media item exists in our database, if not create it
-        media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
+        media_item = get_or_create_media_item(media_id, media_type)
         if not media_item:
-            # Fetch from TMDB API
-            url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}"
-            response = requests.get(url)
-            if response.status_code == 200:
-                tmdb_data = response.json()
-                title = tmdb_data.get('title') if media_type == 'movie' else tmdb_data.get('name')
-                release_date_str = tmdb_data.get('release_date') if media_type == 'movie' else tmdb_data.get('first_air_date')
-                
-                # Convert string date to Python date object
-                release_date = None
-                if release_date_str:
-                    try:
-                        release_date = datetime.strptime(release_date_str, '%Y-%m-%d').date()
-                    except ValueError:
-                        release_date = None
-                
-                media_item = MediaItem(
-                    tmdb_id=media_id,
-                    media_type=media_type,
-                    title=title,
-                    release_date=release_date,
-                    poster_path=tmdb_data.get('poster_path'),
-                    overview=tmdb_data.get('overview'),
-                    rating=tmdb_data.get('vote_average')
-                )
-                db.session.add(media_item)
-                db.session.commit()
-            else:
-                return jsonify({'error': 'Media item not found'}), 404
+            return jsonify({'error': 'Media item not found'}), 404
         
         # Get the next position
         max_position = db.session.query(db.func.max(UserListItem.position)).filter_by(list_id=list_id).scalar()
