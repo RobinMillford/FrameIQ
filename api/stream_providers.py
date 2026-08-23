@@ -21,24 +21,30 @@ PROVIDERS = {
         'base': RIVESTREAM,
         'movie': '{base}/embed?type=movie&id={tmdb_id}',
         'tv': '{base}/embed?type=tv&id={tmdb_id}&season={season}&episode={episode}',
-    },
-    'rive_agg': {
-        'label': 'Server 2 · Agg',
-        'base': RIVESTREAM,
-        'movie': '{base}/embed/agg?type=movie&id={tmdb_id}',
-        'tv': '{base}/embed/agg?type=tv&id={tmdb_id}&season={season}&episode={episode}',
-    },
-    'rive_torrent': {
-        'label': 'Server 3 · Torrent',
-        'base': RIVESTREAM,
-        'movie': '{base}/embed/torrent?type=movie&id={tmdb_id}',
-        'tv': '{base}/embed/torrent?type=tv&id={tmdb_id}&season={season}&episode={episode}',
+        # undocumented; harmless if ignored
+        'resume_param': 't',
     },
     'vidking': {
-        'label': 'VidKing',
+        'label': 'Server 2 · VidKing',
         'base': 'https://www.vidking.net',
         'movie': '{base}/embed/movie/{tmdb_id}',
         'tv': '{base}/embed/tv/{tmdb_id}/{season}/{episode}',
+        'resume_param': 't',  # documented convention
+    },
+    'vidy': {
+        'label': 'Server 3 · Vidy',
+        # apex 301-redirects to www — point straight at the final host
+        'base': 'https://www.vidy.st',
+        'movie': '{base}/movie/{tmdb_id}',
+        'tv': '{base}/tv/{tmdb_id}/{season}/{episode}',
+        'resume_param': 'progress',  # documented: start at N seconds
+    },
+    'oneembed': {
+        'label': 'Server 4 · 1Embed',
+        'base': 'https://1embed.cc',
+        'movie': '{base}/embed/movie/{tmdb_id}',
+        'tv': '{base}/embed/tv/{tmdb_id}/{season}/{episode}',
+        # no documented resume param
     },
 }
 
@@ -71,8 +77,9 @@ def build_embed_url(provider_key, media_type, tmdb_id,
         )
 
     if resume_time > 0:
+        param = provider.get('resume_param', 't')
         separator = '&' if '?' in url else '?'
-        url += f'{separator}t={int(resume_time)}'
+        url += f'{separator}{param}={int(resume_time)}'
     return url
 
 

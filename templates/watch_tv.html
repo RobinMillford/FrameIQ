@@ -456,12 +456,17 @@
         list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin mb-2"></i><br>Loading...</div>';
 
         try {
-            const r = await fetch(`https://db.videasy.net/3/tv/${TMDB_ID}/season/${season}`);
+            const r = await fetch(`/api/tmdb/proxy?path=/tv/${TMDB_ID}/season/${season}`);
+            if (!r.ok) throw new Error('TMDb ' + r.status);
             const data = await r.json();
             allEpisodes[season] = data.episodes || [];
             renderEpisodes(season);
         } catch {
-            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">Could not load episodes.</div>';
+            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">'
+                + 'Could not load episodes.<br>'
+                + '<button onclick="loadSeason(' + season + ')" '
+                + 'class="mt-2 text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 transition-colors">'
+                + '<i class="fas fa-redo mr-1"></i>Retry</button></div>';
         }
     }
 

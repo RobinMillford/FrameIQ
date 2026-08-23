@@ -101,8 +101,9 @@ _CSP = (
     "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
     "img-src 'self' data: blob: https: via.placeholder.com; "
     "frame-src www.youtube.com youtube.com www.vidking.net vidking.net "
-    "           www.rivestream.app rivestream.app; "
-    "connect-src 'self' db.videasy.net;"
+    "           www.rivestream.app rivestream.app vidy.st www.vidy.st "
+    "           1embed.cc; "
+    "connect-src 'self';"
 )
 
 

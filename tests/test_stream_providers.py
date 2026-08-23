@@ -20,16 +20,34 @@ class TestBuildEmbedUrl:
             '?type=tv&id=1396&season=1&episode=2'
         )
 
-    def test_rive_agg_movie(self):
-        url = build_embed_url('rive_agg', 'movie', 278)
-        assert url == 'https://www.rivestream.app/embed/agg?type=movie&id=278'
+    def test_vidy_movie(self):
+        url = build_embed_url('vidy', 'movie', 315162)
+        assert url == 'https://www.vidy.st/movie/315162'
 
-    def test_rive_torrent_tv(self):
-        url = build_embed_url('rive_torrent', 'tv', 1399, season=2, episode=7)
-        assert (
-            url == 'https://www.rivestream.app/embed/torrent'
-            '?type=tv&id=1399&season=2&episode=7'
+    def test_vidy_tv(self):
+        url = build_embed_url('vidy', 'tv', 1396, season=1, episode=2)
+        assert url == 'https://www.vidy.st/tv/1396/1/2'
+
+    def test_vidy_resume_uses_progress_param(self):
+        url = build_embed_url(
+            'vidy', 'tv', 1396, season=1, episode=1, resume_time=90
         )
+        assert url.endswith('?progress=90')
+
+    def test_oneembed_movie(self):
+        url = build_embed_url('oneembed', 'movie', 299534)
+        assert url == 'https://1embed.cc/embed/movie/299534'
+
+    def test_oneembed_tv(self):
+        url = build_embed_url('oneembed', 'tv', 1399, season=1, episode=1)
+        assert url == 'https://1embed.cc/embed/tv/1399/1/1'
+
+    def test_oneembed_resume_falls_back_to_t(self):
+        # 1embed documents no resume param; falls back to harmless ?t=
+        url = build_embed_url(
+            'oneembed', 'movie', 299534, resume_time=120
+        )
+        assert url == 'https://1embed.cc/embed/movie/299534?t=120'
 
     def test_vidking_movie(self):
         url = build_embed_url('vidking', 'movie', 533535)
