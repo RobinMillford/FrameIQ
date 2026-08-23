@@ -78,30 +78,7 @@
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="bg-gray-900 shadow-lg">
-        <div class="container mx-auto px-4 py-3">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    {% if current_user.is_authenticated %}
-                        <div class="relative" id="profile-dropdown">
-                            <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-                                <i class="fas fa-user"></i>
-                                <span>{{ current_user.username }}</span>
-                                <i class="fas fa-caret-down"></i>
-                            </button>
-                            <!-- Dropdown menu items would go here, similar to profile.html -->
-                        </div>
-                    {% else %}
-                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
-                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-indigo-400">Register</a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </nav>
+    {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4 py-8">
         <div class="bg-gray-800 rounded-lg shadow-lg p-6">

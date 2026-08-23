@@ -1,0 +1,19 @@
+{# Simple site navigation bar (gray variant).
+   Params: with_diary — forwarded to the profile dropdown (optional) #}
+<nav class="bg-gray-900 shadow-lg">
+    <div class="container mx-auto px-4 py-3">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center">
+                <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+            </div>
+            <div class="flex items-center space-x-4">
+                {% if current_user.is_authenticated %}
+                    {% include "partials/profile_dropdown.html" %}
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
+                    <a href="{{ url_for('auth.register') }}" class="text-white hover:text-indigo-400">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</nav>

@@ -1,0 +1,158 @@
+{# Shared media poster card (movie or TV show).
+   Params: item — dict/obj with id + title/name + release_date/first_air_date
+           media_type — 'movie' or 'tv'
+           user_watchlist_ids, user_wishlist_ids, user_viewed_ids — set context #}
+{% set is_movie = media_type == 'movie' %}
+{% set card_cls = 'movie-card' if is_movie else 'show-card' %}
+{% set img_cls = 'movie-image' if is_movie else 'show-image' %}
+{% set item_title = item.title if is_movie else item.name %}
+{% set item_date = item.release_date if is_movie else item.first_air_date %}
+<div class="{{ card_cls }} glass-effect rounded-lg overflow-hidden">
+  <a href="/{{ media_type }}/{{ item.id }}">
+    <img
+      src="{{ item.poster_path }}"
+      alt="{{ item_title }}"
+      class="{{ img_cls }} w-full"
+      onerror="this.src='/static/images/no-poster.svg'"
+    />
+    <div class="p-4">
+      <h3
+        class="font-semibold text-sm text-[#F5F6F5] transition-colors"
+      >
+        {{ item_title }}
+      </h3>
+      <p class="text-[#A9B8B5] text-xs">{{ item_date }}</p>
+    </div>
+  </a>
+  {% if current_user.is_authenticated %}
+  <div class="px-4 pb-4 flex flex-wrap gap-2 justify-center">
+    <!-- Status indicators -->
+    {% if (item.id, media_type) in user_viewed_ids %}
+    <span
+      class="text-xs bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1"
+    >
+      <svg
+        class="w-3 h-3"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+        ></path>
+      </svg>
+      Viewed
+    </span>
+    {% endif %} {% if (item.id, media_type) in user_wishlist_ids %}
+    <span
+      class="text-xs bg-pink-600 text-white px-2 py-1 rounded flex items-center gap-1"
+    >
+      <svg
+        class="w-3 h-3"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+        ></path>
+      </svg>
+      Wishlist
+    </span>
+    {% endif %} {% if (item.id, media_type) in user_watchlist_ids %}
+    <span
+      class="text-xs bg-indigo-600 text-white px-2 py-1 rounded flex items-center gap-1"
+    >
+      <svg
+        class="w-3 h-3"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
+        ></path>
+      </svg>
+      Watchlist
+    </span>
+    {% endif %}
+
+    <!-- Action buttons - allow adding to multiple lists -->
+    <div class="flex flex-wrap gap-1 justify-center mt-2">
+      {% if (item.id, media_type) not in user_watchlist_ids %}
+      <a
+        href="{{ url_for('main.add_to_watchlist', media_id=item.id, media_type=media_type) }}"
+        class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded flex items-center gap-1"
+        title="Add to Watchlist"
+      >
+        <svg
+          class="w-3 h-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        WL
+      </a>
+      {% endif %} {% if (item.id, media_type) not in user_wishlist_ids %}
+      <a
+        href="{{ url_for('main.add_to_wishlist', media_id=item.id, media_type=media_type) }}"
+        class="text-xs bg-pink-600 hover:bg-pink-700 text-white px-2 py-1 rounded flex items-center gap-1"
+        title="Add to Wishlist"
+      >
+        <svg
+          class="w-3 h-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+          ></path>
+        </svg>
+        Wish
+      </a>
+      {% endif %} {% if (item.id, media_type) not in user_viewed_ids %}
+      <a
+        href="{{ url_for('main.mark_as_viewed', media_id=item.id, media_type=media_type) }}"
+        class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1"
+        title="Mark as Viewed"
+      >
+        <svg
+          class="w-3 h-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        View
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>

@@ -123,20 +123,7 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
-                        <div class="relative" id="profile-dropdown">
-                            <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-                                <i class="fas fa-user"></i>
-                                <span>{{ current_user.username }}</span>
-                                <i class="fas fa-caret-down"></i>
-                            </button>
-                            <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
-                                <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
-                                <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
-                                <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
-                                <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
-                                <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
-                            </div>
-                        </div>
+                        {% include "partials/profile_dropdown.html" %}
                     {% else %}
                         <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
                         <a href="{{ url_for('auth.register') }}" class="text-white hover:text-indigo-400">Register</a>

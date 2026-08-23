@@ -1,34 +1,21 @@
-"""TV show tracking routes - episode progress, season tracking, and calendar"""
-from flask import Blueprint, request, jsonify, render_template
-from flask_login import login_required, current_user
-from models import db, TVShowProgress, TVEpisodeWatch, UpcomingEpisode
-from api.tmdb_client import fetch_tv_show_details, cached_tmdb_request
-from datetime import datetime, timedelta
-from sqlalchemy import and_, func
-import requests
-import os
+"""TV show tracking API: episode/season progress, status, bulk operations."""
 import logging
+from datetime import datetime
+
+from flask import jsonify, request
+from flask_login import current_user, login_required
+
+from api.tmdb_client import cached_tmdb_request, fetch_tv_show_details
+from api.tmdb.config import TMDB_API_KEY
+from models import TVEpisodeWatch, TVShowProgress, db
+from routes._tv_bp import TMDB_BASE_URL, tv_tracking
+
+# Register page + calendar routes on the shared blueprint so app.py's single
+# register_blueprint() call picks up every endpoint.
+from routes import tv_calendar as _calendar_routes  # noqa: F401,E402
+from routes import tv_pages as _page_routes  # noqa: F401,E402
 
 logger = logging.getLogger(__name__)
-
-tv_tracking = Blueprint('tv_tracking', __name__)
-
-TMDB_API_KEY = os.getenv('TMDB_API_KEY')
-TMDB_BASE_URL = 'https://api.themoviedb.org/3'
-
-
-@tv_tracking.route('/tv/dashboard')
-@login_required
-def tv_dashboard():
-    """TV Tracking Dashboard - main page for TV tracking"""
-    return render_template('tv_dashboard.html')
-
-
-@tv_tracking.route('/tv/upcoming')
-@login_required
-def tv_upcoming():
-    """Upcoming episodes page with filters"""
-    return render_template('tv_upcoming.html')
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/start-tracking', methods=['POST'])
@@ -408,204 +395,43 @@ def update_show_status(show_id):
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
-@tv_tracking.route('/api/tv/upcoming-episodes', methods=['GET'])
+@tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/update-watch', methods=['POST'])
 @login_required
-def get_upcoming_episodes():
-    """Get upcoming episodes for shows user is tracking"""
+def update_episode_watch(show_id, season_number, episode_number):
+    """Update episode watch with rating and notes"""
     try:
-        # Get shows user is currently watching or planning to watch
-        watching_shows = TVShowProgress.query.filter_by(
-            user_id=current_user.id
-        ).filter(TVShowProgress.status.in_(['watching', 'plan_to_watch'])).all()
+        data = request.get_json()
         
-        show_ids = [show.show_id for show in watching_shows]
-        
-        # Get upcoming episodes for these shows
-        today = datetime.utcnow().date()
-        week_from_now = today + timedelta(days=7)
-        
-        upcoming = UpcomingEpisode.query.filter(
-            UpcomingEpisode.show_id.in_(show_ids),
-            UpcomingEpisode.air_date >= today,
-            UpcomingEpisode.air_date <= week_from_now
-        ).order_by(UpcomingEpisode.air_date).all()
-        
-        episodes_list = []
-        for ep in upcoming:
-            # Check if already watched
-            watched = TVEpisodeWatch.query.filter_by(
-                user_id=current_user.id,
-                show_id=ep.show_id,
-                season_number=ep.season_number,
-                episode_number=ep.episode_number
-            ).first()
-            
-            if not watched:  # Only include unwatched episodes
-                days_until = (ep.air_date - today).days
-                ep_dict = ep.to_dict()
-                ep_dict['days_until_air'] = days_until
-                episodes_list.append(ep_dict)
-        
-        return jsonify({
-            'success': True,
-            'episodes': episodes_list
-        }), 200
-        
-    except Exception as e:
-        logger.error("Unexpected error in tv_tracking", exc_info=True)
-        return jsonify({'error': 'An unexpected error occurred'}), 500
-
-
-@tv_tracking.route('/api/tv/calendar', methods=['GET'])
-@login_required
-def get_episode_calendar():
-    """Get calendar view of upcoming episodes"""
-    try:
-        # Get date range
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
-        if start_date:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        else:
-            start_date = datetime.utcnow().date()
-        
-        if end_date:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        else:
-            end_date = start_date + timedelta(days=30)
-        
-        # Get shows user is tracking
-        watching_shows = TVShowProgress.query.filter_by(
+        # Find or create episode watch
+        watch = TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
-            status='watching'
-        ).all()
+            show_id=show_id,
+            season_number=season_number,
+            episode_number=episode_number
+        ).first()
         
-        show_ids = [show.show_id for show in watching_shows]
-        
-        # Get upcoming episodes in date range
-        episodes = UpcomingEpisode.query.filter(
-            UpcomingEpisode.show_id.in_(show_ids),
-            UpcomingEpisode.air_date >= start_date,
-            UpcomingEpisode.air_date <= end_date
-        ).order_by(UpcomingEpisode.air_date).all()
-        
-        # Group by date
-        calendar = {}
-        for episode in episodes:
-            date_key = episode.air_date.isoformat()
-            if date_key not in calendar:
-                calendar[date_key] = []
-            calendar[date_key].append(episode.to_dict())
-        
-        return jsonify({
-            'calendar': calendar,
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat()
-        }), 200
-        
-    except Exception as e:
-        logger.error("Unexpected error in tv_tracking", exc_info=True)
-        return jsonify({'error': 'An unexpected error occurred'}), 500
-
-
-@tv_tracking.route('/tv/calendar')
-@login_required
-def tv_calendar_page():
-    """Render TV calendar page"""
-    return render_template('tv_calendar.html')
-
-
-@tv_tracking.route('/tv/my-shows')
-@login_required
-def my_shows_page():
-    """Render my shows tracking page"""
-    return render_template('tv_my_shows.html')
-
-
-# Helper function
-def update_season_progress(progress, show_id):
-    """Update watched seasons count based on completed seasons"""
-    try:
-        show_data = fetch_tv_show_details(show_id)
-        if not show_data:
-            return
-        seasons = show_data.get('seasons', [])
-        
-        # Count completed seasons
-        completed_seasons = 0
-        for season in seasons:
-            if season['season_number'] == 0:  # Skip specials
-                continue
-            
-            season_num = season['season_number']
-            episode_count = season['episode_count']
-            
-            # Count watched episodes in this season
-            watched_in_season = TVEpisodeWatch.query.filter_by(
-                user_id=progress.user_id,
+        if not watch:
+            watch = TVEpisodeWatch(
+                user_id=current_user.id,
                 show_id=show_id,
-                season_number=season_num
-            ).filter(TVEpisodeWatch.is_rewatch == False).count()
-            
-            if watched_in_season >= episode_count:
-                completed_seasons += 1
+                season_number=season_number,
+                episode_number=episode_number,
+                watched_at=datetime.utcnow()
+            )
+            db.session.add(watch)
         
-        progress.watched_seasons = completed_seasons
+        # Update fields
+        watch.rating = data.get('rating')
+        watch.notes = data.get('notes')
+        watch.is_rewatch = data.get('is_rewatch', False)
         
+        db.session.commit()
+        
+        return jsonify({'success': True})
     except Exception as e:
-        logger.warning("Error updating season progress: %s", e)
-
-
-# ===== NEW ROUTES FOR SEASON/EPISODE PAGES =====
-
-@tv_tracking.route('/tv/<int:show_id>/season/<int:season_number>')
-@login_required
-def season_detail(show_id, season_number):
-    """Season detail page with episode list"""
-    try:
-        response = requests.get(
-            f'{TMDB_BASE_URL}/tv/{show_id}',
-            params={'api_key': TMDB_API_KEY},
-            timeout=8
-        )
-        response.raise_for_status()
-        show_name = response.json().get('name', 'Unknown Show')
-    except Exception as e:
-        logger.warning("Could not fetch show %s name: %s", show_id, e)
-        show_name = 'Unknown Show'
-
-    return render_template(
-        'tv_season_detail.html',
-        show_id=show_id,
-        show_name=show_name,
-        season_number=season_number,
-    )
-
-
-@tv_tracking.route('/tv/<int:show_id>/season/<int:season_number>/episode/<int:episode_number>')
-@login_required
-def episode_detail(show_id, season_number, episode_number):
-    """Episode detail page with watch controls"""
-    try:
-        response = requests.get(
-            f'{TMDB_BASE_URL}/tv/{show_id}',
-            params={'api_key': TMDB_API_KEY},
-            timeout=8
-        )
-        response.raise_for_status()
-        show_name = response.json().get('name', 'Unknown Show')
-    except Exception as e:
-        logger.warning("Could not fetch show %s name: %s", show_id, e)
-        show_name = 'Unknown Show'
-
-    return render_template(
-        'tv_episode_detail.html',
-        show_id=show_id,
-        show_name=show_name,
-        season_number=season_number,
-        episode_number=episode_number,
-    )
+        db.session.rollback()
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/watched-episodes')
@@ -760,40 +586,34 @@ def mark_all_watched(show_id):
         return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
 
-@tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/update-watch', methods=['POST'])
-@login_required
-def update_episode_watch(show_id, season_number, episode_number):
-    """Update episode watch with rating and notes"""
+def update_season_progress(progress, show_id):
+    """Update watched seasons count based on completed seasons"""
     try:
-        data = request.get_json()
+        show_data = fetch_tv_show_details(show_id)
+        if not show_data:
+            return
+        seasons = show_data.get('seasons', [])
         
-        # Find or create episode watch
-        watch = TVEpisodeWatch.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id,
-            season_number=season_number,
-            episode_number=episode_number
-        ).first()
-        
-        if not watch:
-            watch = TVEpisodeWatch(
-                user_id=current_user.id,
+        # Count completed seasons
+        completed_seasons = 0
+        for season in seasons:
+            if season['season_number'] == 0:  # Skip specials
+                continue
+            
+            season_num = season['season_number']
+            episode_count = season['episode_count']
+            
+            # Count watched episodes in this season
+            watched_in_season = TVEpisodeWatch.query.filter_by(
+                user_id=progress.user_id,
                 show_id=show_id,
-                season_number=season_number,
-                episode_number=episode_number,
-                watched_at=datetime.utcnow()
-            )
-            db.session.add(watch)
+                season_number=season_num
+            ).filter(TVEpisodeWatch.is_rewatch == False).count()
+            
+            if watched_in_season >= episode_count:
+                completed_seasons += 1
         
-        # Update fields
-        watch.rating = data.get('rating')
-        watch.notes = data.get('notes')
-        watch.is_rewatch = data.get('is_rewatch', False)
+        progress.watched_seasons = completed_seasons
         
-        db.session.commit()
-        
-        return jsonify({'success': True})
     except Exception as e:
-        db.session.rollback()
-        logger.error("Unexpected error in tv_tracking", exc_info=True)
-        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
+        logger.warning("Error updating season progress: %s", e)

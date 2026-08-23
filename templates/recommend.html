@@ -139,51 +139,7 @@
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center">
-                    <a href="/movies" class="flex items-center mr-4 text-white hover:text-indigo-400 transition-colors">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        Back
-                    </a>
-                    <div class="text-2xl font-bold gradient-text">FrameIQ</div>
-                </div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="nav-link hover:text-indigo-400 transition-colors">Home</a>
-                    <a href="/movies" class="nav-link hover:text-indigo-400 transition-colors">Movies</a>
-                    <a href="/tv_shows" class="nav-link hover:text-indigo-400 transition-colors">TV Shows</a>
-                    <a href="/news" class="nav-link hover:text-indigo-400 transition-colors">News</a>
-                    <a href="/chat" class="nav-link hover:text-indigo-400 transition-colors">AI Chat</a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    {% if current_user.is_authenticated %}
-                        <div class="relative" id="profile-dropdown">
-                            <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-                                <i class="fas fa-user"></i>
-                                <span>{{ current_user.username }}</span>
-                                <i class="fas fa-caret-down"></i>
-                            </button>
-                            <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
-                                <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
-                                <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
-                                <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
-                                <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
-                                <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
-                            </div>
-                        </div>
-                    {% endif %}
-                </div>
-                <button class="md:hidden" id="mobile-menu-button">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </nav>
+    {% with accent="indigo", back_href="/movies", show_social_feed=false %}{% include "partials/nav_detail.html" %}{% endwith %}
 
     <!-- Hero Section -->
     <section class="pt-32 pb-20 animate-gradient">

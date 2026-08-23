@@ -264,55 +264,7 @@
 
 <body data-media-id="{{ show.id }}" data-media-type="tv" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}">
     <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center">
-                    <a href="/" class="flex items-center mr-4 text-white hover:text-blue-400 transition-colors">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        Back
-                    </a>
-                    <div class="text-2xl font-bold gradient-text">FrameIQ</div>
-                </div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="nav-link hover:text-blue-400 transition-colors">Home</a>
-                    <a href="/movies" class="nav-link hover:text-blue-400 transition-colors">Movies</a>
-                    <a href="/tv_shows" class="nav-link hover:text-blue-400 transition-colors">TV Shows</a>
-                    <a href="/news" class="nav-link hover:text-blue-400 transition-colors">News</a>
-                    <a href="/feed" class="nav-link hover:text-blue-400 transition-colors">Social Feed</a>
-                    <a href="/chat" class="nav-link hover:text-blue-400 transition-colors">AI Chat</a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    {% if current_user.is_authenticated %}
-                        <div class="relative" id="profile-dropdown">
-                            <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-                                <i class="fas fa-user"></i>
-                                <span>{{ current_user.username }}</span>
-                                <i class="fas fa-caret-down"></i>
-                            </button>
-                            <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
-                                <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
-                                <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
-                                <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
-                                <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
-                                <a href="/diary" class="block px-4 py-2 text-sm hover:bg-gray-700">Diary</a>
-                                <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
-                            </div>
-                        </div>
-                    {% endif %}
-                </div>
-                <button class="md:hidden" id="mobile-menu-button">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </nav>
+    {% with accent = "blue", with_diary = true %}{% include "partials/nav_detail.html" %}{% endwith %}
 
     <!-- Hero Section -->
     <section class="hero-section pb-20">
@@ -938,25 +890,7 @@
     </section>
 
     <!-- Trailer Modal -->
-    <div id="trailer-modal"
-        class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="modal-content bg-gray-900 rounded-lg overflow-hidden w-full max-w-5xl mx-4">
-            <div class="relative">
-                <button id="close-modal"
-                    class="absolute top-4 right-4 text-white bg-black bg-opacity-50 rounded-full p-2 hover:bg-opacity-75 transition-colors">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
-                        </path>
-                    </svg>
-                </button>
-                <div class="aspect-w-16 aspect-h-9">
-                    <iframe id="trailer-iframe" src="" frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowfullscreen class="w-full h-full min-h-[400px]"></iframe>
-                </div>
-            </div>
-        </div>
-    </div>
+        {% include "partials/modal_trailer.html" %}
 
     <script src="{{ url_for('static', filename='js/tag-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/likes-manager.js') }}"></script>
@@ -1491,71 +1425,11 @@
     </script>
     
     <!-- Diary Modal -->
-    <div id="diary-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6">Log to Diary</h2>
-            
-            <div class="space-y-4">
-                <div>
-                    <label for="diary-date" class="block text-sm font-semibold mb-2">Watched Date *</label>
-                    <input type="date" id="diary-date" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                </div>
-                
-                <div>
-                    <label for="diary-rating" class="block text-sm font-semibold mb-2">Rating (Optional)</label>
-                    <select id="diary-rating" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                        <option value="">No rating</option>
-                        <option value="0.5">★ 0.5</option>
-                        <option value="1.0">★ 1.0</option>
-                        <option value="1.5">★ 1.5</option>
-                        <option value="2.0">★★ 2.0</option>
-                        <option value="2.5">★★ 2.5</option>
-                        <option value="3.0">★★★ 3.0</option>
-                        <option value="3.5">★★★ 3.5</option>
-                        <option value="4.0">★★★★ 4.0</option>
-                        <option value="4.5">★★★★ 4.5</option>
-                        <option value="5.0">★★★★★ 5.0</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="flex space-x-4 mt-6">
-                <button onclick="submitDiaryEntry()" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
-                    Log Entry
-                </button>
-                <button onclick="closeDiaryModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
-                    Cancel
-                </button>
-            </div>
-        </div>
-    </div>
-    
+    {% include "partials/modal_diary.html" %}
     <!-- List Modal -->
-    <div id="list-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6">Add to List</h2>
-            
-            <div class="space-y-4">
-                <div>
-                    <label for="list-select" class="block text-sm font-semibold mb-2">Select List *</label>
-                    <select id="list-select" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
-                        <option value="">Loading...</option>
-                    </select>
-                </div>
-                
-                <p class="text-sm text-gray-400">Don't have a list yet? Create one from your profile page.</p>
-            </div>
-            
-            <div class="flex space-x-4 mt-6">
-                <button onclick="addToSelectedList()" class="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
-                    Add to List
-                </button>
-                <button onclick="closeListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
-                    Cancel
-                </button>
-            </div>
-        </div>
-    </div>
+    {% with media_id = show['id'], media_type = "tv" %}{% include "partials/modal_list.html" %}{% endwith %}
+
+
     
     <!-- More Like This Section -->
     <section class="py-16 bg-gray-900/50">
@@ -1577,35 +1451,7 @@
     
     <!-- Load Review Manager -->
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
-    <script>
-        // Initialize Review Manager
-        document.addEventListener('DOMContentLoaded', function() {
-            const reviewSection = document.querySelector('.media-reviews-section');
-            if (reviewSection) {
-                const mediaId = reviewSection.dataset.mediaId;
-                const mediaType = reviewSection.dataset.mediaType;
-                
-                window.reviewManager = new ReviewManager({
-                    mediaId: mediaId,
-                    mediaType: mediaType
-                });
-            }
-        });
-        
-        // Priority dropdown toggle function
-        function togglePriorityDropdown(dropdownId) {
-            const dropdown = document.getElementById(dropdownId);
-            dropdown.classList.toggle('hidden');
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function closeDropdown(e) {
-                if (!e.target.closest(`#${dropdownId}`) && !e.target.closest('button[onclick*="' + dropdownId + '"]')) {
-                    dropdown.classList.add('hidden');
-                    document.removeEventListener('click', closeDropdown);
-                }
-            });
-        }
-    </script>
+    <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
     
     <!-- TV Tracking Scripts -->
     <script>
