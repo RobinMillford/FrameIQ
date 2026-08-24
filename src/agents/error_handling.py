@@ -13,17 +13,14 @@ logger = logging.getLogger(__name__)
 
 class AgentError(Exception):
     """Base exception for agent-related errors."""
-    pass
 
 
 class ToolExecutionError(AgentError):
     """Raised when a tool fails to execute."""
-    pass
 
 
 class LLMError(AgentError):
     """Raised when LLM call fails."""
-    pass
 
 
 def retry_on_error(max_retries: int = 3, delay: float = 1.0):

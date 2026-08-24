@@ -3,8 +3,7 @@ Enhanced Activity Feed Routes
 """
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
-from models import db, User, Review, MediaLike, MediaComment, UserFollow, UserMediaTag
-from sqlalchemy import or_, and_, desc
+from models import User, Review, MediaLike, MediaComment, UserMediaTag
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timedelta
 

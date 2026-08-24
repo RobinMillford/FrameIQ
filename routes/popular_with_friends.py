@@ -6,8 +6,8 @@ import logging
 
 from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
-from models import db, User, UserFollow, Review, DiaryEntry, MediaItem
-from sqlalchemy import and_, func
+from models import db, User, Review, DiaryEntry, MediaItem
+from sqlalchemy import and_
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,6 @@ def get_popular_with_friends(media_id):
     """Get list of friends who have watched/reviewed this media"""
     try:
         # Resolve TMDB ID → internal MediaItem PK
-        media_type = None
         media_item = MediaItem.query.filter_by(tmdb_id=media_id).first()
         if not media_item:
             return jsonify({
@@ -125,6 +124,6 @@ def get_popular_with_friends(media_id):
             'average_rating': round(avg_rating, 1) if avg_rating else None
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch popular with friends data", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500

@@ -8,7 +8,7 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, and_, func, case
+from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger(__name__)
@@ -102,10 +102,10 @@ def toggle_follow(user_id):
             'following_count': resp_following
         }), 200
         
-    except IntegrityError as e:
+    except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'Database error occurred'}), 500
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to toggle follow", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -352,7 +352,7 @@ def get_suggested_follows():
     # 1. Find users who have these same movies in their lists
     # we'll look across watchlist, wishlist, and viewed for other users
     from models import user_watchlist, user_wishlist, user_viewed
-    from sqlalchemy import union_all, select, literal_column
+    from sqlalchemy import union_all, select
     
     # Create a subquery for all media interactions by all users
     interactions = union_all(
@@ -360,9 +360,7 @@ def get_suggested_follows():
         select(user_wishlist.c.user_id, user_wishlist.c.media_id),
         select(user_viewed.c.user_id, user_viewed.c.media_id)
     ).alias('all_interactions')
-    
-    from sqlalchemy import text
-    
+
     # Query for user IDs with shared media items
     shared_counts_query = db.session.query(
         User.id, 

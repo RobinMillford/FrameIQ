@@ -5,7 +5,7 @@ Fetches ALL available information for movies and TV shows for rich embeddings
 
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import time
 from typing import List, Dict, Any, Optional
@@ -73,8 +73,6 @@ def is_anime(media_data: Dict[str, Any]) -> bool:
     
     # Anime if: (Japanese origin OR Japanese language) AND (Animation OR anime keywords)
     return (is_japanese or is_japanese_lang) and (is_animation or has_anime_keyword)
-
-
 
 
 def fetch_recent_movie_ids(years_back: int = 3, max_pages: int = 10) -> List[int]:
@@ -353,7 +351,7 @@ def collect_media(
     print(f"\n✓ Successfully fetched {len(all_media)} items")
     
     # Step 4: Merge with existing (deduplicate)
-    print(f"\n[Step 4/4] Merging and deduplicating...")
+    print("\n[Step 4/4] Merging and deduplicating...")
     merged_media = {}
     merged_media.update(existing_media)  # Start with existing
     

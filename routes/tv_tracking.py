@@ -55,7 +55,7 @@ def start_tracking_show(show_id):
             'progress': progress.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
@@ -108,7 +108,7 @@ def get_show_progress(show_id):
             'watched_episodes': [ep.to_dict() for ep in watched_episodes]
         }), 200
         
-    except Exception as e:
+    except Exception:
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
@@ -212,7 +212,7 @@ def mark_episode_watched(show_id, season, episode):
             'progress': progress.to_dict()
         }), 200
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
@@ -326,7 +326,7 @@ def mark_season_watched(show_id, season):
             'progress': progress.to_dict()
         }), 200
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
@@ -351,7 +351,7 @@ def get_my_tracked_shows():
             'total': len(shows)
         }), 200
         
-    except Exception as e:
+    except Exception:
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
@@ -389,7 +389,7 @@ def update_show_status(show_id):
             'progress': progress.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
@@ -428,7 +428,7 @@ def update_episode_watch(show_id, season_number, episode_number):
         db.session.commit()
         
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
@@ -482,7 +482,7 @@ def unmark_season_watched(show_id, season_number):
 
         db.session.commit()
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
@@ -511,7 +511,7 @@ def unmark_single_episode(show_id, season_number, episode_number):
 
         db.session.commit()
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
@@ -580,7 +580,7 @@ def mark_all_watched(show_id):
         db.session.commit()
 
         return jsonify({'success': True, 'message': 'Series completed!'})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500

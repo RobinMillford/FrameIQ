@@ -6,9 +6,8 @@ import logging
 
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
-from models import db, User, DiaryEntry, MediaItem, Review
-from sqlalchemy.exc import IntegrityError
-from datetime import datetime, date
+from models import db, User, DiaryEntry, MediaItem
+from datetime import datetime
 import requests
 import os
 
@@ -169,7 +168,7 @@ def log_diary_entry():
         
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to add diary entry", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -202,7 +201,7 @@ def update_diary_entry(entry_id):
         
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update diary entry", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -228,7 +227,7 @@ def delete_diary_entry(entry_id):
         
         return jsonify({'message': 'Diary entry deleted successfully'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to delete diary entry", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

@@ -54,7 +54,7 @@ def get_upcoming_episodes():
             'episodes': episodes_list
         }), 200
         
-    except Exception as e:
+    except Exception:
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
@@ -107,6 +107,6 @@ def get_episode_calendar():
             'end_date': end_date.isoformat()
         }), 200
         
-    except Exception as e:
+    except Exception:
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500

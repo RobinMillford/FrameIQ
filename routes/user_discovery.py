@@ -5,9 +5,8 @@ Handles user search, suggested follows, and similarity matching
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review, DiaryEntry
-from sqlalchemy import func, or_, and_, desc
+from sqlalchemy import func, or_, desc
 from datetime import datetime, timedelta
-import json
 
 user_discovery = Blueprint('user_discovery', __name__)
 

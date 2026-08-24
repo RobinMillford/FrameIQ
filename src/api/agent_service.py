@@ -46,8 +46,7 @@ def _build_user_context(session_id: str) -> str:
 
         from collections import Counter
         from models import (
-            db, Review, DiaryEntry, WatchProgress, TVShowProgress,
-            user_watchlist, MediaItem,
+            db, Review, WatchProgress, TVShowProgress, user_watchlist,
         )
 
         sections = []

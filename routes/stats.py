@@ -7,12 +7,12 @@ import logging
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
-from sqlalchemy import func, extract, desc, and_, or_, select
-from datetime import datetime, timedelta
-from collections import defaultdict, Counter
+from sqlalchemy import func, extract, desc, select
+from datetime import datetime
+from collections import Counter
 import calendar
 
-from models import db, Review, User, DiaryEntry, MediaItem, user_watchlist, user_viewed
+from models import db, Review, User, DiaryEntry, MediaItem, user_watchlist
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def get_stats_overview():
             }
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch stats overview", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -138,7 +138,7 @@ def get_stats_by_year():
             'stats_by_year': year_stats
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch stats by year", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -178,7 +178,7 @@ def get_stats_by_month():
             'stats_by_month': month_stats
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch stats by month", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -219,7 +219,7 @@ def get_genre_stats():
             'total_genres': len(genre_counts)
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch genre stats", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -260,7 +260,7 @@ def get_decade_stats():
             'decade_stats': decade_stats
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch decade stats", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -328,7 +328,7 @@ def get_viewing_streaks():
             'total_days': len(dates)
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch viewing streaks", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -435,7 +435,7 @@ def get_year_in_review(year):
             }
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch year in review", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -519,7 +519,7 @@ def compare_with_user(other_user_id):
             }
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch user comparison stats", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
@@ -579,7 +579,6 @@ def get_platform_stats():
             }
         })
         
-    except Exception as e:
+    except Exception:
         logger.error("Failed to fetch platform stats", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
-

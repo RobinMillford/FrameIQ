@@ -1,5 +1,4 @@
-import pytest
-from datetime import date, datetime
+from datetime import date
 from werkzeug.security import generate_password_hash, check_password_hash
 
 

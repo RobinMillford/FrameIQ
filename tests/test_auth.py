@@ -2,7 +2,6 @@
 Tests for authentication routes — register, login, logout,
 forgot/reset password, email verification.
 """
-import pytest
 
 
 class TestRegister:

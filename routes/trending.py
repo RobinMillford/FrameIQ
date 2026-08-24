@@ -3,7 +3,6 @@ Trending System API Routes
 Tracks and displays trending media, tags, and users
 """
 from flask import Blueprint, request, jsonify
-from flask_login import login_required, current_user
 from models import db, MediaItem, Tag, User, Review, ReviewLike, MediaLike, MediaComment, UserMediaTag
 from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta

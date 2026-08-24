@@ -4,7 +4,6 @@ These verify the P0-2 fix (threading.Lock in _BoundedTTLCache).
 """
 import threading
 import time
-import pytest
 
 
 def test_bounded_cache_eviction():

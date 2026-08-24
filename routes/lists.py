@@ -118,7 +118,7 @@ def create_list():
             'list': new_list.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("List creation error", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -154,7 +154,7 @@ def update_list(list_id):
             'list': user_list.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -176,7 +176,7 @@ def delete_list(list_id):
         
         return jsonify({'message': 'List deleted successfully'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to delete list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -230,7 +230,7 @@ def add_to_list(list_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'This item is already in the list'}), 400
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to add item to list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -259,7 +259,7 @@ def remove_from_list(list_id, item_id):
         
         return jsonify({'message': 'Item removed from list'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to remove item from list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -295,7 +295,7 @@ def update_list_cover(list_id):
             'list': user_list.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update list cover", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -332,7 +332,7 @@ def reorder_list_items(list_id):
             'list': user_list.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to reorder list items", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

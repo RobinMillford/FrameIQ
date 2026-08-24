@@ -7,8 +7,8 @@ import logging
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewHelpful, ReviewComment, User, UserFollow, MediaItem
-from datetime import datetime, date
-from sqlalchemy import desc, func, and_
+from datetime import datetime
+from sqlalchemy import desc, func
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ def update_review(review_id):
             'review': review.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -139,7 +139,7 @@ def delete_review(review_id):
         
         return jsonify({'message': 'Review deleted successfully'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to delete review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -371,7 +371,7 @@ def like_review(review_id):
             'like_count': review.likes_count
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to like review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -402,7 +402,7 @@ def unlike_review(review_id):
             'like_count': review.likes_count
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to unlike review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -463,7 +463,7 @@ def mark_helpful(review_id):
             'not_helpful_count': review.not_helpful_count
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to record helpful vote", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -519,7 +519,7 @@ def create_review_reply(review_id):
             'reply': reply.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to create review reply", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -547,7 +547,7 @@ def delete_review_reply(reply_id):
         
         return jsonify({'message': 'Reply deleted'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to delete review reply", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

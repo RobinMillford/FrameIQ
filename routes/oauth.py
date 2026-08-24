@@ -1,4 +1,4 @@
-from flask import Blueprint, request, redirect, url_for, session, jsonify, current_app, request
+from flask import Blueprint, request, redirect, url_for
 from flask_login import login_user
 from models import db, User
 from authlib.integrations.flask_client import OAuth
@@ -50,7 +50,7 @@ def google_callback():
         
         # Extract user information
         email = user_info.get('email')
-        name = user_info.get('name', '')
+        # note: full name unused; first/last used below
         first_name = user_info.get('given_name', '')
         last_name = user_info.get('family_name', '')
         picture = user_info.get('picture', '')

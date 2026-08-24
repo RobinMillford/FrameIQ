@@ -2,8 +2,7 @@
 Profile Enhancements
 Adds badges, achievements, and enhanced statistics to user profiles
 """
-from flask import Blueprint, request, jsonify
-from flask_login import login_required, current_user
+from flask import Blueprint, jsonify
 from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, user_watchlist, user_viewed
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
@@ -116,12 +115,12 @@ def get_user_badges(user_id):
         (100, 'reviewer_100', 'Master Critic', '🏆', '100+ reviews written'),
     ]
     
-    for target, badge_id, name, icon, desc in review_milestones:
+    for target, badge_id, name, icon, badge_desc in review_milestones:
         all_badges.append({
             'id': badge_id,
             'name': name,
             'icon': icon,
-            'description': desc,
+            'description': badge_desc,
             'earned': review_count >= target,
             'progress': min(100, (review_count / target) * 100),
             'current': review_count,
@@ -136,12 +135,12 @@ def get_user_badges(user_id):
         (100, 'social_100', 'Celebrity', '💫', '100+ followers'),
     ]
     
-    for target, badge_id, name, icon, desc in social_milestones:
+    for target, badge_id, name, icon, badge_desc in social_milestones:
         all_badges.append({
             'id': badge_id,
             'name': name,
             'icon': icon,
-            'description': desc,
+            'description': badge_desc,
             'earned': followers_count >= target,
             'progress': min(100, (followers_count / target) * 100),
             'current': followers_count,
@@ -224,12 +223,12 @@ def get_user_badges(user_id):
         (500, 'viewed_500', 'Ultimate Cinephile', '🎭', '500+ items watched'),
     ]
     
-    for target, badge_id, name, icon, desc in watched_milestones:
+    for target, badge_id, name, icon, badge_desc in watched_milestones:
         all_badges.append({
             'id': badge_id,
             'name': name,
             'icon': icon,
-            'description': desc,
+            'description': badge_desc,
             'earned': viewed_count >= target,
             'progress': min(100, (viewed_count / target) * 100),
             'current': viewed_count,

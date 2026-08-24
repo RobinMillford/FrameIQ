@@ -92,7 +92,7 @@ def create_review():
     except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'You have already reviewed this item'}), 409
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to create review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -156,7 +156,7 @@ def update_review(review_id):
             'review': review.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -189,7 +189,7 @@ def delete_review(review_id):
         
         return jsonify({'message': 'Review deleted successfully'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to delete review", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -236,7 +236,7 @@ def create_comment(review_id):
             'comment': comment.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to create comment", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

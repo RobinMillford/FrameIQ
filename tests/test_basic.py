@@ -2,7 +2,6 @@
 Basic smoke tests to ensure core imports work
 """
 import pytest
-import os
 
 
 def test_models_import():
@@ -49,4 +48,3 @@ def test_basic_routes_import():
         assert social is not None
     except Exception as e:
         pytest.fail(f"Routes import failed: {e}")
-

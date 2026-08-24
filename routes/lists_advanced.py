@@ -90,7 +90,7 @@ def add_collaborator(list_id):
             'collaborator': collaborator.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to add collaborator", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -118,7 +118,7 @@ def remove_collaborator(list_id, user_id):
         
         return jsonify({'message': f'Removed {username} from collaborators'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to remove collaborator", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -154,7 +154,7 @@ def update_collaborator_role(list_id, user_id):
             'collaborator': collaborator.to_dict()
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to update collaborator role", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -256,7 +256,7 @@ def add_category_to_list(list_id):
             'category': category.to_dict()
         }), 201
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to add category to list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -289,7 +289,7 @@ def remove_category_from_list(list_id, category_id):
         
         return jsonify({'message': f'Removed category "{category.name}"'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to remove category from list", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -419,7 +419,7 @@ def track_list_view(list_id):
         
         return jsonify({'message': 'View tracked'}), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to track list view", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
@@ -446,7 +446,7 @@ def track_list_share(list_id):
             'share_count': analytics.share_count
         }), 200
         
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.error("Failed to track list share", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

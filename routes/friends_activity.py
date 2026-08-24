@@ -2,9 +2,9 @@
 Friends Activity on Media Pages
 Shows what friends have done with specific media (reviews, ratings, tags, etc.)
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
-from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, UserFollow, user_watchlist, user_viewed
+from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, user_watchlist, user_viewed
 from sqlalchemy import and_
 
 friends_activity = Blueprint('friends_activity', __name__)

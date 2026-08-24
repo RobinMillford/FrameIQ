@@ -2,10 +2,10 @@
 Analytics API Routes
 Handles data aggregation for user statistics and charts
 """
-from flask import Blueprint, jsonify, request
-from flask_login import current_user, login_required
+from flask import Blueprint, jsonify
+from flask_login import login_required
 from models import db, User, Review, MediaItem, user_viewed, user_watchlist
-from sqlalchemy import func, extract
+from sqlalchemy import func
 from collections import Counter
 from datetime import datetime, timedelta
 

@@ -71,7 +71,7 @@ def fetch_show_upcoming_episodes(show_id):
                     
                     try:
                         air_date = datetime.strptime(air_date_str, '%Y-%m-%d').date()
-                    except:
+                    except Exception:
                         continue
                     
                     # Only include episodes within next 60 days
@@ -170,7 +170,7 @@ def sync_upcoming_episodes():
                 db.session.rollback()
         
         print("\n" + "=" * 60)
-        print(f"SYNC COMPLETE")
+        print("SYNC COMPLETE")
         print(f"Added: {total_added} new episodes")
         print(f"Updated: {total_updated} existing episodes")
         print(f"Total upcoming episodes in database: {UpcomingEpisode.query.count()}")
