@@ -6,11 +6,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-tests-only")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("TMDB_API_KEY", "test-tmdb-key")
 os.environ.setdefault("WTF_CSRF_ENABLED", "False")
-os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-os.environ.setdefault("CHROMA_API_KEY", "test-chroma-key")
-os.environ.setdefault("CHROMA_TENANT", "test-tenant")
-os.environ.setdefault("CHROMA_DATABASE", "test-db")
 # Ensure no actual email is sent during tests
 os.environ["MAIL_SERVER"] = ""
 # Disable rate limiter entirely during tests
@@ -31,9 +27,16 @@ def app():
         RATELIMIT_ENABLED=False,
     )
 
+    # Push the app context only for schema setup, then pop it. Holding it
+    # open for the whole session would make `g` (and Flask-Login's cached
+    # `g._login_user`) leak across tests — authenticated state from one
+    # test would bleed into "unauthenticated" requests in another.
     with flask_app.app_context():
         _db.create_all()
-        yield flask_app
+
+    yield flask_app
+
+    with flask_app.app_context():
         _db.drop_all()
 
 

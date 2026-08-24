@@ -1,11 +1,14 @@
 """
-Main StateGraph construction for the LangGraph multi-agent system.
+Main StateGraph construction for the FrameIQ multi-agent system.
 
-This module builds the complete workflow with conditional routing.
+This module builds the complete workflow with conditional routing
+and persistent (SQLite) conversation checkpointing.
 """
 
+import os
+
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .state import GraphState
 from .nodes import (
@@ -16,31 +19,38 @@ from .nodes import (
     should_continue
 )
 
+# Conversation memory survives server restarts. Location is overridable
+# for tests (in-memory SQLite via ":memory:" would defeat persistence,
+# so a file path is the default).
+_CHECKPOINT_DB = os.getenv(
+    "CHAT_CHECKPOINT_DB",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "instance", "chat_memory.db"
+    ),
+)
+
 
 def create_agent_graph():
     """
     Create and compile the LangGraph StateGraph for FrameIQ.
-    
+
     Workflow:
-        START → supervisor → [retriever | chat | enricher | END]
-        retriever → supervisor (re-evaluate)
-        chat → supervisor (re-evaluate)
-        enricher → END
-    
+        START → supervisor → [retriever | chat] → enricher → END
+
     Returns:
-        Compiled StateGraph with memory checkpointing
+        Compiled StateGraph with SQLite checkpointing
     """
     # Initialize the graph
     workflow = StateGraph(GraphState)
-    
+
     # Add nodes
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("retriever", retriever_node)
     workflow.add_node("chat", chat_node)
     workflow.add_node("enricher", enricher_node)
-    
+
     # Define edges
-    # supervisor → retriever or chat (heuristic, zero LLM calls)
+    # supervisor → retriever or chat (LLM structured routing)
     workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
         "supervisor",
@@ -56,11 +66,16 @@ def create_agent_graph():
     workflow.add_edge("retriever", "enricher")
     workflow.add_edge("chat", "enricher")
     workflow.add_edge("enricher", END)
-    
-    # Compile with memory checkpointing
-    memory = MemorySaver()
-    graph = workflow.compile(checkpointer=memory)
-    
+
+    # Compile with persistent SQLite checkpointing
+    os.makedirs(os.path.dirname(_CHECKPOINT_DB), exist_ok=True)
+    sqlite_saver = SqliteSaver.from_conn_string(_CHECKPOINT_DB)
+    # SqliteSaver.from_conn_string returns a context manager in some versions;
+    # entering it keeps the saver usable for the process lifetime.
+    if hasattr(sqlite_saver, "__enter__"):
+        sqlite_saver = sqlite_saver.__enter__()
+    graph = workflow.compile(checkpointer=sqlite_saver)
+
     return graph
 
 
@@ -71,7 +86,7 @@ _graph_instance = None
 def get_agent_graph():
     """
     Get or create the singleton graph instance.
-    
+
     Returns:
         Compiled StateGraph
     """

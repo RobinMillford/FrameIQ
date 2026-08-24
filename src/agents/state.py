@@ -11,8 +11,13 @@ class GraphState(TypedDict):
 
     Fields:
         messages:               Full conversation history (auto-merged).
-        user_intent:            Routing label: "search" | "chat" | "enrich" | "end".
+        user_intent:            Routing label: "greeting" | "chat" | "retriever" | "end".
         next_step:              Supervisor's routing target for conditional edges.
+        entities:               Structured entities extracted by the supervisor
+                                (titles, people, genres, years mentioned in the
+                                user's message) — pre-parsed for the retriever.
+        user_id:                Numeric id of the authenticated user (drives the
+                                my_history tool). None for anonymous.
         retrieved_context:      Actual tool results from the retriever node.
         final_response_metadata: UI payload with poster URLs and TMDb links.
         user_context:           Personalisation string built from the user's
@@ -22,13 +27,8 @@ class GraphState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_intent: Optional[str]
     next_step: Optional[str]
+    entities: Optional[Dict[str, Any]]
+    user_id: Optional[int]
     retrieved_context: List[Dict[str, Any]]
     final_response_metadata: Dict[str, Any]
     user_context: Optional[str]
-
-
-class SupervisorDecision(TypedDict):
-    """Structured output from the LLM-based supervisor."""
-
-    next_step: str   # "retriever" | "chat" | "enricher" | "end"
-    reasoning: str   # brief justification (used in monitoring logs)

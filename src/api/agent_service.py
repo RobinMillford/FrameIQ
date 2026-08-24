@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 def _build_user_context(session_id: str) -> str:
     """
-    Build a personalisation string from the user's watch history and ratings.
+    Build a personalisation profile from the user's FrameIQ activity.
 
-    Queries the DB for the 8 most-recently rated items so the agent can
-    tailor recommendations without exposing raw DB objects to the graph.
+    Gathers: recent ratings, favourite genres (derived from rated items),
+    TV shows currently being tracked, watchlist size, and diary recency.
     Returns an empty string if the user has no history or on any error.
     """
     if not session_id.startswith("user_"):
@@ -40,32 +40,86 @@ def _build_user_context(session_id: str) -> str:
         return ""
 
     try:
-        from models import Review, db  # noqa: F401 — imported inside fn to avoid circular import
         from flask import has_app_context
-
         if not has_app_context():
             return ""
 
-        reviews = (
-            Review.query
-            .filter_by(user_id=user_id)
-            .order_by(Review.created_at.desc())
-            .limit(8)
-            .all()
+        from collections import Counter
+        from models import (
+            db, Review, DiaryEntry, WatchProgress, TVShowProgress,
+            user_watchlist, MediaItem,
         )
-        if not reviews:
-            return ""
 
-        lines = ["User's recent watch history (use to personalise):"]
-        for r in reviews:
-            try:
-                title = r.media.title if r.media else "Unknown"
-                # Ratings stored as 0.5–5.0 stars; convert to /10 for LLM clarity
-                score = f"{r.rating * 2:.1f}/10" if r.rating else "unrated"
-                lines.append(f"  - {title} ({r.media_type}): {score}")
-            except Exception:
-                continue
-        return "\n".join(lines)
+        sections = []
+
+        # ── Recent ratings ──
+        reviews = (
+            Review.query.filter_by(user_id=user_id)
+            .order_by(Review.created_at.desc()).limit(10).all()
+        )
+        genre_counts: Counter = Counter()
+        if reviews:
+            lines = []
+            for r in reviews:
+                try:
+                    title = r.media.title if r.media else "Unknown"
+                    score = f"{r.rating * 2:.1f}/10" if r.rating else "unrated"
+                    lines.append(f"  - {title} ({r.media_type}): {score}")
+                    if r.media and r.media.genres:
+                        for g in str(r.media.genres).split(","):
+                            g = g.strip()
+                            if g:
+                                genre_counts[g] += 1
+                except Exception:
+                    continue
+            sections.append("Recent ratings (use to personalise):\n" + "\n".join(lines))
+
+        # ── Favourite genres ──
+        if genre_counts:
+            top = ", ".join(g for g, _ in genre_counts.most_common(4))
+            sections.append(f"Favourite genres (from their ratings): {top}")
+
+        # ── Currently watching (TV tracking) ──
+        tracking = (
+            TVShowProgress.query.filter_by(user_id=user_id)
+            .filter(TVShowProgress.status.in_(["watching", "plan_to_watch"]))
+            .limit(8).all()
+        )
+        if tracking:
+            lines = []
+            for t in tracking:
+                pct = t.calculate_progress_percentage()
+                lines.append(
+                    f"  - show_id {t.show_id}: {t.watched_episodes}/"
+                    f"{t.total_episodes} eps ({pct}%) — {t.status}"
+                )
+            sections.append(
+                "TV shows they are tracking:\n" + "\n".join(lines)
+            )
+
+        # ── Watchlist size ──
+        wl_count = db.session.execute(
+            user_watchlist.select().where(user_watchlist.c.user_id == user_id)
+        ).rowcount
+        if wl_count:
+            sections.append(f"Watchlist: {wl_count} titles saved.")
+
+        # ── Continue-watching (in-progress streams) ──
+        progress = (
+            WatchProgress.query.filter_by(user_id=user_id)
+            .order_by(WatchProgress.updated_at.desc()).limit(5).all()
+        )
+        if progress:
+            lines = [
+                f"  - {p.title or p.media_type + ' ' + str(p.tmdb_id)}: "
+                f"{p.progress_pct}% watched"
+                for p in progress
+            ]
+            sections.append("Recently streamed (partially watched):\n" + "\n".join(lines))
+
+        if not sections:
+            return ""
+        return "\n\n".join(sections)
     except Exception as e:
         logger.debug("Could not build user context: %s", e)
         return ""
@@ -76,10 +130,18 @@ def _build_initial_state(
 ) -> GraphState:
     """Construct a fresh GraphState for a new invocation."""
     ctx = user_context if user_context is not None else _build_user_context(session_id)
+    user_id = None
+    if session_id.startswith("user_"):
+        try:
+            user_id = int(session_id.split("_")[1])
+        except (IndexError, ValueError):
+            user_id = None
     return {
         "messages": [HumanMessage(content=user_message)],
         "user_intent": None,
         "next_step": None,
+        "entities": {},
+        "user_id": user_id,
         "retrieved_context": [],
         "final_response_metadata": {"movies": [], "tv_shows": []},
         "user_context": ctx,

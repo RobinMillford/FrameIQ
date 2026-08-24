@@ -39,6 +39,12 @@ def _fetch_json_with_retry(label, url, max_retries, retry_delay):
             time.sleep(retry_delay)
 
 
+def _today_iso():
+    """Today's date as ISO string — cutoff for including acting credits."""
+    from datetime import date
+    return date.today().isoformat()
+
+
 def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
     # Fetch actor details
     url = f"https://api.themoviedb.org/3/person/{actor_id}?api_key={TMDB_API_KEY}&language=en-US"
@@ -127,7 +133,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
     movie_acting_credits = []
     seen_movie_ids = set()
     for credit in sorted(movie_credits_data.get('cast', []), key=lambda x: x.get('popularity', 0), reverse=True):
-        if credit.get('id') not in seen_movie_ids and credit.get('release_date', '9999-12-31') <= '2025-04-08':
+        if credit.get('id') not in seen_movie_ids and credit.get('release_date', '9999-12-31') <= _today_iso():
             seen_movie_ids.add(credit['id'])
             movie_acting_credits.append(credit)
 
@@ -142,7 +148,7 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
     tv_acting_credits = []
     seen_tv_ids = set()
     for credit in sorted(tv_credits_data.get('cast', []), key=lambda x: x.get('popularity', 0), reverse=True):
-        if credit.get('id') not in seen_tv_ids and credit.get('first_air_date', '9999-12-31') <= '2025-04-08':
+        if credit.get('id') not in seen_tv_ids and credit.get('first_air_date', '9999-12-31') <= _today_iso():
             seen_tv_ids.add(credit['id'])
             tv_acting_credits.append(credit)
 

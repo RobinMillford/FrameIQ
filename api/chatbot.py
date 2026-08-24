@@ -100,10 +100,3 @@ def extract_media_with_llm(bot_reply, model_name=DEFAULT_MODEL):
     except Exception as e:
         print(f"Error in LLM media extraction: {e}")
         return [], []
-
-
-def is_safety_model_response(content, model_name):
-    """True if this is a safety-model 'safe' response."""
-    if model_name == "meta-llama/llama-guard-4-12b":
-        return content.lower().strip() == "safe"
-    return False

@@ -29,7 +29,6 @@ langgraph==0.5.4
 openai==1.58.1
 
 # --- RAG & Vector Database (ChromaDB Cloud - no local models needed) ---
-chromadb>=0.5.5
 
 # --- Database & Authentication ---
 SQLAlchemy==2.0.38

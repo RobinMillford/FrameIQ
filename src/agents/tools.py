@@ -2,18 +2,34 @@
 LangChain tool wrappers for the retriever agent.
 
 Tools:
-  search_vector_db    — vibe/mood/theme semantic search (ChromaDB)
   search_tmdb         — exact title lookup
   search_tmdb_person  — actor/director filmography
   discover_movies     — structured movie query (genre, year, language, rating, cast)
   discover_tv         — structured TV query
   get_similar_movies  — TMDb recommendations for a title
   search_tmdb_trending — trending now
+  my_history          — the user's own ratings, diary and watchlist (NEW)
+
+All TMDb calls go through api/tmdb/cache.py (bounded TTL cache shared with
+the rest of the app) — no raw uncached requests.
 """
 
-import os
-import requests as _requests
+from contextvars import ContextVar
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlencode
+
+from dotenv import load_dotenv
+from langchain_core.tools import tool
+
+from api.tmdb.cache import cached_tmdb_request
+from api.tmdb.config import TMDB_API_KEY
+from api.tmdb.search import search_media as _tmdb_title_search
+
+load_dotenv()
+
+# Per-request user id for the my_history tool. Set by retriever_node
+# (same thread as agent execution) before the agent invokes tools.
+_CURRENT_USER_ID: ContextVar = ContextVar("chat_user_id", default=None)
 
 # TMDb genre ID maps
 _MOVIE_GENRES = {
@@ -37,105 +53,15 @@ _LANG_CODES = {
     "portuguese": "pt", "russian": "ru", "turkish": "tr",
 }
 
-from dotenv import load_dotenv
-from langchain_core.tools import tool
-
-from api.rag_helper import search_vector_db as _semantic_search
-from api.rag_helper import search_tmdb_for_media as _tmdb_search
-from api.vector_db import get_vector_db
-
-load_dotenv()
-
-# Shared HTTP session (connection pooling for TMDb calls).
-_SESSION = _requests.Session()
+_TMDB_BASE = "https://api.themoviedb.org/3"
 
 
-def _titles_match(a: str, b: str) -> bool:
-    """Loose title equality — case-insensitive, ignores leading 'the '."""
-    def norm(s):
-        s = s.lower().strip()
-        return s[4:] if s.startswith("the ") else s
-    return norm(a) == norm(b)
-
-
-def _hybrid_search(query: str, top_k: int):
-    """
-    3-step hybrid RAG search:
-      1. Semantic search on the raw query.
-      2. If top result is low-confidence (<25%), enrich via TMDb overview.
-      3. If an exact-title source exists, anchor semantic search to its doc.
-    Returns a (results, base_similarity) tuple or (None, 0) on failure.
-    """
-    results = _semantic_search(query, top_k=top_k)
-    if not results or not results.get("ids") or not results["ids"][0]:
-        return None, 0.0
-
-    top_sim = 1 - results["distances"][0][0]
-
-    # Step 2: low-confidence → enrich via TMDb then re-search
-    if top_sim < 0.25:
-        tmdb = _tmdb_search(query)
-        if tmdb:
-            enriched_q = f"{tmdb['title']} {tmdb.get('overview', '')[:200]}"
-            enriched = _semantic_search(enriched_q, top_k=top_k)
-            if enriched and enriched.get("ids") and enriched["ids"][0]:
-                results = enriched
-                top_sim = 1 - results["distances"][0][0]
-
-    # Step 3: if exact source title exists and top result doesn't match, re-anchor
-    vdb = get_vector_db()
-    source = vdb.search_by_exact_title(query)
-    if source:
-        src_title = source["metadata"].get("title", "")
-        top_title = results["metadatas"][0][0].get("title", "")
-        if not _titles_match(src_title, top_title):
-            doc = source.get("document") or query
-            anchored = _semantic_search(doc, top_k=top_k + 1)
-            if anchored and anchored.get("ids") and anchored["ids"][0]:
-                results = anchored
-                top_sim = 1 - results["distances"][0][0]
-
-    return results, top_sim
-
-
-def _format_results(results: dict) -> List[Dict[str, Any]]:
-    """Convert raw ChromaDB results to agent-friendly dicts."""
-    out = []
-    for i, movie_id in enumerate(results["ids"][0]):
-        meta = results["metadatas"][0][i]
-        similarity = 1 - results["distances"][0][i]
-        out.append({
-            "id": movie_id,
-            "title": meta.get("title", "Unknown"),
-            "year": meta.get("release_year", "Unknown"),
-            "genres": meta.get("genres", "Unknown"),
-            "rating": meta.get("vote_average", 0),
-            "media_type": meta.get("media_type", "movie"),
-            "overview": meta.get("overview", ""),
-            "similarity": f"{similarity:.0%}",
-        })
-    return out
-
-
-@tool
-def search_vector_db(query: str, top_k: int = 6) -> List[Dict[str, Any]]:
-    """
-    Search the FrameIQ movie/TV database for semantically similar titles.
-
-    Uses a 3-step hybrid strategy (semantic → TMDb enrichment → exact anchor).
-    Use for: "movies like X", mood/theme/genre queries, vibe-based searches.
-
-    Args:
-        query:  Natural language query or source title.
-        top_k:  Maximum results to return (default 6).
-    """
-    try:
-        results, _ = _hybrid_search(query, top_k)
-        if results is None:
-            return []
-        return _format_results(results)
-    except Exception as e:
-        return [{"error": f"Vector DB search failed: {str(e)}"}]
+def _tmdb_get(path: str, **params) -> Dict[str, Any]:
+    """Cached TMDb GET. Returns parsed JSON (raises on network failure)."""
+    query = {k: v for k, v in params.items() if v is not None}
+    query["api_key"] = TMDB_API_KEY
+    url = f"{_TMDB_BASE}{path}?{urlencode(query)}"
+    return cached_tmdb_request(url)
 
 
 @tool
@@ -143,28 +69,37 @@ def search_tmdb(title: str, year: Optional[str] = None) -> Dict[str, Any]:
     """
     Look up a specific movie or TV show on TMDb by title.
 
-    Use for: exact title queries, recent releases (2022+), cast/director facts.
+    Use for: exact title queries, recent releases, cast/director facts.
 
     Args:
         title:  Movie or TV show title.
         year:   Optional release year string (e.g. "2024").
     """
     try:
-        year_str = str(year) if year is not None else None
-        result = _tmdb_search(title, year_str)
-        if not result:
+        # Try movies then TV via the cached search
+        for media_type in ("movie", "tv"):
+            results = _tmdb_title_search(title, media_type)
+            if not results:
+                continue
+            if year:
+                filtered = [r for r in results
+                            if str(r.get("release_date") or r.get("first_air_date") or "").startswith(str(year))]
+                results = filtered or results
+            best = results[0]
+            dt = best.get("release_date") or best.get("first_air_date") or ""
             return {
-                "error": f"No results for '{title}'"
-                + (f" ({year})" if year else ""),
-                "suggestion": "Try alternate spelling or omit the year.",
+                "title": best.get("title") or best.get("name"),
+                "year": dt[:4] or None,
+                "overview": best.get("overview"),
+                "media_type": media_type,
+                "tmdb_id": best.get("id"),
             }
         return {
-            "title": result.get("title"),
-            "year": result.get("year"),
-            "overview": result.get("overview"),
-            "media_type": result.get("media_type"),
-            "tmdb_id": result.get("id"),
+            "error": f"No results for '{title}'"
+            + (f" ({year})" if year else ""),
+            "suggestion": "Try alternate spelling or omit the year.",
         }
+
     except Exception as e:
         return {"error": f"TMDb lookup failed: {str(e)}"}
 
@@ -181,17 +116,11 @@ def search_tmdb_person(person_name: str, top_k: int = 10) -> List[Dict[str, Any]
         top_k:        Max results to return (default 10).
     """
     try:
-        api_key = os.getenv("TMDB_API_KEY")
-        if not api_key:
+        if not TMDB_API_KEY:
             return [{"error": "TMDB_API_KEY not configured"}]
 
         # Step 1: find person id
-        search_resp = _SESSION.get(
-            "https://api.themoviedb.org/3/search/person",
-            params={"api_key": api_key, "query": person_name, "page": 1},
-            timeout=5,
-        )
-        people = search_resp.json().get("results", [])
+        people = _tmdb_get("/search/person", query=person_name, page=1).get("results", [])
         if not people:
             return [{"error": f"No person found for '{person_name}'"}]
 
@@ -200,12 +129,7 @@ def search_tmdb_person(person_name: str, top_k: int = 10) -> List[Dict[str, Any]
         known_name = person.get("name", person_name)
 
         # Step 2: fetch combined credits
-        credits_resp = _SESSION.get(
-            f"https://api.themoviedb.org/3/person/{person_id}/combined_credits",
-            params={"api_key": api_key},
-            timeout=5,
-        )
-        cast = credits_resp.json().get("cast", [])
+        cast = _tmdb_get(f"/person/{person_id}/combined_credits").get("cast", [])
 
         # Sort by popularity, deduplicate by id
         seen, results = set(), []
@@ -214,10 +138,10 @@ def search_tmdb_person(person_name: str, top_k: int = 10) -> List[Dict[str, Any]
                 continue
             seen.add(item["id"])
             title = item.get("title") or item.get("name", "Unknown")
-            date = item.get("release_date") or item.get("first_air_date", "")
+            dt = item.get("release_date") or item.get("first_air_date", "")
             results.append({
                 "title": title,
-                "year": date[:4] if date else "Unknown",
+                "year": dt[:4] if dt else "Unknown",
                 "media_type": item.get("media_type", "movie"),
                 "overview": item.get("overview", ""),
                 "rating": item.get("vote_average", 0),
@@ -240,20 +164,20 @@ def search_tmdb_trending(
     """
     Fetch currently trending movies/TV shows from TMDb.
 
-    Use for: "what's trending", "what's popular", "what should I watch now".
+    Use for: "what's trending", "what's popular", "what should I watch now",
+             "latest movies", "new releases this week".
 
     Args:
         media_type:   "movie", "tv", or "all" (default "all").
         time_window:  "day" or "week" (default "week").
     """
     try:
-        api_key = os.getenv("TMDB_API_KEY")
-        if not api_key:
+        if not TMDB_API_KEY:
             return [{"error": "TMDB_API_KEY not configured"}]
 
-        url = f"https://api.themoviedb.org/3/trending/{media_type}/{time_window}"
-        resp = _SESSION.get(url, params={"api_key": api_key}, timeout=5)
-        items = resp.json().get("results", [])[:10]
+        items = _tmdb_get(
+            f"/trending/{media_type}/{time_window}"
+        ).get("results", [])[:10]
 
         return [
             {
@@ -281,9 +205,19 @@ def _resolve_lang_code(language: str) -> str:
     return _LANG_CODES.get(language.lower().strip(), language.lower()[:2])
 
 
+def _resolve_cast_id(cast_name: str) -> Optional[int]:
+    """Resolve an actor name to a TMDb person id (cached)."""
+    try:
+        people = _tmdb_get("/search/person", query=cast_name, page=1).get("results", [])
+        return people[0]["id"] if people else None
+    except Exception:
+        return None
+
+
 @tool
 def discover_movies(
     genre: Optional[str] = None,
+    keywords: Optional[str] = None,
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
     language: Optional[str] = None,
@@ -296,10 +230,14 @@ def discover_movies(
     Discover movies using structured filters via TMDb.
 
     Use for: "best Bollywood 2023", "top Korean thrillers", "highest rated comedies",
-             "action movies with Tom Cruise", "French films of the 90s".
+             "action movies with Tom Cruise", "French films of the 90s",
+             vibe queries like "mind-bending heist thriller" (pass keywords).
 
     Args:
         genre:      Genre name, e.g. "action", "thriller", "romance", "sci-fi".
+        keywords:   Comma-separated TMDb keywords capturing the VIBE or plot elements,
+                    e.g. "heist,twist-ending", "time-travel", "dystopia". Derive these
+                    from the user's mood or descriptive words.
         year_from:  Earliest release year (inclusive).
         year_to:    Latest release year (inclusive).
         language:   Original language, e.g. "hindi", "korean", "english", "french".
@@ -310,12 +248,10 @@ def discover_movies(
         top_k:      Max results (default 10).
     """
     try:
-        api_key = os.getenv("TMDB_API_KEY")
-        if not api_key:
+        if not TMDB_API_KEY:
             return [{"error": "TMDB_API_KEY not configured"}]
 
         params: Dict[str, Any] = {
-            "api_key": api_key,
             "sort_by": sort_by,
             "include_adult": False,
             "page": 1,
@@ -326,6 +262,9 @@ def discover_movies(
             gid = _resolve_genre_id(genre, is_tv=False)
             if gid:
                 params["with_genres"] = gid
+
+        if keywords:
+            params["with_keywords"] = keywords
 
         if year_from:
             params["primary_release_date.gte"] = f"{year_from}-01-01"
@@ -339,21 +278,11 @@ def discover_movies(
             params["vote_average.gte"] = min_rating
 
         if cast_name:
-            pr = _SESSION.get(
-                "https://api.themoviedb.org/3/search/person",
-                params={"api_key": api_key, "query": cast_name},
-                timeout=5,
-            )
-            people = pr.json().get("results", [])
-            if people:
-                params["with_cast"] = people[0]["id"]
+            cast_id = _resolve_cast_id(cast_name)
+            if cast_id:
+                params["with_cast"] = cast_id
 
-        resp = _SESSION.get(
-            "https://api.themoviedb.org/3/discover/movie",
-            params=params,
-            timeout=5,
-        )
-        items = resp.json().get("results", [])[:top_k]
+        items = _tmdb_get("/discover/movie", **params).get("results", [])[:top_k]
 
         return [
             {
@@ -374,6 +303,7 @@ def discover_movies(
 @tool
 def discover_tv(
     genre: Optional[str] = None,
+    keywords: Optional[str] = None,
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
     language: Optional[str] = None,
@@ -385,10 +315,13 @@ def discover_tv(
     Discover TV shows using structured filters via TMDb.
 
     Use for: "best Korean dramas", "top sci-fi TV shows", "highest rated anime series",
-             "crime TV shows from 2010s", "Spanish language series".
+             "crime TV shows from 2010s", "Spanish language series",
+             vibe queries like "comfort shows about friendship" (pass keywords).
 
     Args:
         genre:      Genre name, e.g. "drama", "crime", "sci-fi", "animation".
+        keywords:   Comma-separated TMDb keywords capturing the VIBE or themes,
+                    e.g. "friendship", "survival", "dark-comedy".
         year_from:  First air date year (earliest).
         year_to:    First air date year (latest).
         language:   Original language, e.g. "korean", "japanese", "english".
@@ -397,12 +330,10 @@ def discover_tv(
         top_k:      Max results (default 10).
     """
     try:
-        api_key = os.getenv("TMDB_API_KEY")
-        if not api_key:
+        if not TMDB_API_KEY:
             return [{"error": "TMDB_API_KEY not configured"}]
 
         params: Dict[str, Any] = {
-            "api_key": api_key,
             "sort_by": sort_by,
             "include_adult": False,
             "page": 1,
@@ -413,6 +344,9 @@ def discover_tv(
             gid = _resolve_genre_id(genre, is_tv=True)
             if gid:
                 params["with_genres"] = gid
+
+        if keywords:
+            params["with_keywords"] = keywords
 
         if year_from:
             params["first_air_date.gte"] = f"{year_from}-01-01"
@@ -425,12 +359,7 @@ def discover_tv(
         if min_rating:
             params["vote_average.gte"] = min_rating
 
-        resp = _SESSION.get(
-            "https://api.themoviedb.org/3/discover/tv",
-            params=params,
-            timeout=5,
-        )
-        items = resp.json().get("results", [])[:top_k]
+        items = _tmdb_get("/discover/tv", **params).get("results", [])[:top_k]
 
         return [
             {
@@ -461,18 +390,11 @@ def get_similar_movies(title: str, media_type: str = "movie") -> List[Dict[str, 
         media_type:  "movie" or "tv" (default "movie").
     """
     try:
-        api_key = os.getenv("TMDB_API_KEY")
-        if not api_key:
+        if not TMDB_API_KEY:
             return [{"error": "TMDB_API_KEY not configured"}]
 
         # Step 1: resolve title to TMDb ID
-        search_url = f"https://api.themoviedb.org/3/search/{media_type}"
-        sr = _SESSION.get(
-            search_url,
-            params={"api_key": api_key, "query": title, "page": 1},
-            timeout=5,
-        )
-        results = sr.json().get("results", [])
+        results = _tmdb_get(f"/search/{media_type}", query=title, page=1).get("results", [])
         if not results:
             return [{"error": f"Could not find '{title}' on TMDb"}]
 
@@ -480,19 +402,11 @@ def get_similar_movies(title: str, media_type: str = "movie") -> List[Dict[str, 
         found_title = results[0].get("title") or results[0].get("name", title)
 
         # Step 2: fetch recommendations
-        rec_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/recommendations"
-        rr = _SESSION.get(
-            rec_url,
-            params={"api_key": api_key, "page": 1},
-            timeout=5,
-        )
-        recs = rr.json().get("results", [])[:10]
+        recs = _tmdb_get(f"/{media_type}/{tmdb_id}/recommendations", page=1).get("results", [])[:10]
 
         if not recs:
             # fallback to /similar
-            sim_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/similar"
-            sr2 = _SESSION.get(sim_url, params={"api_key": api_key}, timeout=5)
-            recs = sr2.json().get("results", [])[:10]
+            recs = _tmdb_get(f"/{media_type}/{tmdb_id}/similar").get("results", [])[:10]
 
         return [
             {
@@ -509,12 +423,131 @@ def get_similar_movies(title: str, media_type: str = "movie") -> List[Dict[str, 
         return [{"error": f"get_similar_movies failed: {str(e)}"}]
 
 
+@tool
+def my_history(query: str = "recent activity") -> Dict[str, Any]:
+    """
+    Look up the CURRENT USER'S own viewing data: ratings, diary entries,
+    watchlist, and TV shows they are tracking.
+
+    Use for: "what did I rate Inception", "what's on my watchlist",
+             "what am I currently watching", "recommend based on what I watched",
+             "which genres do I watch most".
+
+    Args:
+        query:  Free-text focus hint, e.g. "ratings", "watchlist",
+                "currently watching", "genres". Used to trim the response.
+    """
+    user_id = _CURRENT_USER_ID.get()
+    if not user_id:
+        return {"error": "User context unavailable — log in required."}
+
+    try:
+        # Tool runs during response streaming (outside Flask's request
+        # context) — push an app context for DB access.
+        from flask import has_app_context
+        if not has_app_context():
+            from app import app as flask_app
+            with flask_app.app_context():
+                return _query_user_history(user_id, query)
+        return _query_user_history(user_id, query)
+    except Exception as e:
+        return {"error": f"my_history failed: {str(e)}"}
+
+
+def _query_user_history(user_id: int, query: str) -> Dict[str, Any]:
+    from models import (
+        db, Review, DiaryEntry, TVShowProgress,
+        user_watchlist, MediaItem,
+    )
+
+    q = query.lower()
+    out: Dict[str, Any] = {}
+
+    def _want(section: str) -> bool:
+        # Return everything for broad queries; trim for specific ones.
+        broad = not any(k in q for k in (
+            "rating", "rated", "watchlist", "watching", "diary", "genre",
+            "tracked", "show",
+        ))
+        return broad or section in q
+
+    if _want("rating"):
+        reviews = (
+            Review.query.filter_by(user_id=user_id)
+            .order_by(Review.created_at.desc()).limit(15).all()
+        )
+        out["recent_ratings"] = [
+            {
+                "title": r.media.title if r.media else "Unknown",
+                "media_type": r.media_type,
+                "rating_10": round(r.rating * 2, 1) if r.rating else None,
+                "rated_at": r.created_at.strftime("%Y-%m-%d") if r.created_at else None,
+            } for r in reviews
+        ]
+
+    if _want("diary"):
+        entries = (
+            DiaryEntry.query.filter_by(user_id=user_id)
+            .order_by(DiaryEntry.watched_date.desc()).limit(15).all()
+        )
+        out["diary"] = [
+            {
+                "title": e.media.title if e.media else "Unknown",
+                "watched_date": e.watched_date.isoformat() if e.watched_date else None,
+                "is_rewatch": e.is_rewatch,
+            } for e in entries
+        ]
+
+    if _want("watchlist"):
+        rows = db.session.execute(
+            user_watchlist.select().where(user_watchlist.c.user_id == user_id)
+        ).all()
+        items = []
+        for row in rows[:20]:
+            m = MediaItem.query.filter_by(id=row.media_id).first()
+            if m:
+                items.append({
+                    "title": m.title, "media_type": m.media_type,
+                    "priority": row.priority or "medium",
+                })
+        out["watchlist"] = items
+        out["watchlist_count"] = len(items)
+
+    if _want("watching") or _want("tracked") or _want("show"):
+        shows = TVShowProgress.query.filter_by(user_id=user_id).limit(15).all()
+        out["tv_tracking"] = [
+            {
+                "show_id": s.show_id,
+                "status": s.status,
+                "episodes_watched": s.watched_episodes,
+                "episodes_total": s.total_episodes,
+            } for s in shows
+        ]
+
+    # Genre preference summary from ratings
+    if _want("genre"):
+        genre_counts: Dict[str, int] = {}
+        rated = Review.query.filter_by(user_id=user_id).limit(50).all()
+        for r in rated:
+            if r.media and r.media.genres:
+                for g in str(r.media.genres).split(","):
+                    g = g.strip()
+                    if g:
+                        genre_counts[g] = genre_counts.get(g, 0) + 1
+        if genre_counts:
+            out["favorite_genres"] = sorted(
+                genre_counts.items(), key=lambda kv: kv[1], reverse=True
+            )[:5]
+
+    return out
+
+
 RETRIEVER_TOOLS = [
-    search_vector_db,
     search_tmdb,
     search_tmdb_person,
     discover_movies,
     discover_tv,
     get_similar_movies,
     search_tmdb_trending,
+    my_history,
 ]

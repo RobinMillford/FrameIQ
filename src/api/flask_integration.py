@@ -1,58 +1,18 @@
 """
-Enhanced Flask route integration with streaming and metrics endpoints.
+Flask integration for the agent system — metrics and health endpoints.
+
+Chat traffic flows through routes/chat.py (/chat_api). The former
+duplicate endpoints (/agent_chat_api, /agent_chat_stream) were removed
+— they were unused by any frontend code.
 """
 import logging
-from flask import Blueprint, request, jsonify, Response, stream_with_context
-from flask_login import login_required, current_user
-from extensions import limiter
-from src.api.agent_service import (
-    run_agent_chat,
-    run_agent_chat_streaming,
-    get_agent_metrics
-)
-import json
+from flask import Blueprint, jsonify
+from flask_login import login_required
+from src.api.agent_service import get_agent_metrics
 
 logger = logging.getLogger(__name__)
 
 agent_chat = Blueprint('agent_chat', __name__)
-
-
-@agent_chat.route("/agent_chat_api", methods=["POST"])
-@login_required
-@limiter.limit("20 per minute; 100 per hour")
-def agent_chat_api():
-    user_message = request.json.get("message")
-    if not user_message:
-        return jsonify({"error": "Message is required"}), 400
-
-    # Per-user session — prevents cross-user context leakage under NAT
-    session_id = f"user_{current_user.id}"
-
-    response = run_agent_chat(user_message, session_id)
-    return jsonify(response)
-
-
-@agent_chat.route("/agent_chat_stream", methods=["POST"])
-@login_required
-@limiter.limit("20 per minute; 100 per hour")
-def agent_chat_stream():
-    user_message = request.json.get("message")
-    if not user_message:
-        return jsonify({"error": "Message is required"}), 400
-
-    session_id = f"user_{current_user.id}"
-
-    def generate():
-        for update in run_agent_chat_streaming(user_message, session_id):
-            data = json.dumps(update)
-            yield f"data: {data}\n\n"
-        yield 'data: {"done": true}\n\n'
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
-    )
 
 
 @agent_chat.route("/agent_metrics", methods=["GET"])

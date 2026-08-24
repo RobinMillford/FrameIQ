@@ -27,11 +27,8 @@ def test_models_import():
         pytest.fail(f"Models import failed: {e}")
 
 
-@pytest.mark.skipif(
-    not os.getenv('GROQ_API_KEY'),
-    reason="Requires GROQ_API_KEY to initialize AI agents"
-)
 def test_app_imports():
+    """Test that app can be imported (requires API keys)"""
     """Test that app can be imported (requires API keys)"""
     try:
         from app import app, db

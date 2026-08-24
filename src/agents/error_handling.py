@@ -4,7 +4,6 @@ Enhanced error handling and fallback mechanisms for the agent system.
 This module provides robust error handling, retry logic, and graceful degradation.
 """
 
-from typing import Dict, Any, Optional
 from functools import wraps
 import time
 import logging
@@ -58,28 +57,6 @@ def retry_on_error(max_retries: int = 3, delay: float = 1.0):
     return decorator
 
 
-def safe_tool_execution(tool_func, *args, **kwargs) -> Dict[str, Any]:
-    """
-    Safely execute a tool with error handling.
-    
-    Returns:
-        Dictionary with 'success', 'data', and optional 'error' keys
-    """
-    try:
-        result = tool_func(*args, **kwargs)
-        return {
-            "success": True,
-            "data": result
-        }
-    except Exception as e:
-        logger.error(f"Tool execution failed: {tool_func.__name__}: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "data": None
-        }
-
-
 def get_fallback_response(error_type: str, user_message: str) -> str:
     """
     Generate appropriate fallback response based on error type.
@@ -100,23 +77,3 @@ def get_fallback_response(error_type: str, user_message: str) -> str:
     }
     
     return fallbacks.get(error_type, "I encountered an unexpected error. Please try again.")
-
-
-def validate_state(state: Dict[str, Any]) -> bool:
-    """
-    Validate that state has required fields.
-    
-    Args:
-        state: Graph state dictionary
-    
-    Returns:
-        True if valid, False otherwise
-    """
-    required_fields = ["messages", "user_intent", "next_step"]
-    
-    for field in required_fields:
-        if field not in state:
-            logger.error(f"Missing required state field: {field}")
-            return False
-    
-    return True

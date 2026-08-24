@@ -75,8 +75,7 @@ FrameIQ lets you track, rate, and review everything you watch — movies, TV sho
 | Layer | Technology |
 |---|---|
 | **Backend** | Flask 3.1, SQLAlchemy 2.0, PostgreSQL |
-| **AI / Agents** | LangGraph 0.2, LangChain, configurable LLM provider |
-| **Vector search** | ChromaDB Cloud, OpenAI-compatible text embeddings (5 700+ movies) |
+| **AI / Agents** | LangGraph, LangChain, OpenAI (gpt-4.1-mini routing/retrieval, gpt-5-mini chat) |
 | **Auth** | Google OAuth 2.0 (Authlib) + Flask-Login |
 | **Frontend** | Jinja2, Tailwind CSS, Vanilla JS, Chart.js |
 | **Media APIs** | TMDb, Cloudinary (avatars), NewsAPI |
@@ -151,10 +150,7 @@ Copy `.env.example` to `.env` and fill in every value.
 | `SECRET_KEY` | ✅ | Flask session secret |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `TMDB_API_KEY` | ✅ | [themoviedb.org](https://www.themoviedb.org/settings/api) |
-| `OPENAI_API_KEY` | ✅ | API key for your chosen LLM provider (must be OpenAI-API-compatible) |
-| `CHROMA_API_KEY` | ✅ | ChromaDB Cloud |
-| `CHROMA_TENANT` | ✅ | ChromaDB Cloud tenant |
-| `CHROMA_DATABASE` | ✅ | ChromaDB Cloud database |
+| `OPENAI_API_KEY` | ✅ | OpenAI API key (chat models + embeddings) |
 | `GOOGLE_CLIENT_ID` | ✅ | Google OAuth |
 | `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth |
 | `CLOUDINARY_CLOUD_NAME` | ✅ | Avatar uploads |
@@ -219,15 +215,16 @@ FrameIQ/
 │   ├── agents/                 # LangGraph multi-agent system
 │   │   ├── graph.py            # StateGraph definition
 │   │   ├── nodes.py            # Supervisor, Retriever, Chat, Enricher
-│   │   ├── tools.py            # 7 LangChain tools (TMDb + ChromaDB)
+│   │   ├── tools.py            # 7 LangChain tools (cached TMDb + user history)
 │   │   └── state.py            # GraphState schema
 │   └── api/
 │       ├── agent_service.py
 │       └── flask_integration.py
 │
 ├── api/                        # Shared utilities
-│   ├── tmdb_client.py          # TMDb API wrapper
-│   ├── vector_db.py            # ChromaDB interface
+│   ├── tmdb_client.py          # TMDb API wrapper (compat shim)
+│   ├── tmdb/                   # TMDb package: cache, movies, tv, people, search
+│   ├── stream_providers.py     # Embed providers (Rive, VidKing, Vidy, 1Embed)
 │   └── chatbot.py              # LLM helpers
 │
 ├── templates/                  # Jinja2 templates
@@ -235,10 +232,9 @@ FrameIQ/
 │
 ├── scripts/                    # Ops scripts (excluded from Docker image)
 │   ├── sync_upcoming_episodes.py
-│   ├── collect_media.py
-│   └── generate_embeddings.py
+│   └── collect_media.py
 │
-├── .github/workflows/          # CI/CD, episode sync, embedding refresh
+├── .github/workflows/          # CI/CD, episode sync
 ├── nginx/nginx.conf            # Reverse proxy config
 ├── docker-compose.yml
 ├── Dockerfile
@@ -281,4 +277,4 @@ Licensed under the **GNU Affero General Public License v3.0** — see [LICENSE](
 
 ## Acknowledgements
 
-[TMDb](https://www.themoviedb.org) · [LangGraph](https://langchain-ai.github.io/langgraph/) · [ChromaDB](https://www.trychroma.com) · [Letterboxd](https://letterboxd.com) (inspiration)
+[TMDb](https://www.themoviedb.org) · [LangGraph](https://langchain-ai.github.io/langgraph/) · [Letterboxd](https://letterboxd.com) (inspiration)

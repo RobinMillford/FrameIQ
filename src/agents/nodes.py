@@ -1,26 +1,31 @@
 """
 Graph node implementations for the FrameIQ LangGraph agent.
 
-- Supervisor: zero-LLM heuristic router (saves 2-3 LLM calls per request).
+- Supervisor: LLM structured-output router (route + entity extraction),
+  with a zero-cost heuristic fallback and a fast path for greetings.
 - Retriever: module-level react agent singleton (not re-created per call).
-- Enricher: concurrent TMDb lookups, deduplication.
+- Enricher: concurrent TMDb lookups, deduplication, skipped for short replies.
 - retrieved_context: stores actual tool results.
 - user_context from state injected into system prompts for personalisation.
 """
 
+import logging
 import os
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Literal
+from typing import List, Literal
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
+from pydantic import BaseModel, Field
 
 from .state import GraphState
-from .tools import RETRIEVER_TOOLS
+from .tools import RETRIEVER_TOOLS, _CURRENT_USER_ID
 from api.chatbot import extract_media_with_llm, is_recent_release, is_upcoming_release
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -28,9 +33,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
 # ── Models ────────────────────────────────────────────────────────────────────
-# gpt-4.1-mini : tool calling — reliable structured output for ReAct
+# gpt-4.1-mini : tool calling + supervisor routing — reliable structured output
 # gpt-5-mini   : chat — newer gen, high quality prose
-# (supervisor is heuristic — no model needed)
+# (enricher title extraction uses gpt-5-nano via api/chatbot.py)
 
 RETRIEVER_MODEL = ChatOpenAI(
     model="gpt-4.1-mini",
@@ -38,10 +43,19 @@ RETRIEVER_MODEL = ChatOpenAI(
     temperature=0,
 )
 
+# Tags let astream_events distinguish final-response tokens from internal
+# model calls (retriever tool decisions, enricher extraction).
 CHAT_MODEL = ChatOpenAI(
     model="gpt-5-mini",
     api_key=OPENAI_API_KEY,
     temperature=0.7,
+    tags=["final_response"],
+)
+
+SUPERVISOR_MODEL = ChatOpenAI(
+    model="gpt-4.1-mini",
+    api_key=OPENAI_API_KEY,
+    temperature=0,
 )
 
 # Module-level singleton — built once, reused across all requests.
@@ -51,7 +65,7 @@ _RETRIEVER_AGENT = create_react_agent(RETRIEVER_MODEL, RETRIEVER_TOOLS)
 _TMDB_SESSION = requests.Session()
 
 
-# ── Supervisor (heuristic — zero LLM calls) ───────────────────────────────────
+# ── Supervisor ────────────────────────────────────────────────────────────────
 
 _GREETINGS = {
     "hi", "hello", "hey", "hiya", "howdy", "sup", "yo",
@@ -66,74 +80,197 @@ _CHAT_STARTERS = (
 )
 
 
+class _RouteDecision(BaseModel):
+    """Structured routing decision from the supervisor LLM."""
+    route: Literal["greeting", "chat", "retriever"] = Field(
+        description=(
+            "greeting — pure pleasantry/thanks with no question. "
+            "chat — general film knowledge, explanations, definitions; no live "
+            "data needed. "
+            "retriever — anything needing live data: recommendations, discovery "
+            "by genre/year/language/mood, trending, filmographies, similar "
+            "titles, or the user's own watch history."
+        )
+    )
+    intent: str = Field(
+        description="One-word summary of what the user wants, e.g. "
+                    "'recommend', 'trending', 'filmography', 'explain', 'greeting'."
+    )
+    titles: List[str] = Field(
+        default_factory=list,
+        description="Movie/TV titles the user mentioned explicitly.",
+    )
+    people: List[str] = Field(
+        default_factory=list,
+        description="Actor/director names the user mentioned explicitly.",
+    )
+    genres: List[str] = Field(
+        default_factory=list,
+        description="Genres the user asked about, e.g. ['horror', 'sci-fi'].",
+    )
+    years: List[str] = Field(
+        default_factory=list,
+        description="Years or decades mentioned, e.g. ['2024', '90s'].",
+    )
+
+
+_SUPERVISOR_CHAIN = None  # lazy singleton
+
+
+def _get_supervisor_chain():
+    global _SUPERVISOR_CHAIN
+    if _SUPERVISOR_CHAIN is None:
+        _SUPERVISOR_CHAIN = SUPERVISOR_MODEL.with_structured_output(_RouteDecision)
+    return _SUPERVISOR_CHAIN
+
+
+_SUPERVISOR_SYSTEM = (
+    "You route messages in a movie/TV recommendation chat app.\n"
+    "Rules of thumb:\n"
+    "- Pure greetings/thanks with no question → greeting\n"
+    "- Needs LIVE data (recommendations, discovery, trending, filmographies,\n"
+    "  similar titles, user's own watch history) → retriever\n"
+    "- Answerable from general film knowledge (definitions, history,\n"
+    "  'what was the first talkie') → chat\n"
+    "- 'Suggest me latest horror movies' → retriever (trending/discover)\n"
+    "- 'What did I rate Inception' → retriever (user history)\n"
+    "- When unsure whether live data helps, choose retriever."
+)
+
+
+def _heuristic_route(text: str) -> tuple:
+    """Zero-cost fallback router (previous behaviour). Returns (route, intent)."""
+    lower = text.lower().strip()
+    words = lower.split()
+    if (lower in _GREETINGS) or (len(words) <= 4 and set(words) & _GREETINGS):
+        return "greeting", "greeting"
+    if any(lower.startswith(p) for p in _CHAT_STARTERS):
+        return "chat", "explain"
+    return "retriever", "search"
+
+
 def supervisor_node(state: GraphState) -> GraphState:
     """
-    Zero-LLM heuristic router — saves 2-3 LLM round trips vs the old design.
+    LLM supervisor — structured routing + entity extraction.
 
-    Logic:
-      greeting / very short pleasantry → "chat" (fast reply, no tools)
-      "what is X" / explanation intent → "chat"
-      everything else                  → "retriever" (has all 7 tools)
+    Fast path: obvious greetings skip the LLM call entirely.
+    Fallback: heuristic routing if the LLM call fails.
     """
     messages = state["messages"]
     last = messages[-1] if messages else None
     text = (getattr(last, "content", "") or "").strip()
-    lower = text.lower()
 
-    # Pure greeting — short pleasantry with no question
-    words = lower.split()
-    if len(words) <= 4 and set(words) & _GREETINGS:
-        return {**state, "next_step": "chat", "user_intent": "chat"}
+    # Fast path — obvious short greetings, zero latency
+    words = text.lower().split()
+    if len(words) <= 3 and set(words) & _GREETINGS:
+        return {**state, "next_step": "chat", "user_intent": "greeting",
+                "entities": {}}
 
-    # Explanation / definition / history questions → chat (no tools needed)
-    if any(lower.startswith(p) for p in _CHAT_STARTERS):
-        return {**state, "next_step": "chat", "user_intent": "chat"}
+    try:
+        decision = _get_supervisor_chain().invoke([
+            SystemMessage(content=_SUPERVISOR_SYSTEM),
+            HumanMessage(content=text),
+        ])
+        route = decision.route
+        intent = decision.intent or route
+        entities = {
+            "titles": decision.titles or [],
+            "people": decision.people or [],
+            "genres": decision.genres or [],
+            "years": decision.years or [],
+        }
+    except Exception as e:
+        logger.warning("Supervisor LLM failed, using heuristic: %s", e)
+        route, intent = _heuristic_route(text)
+        entities = {}
 
-    # Everything else → retriever (recommendations, discovery, filmographies, etc.)
-    return {**state, "next_step": "retriever", "user_intent": "search"}
+    next_step = "chat" if route in ("greeting", "chat") else "retriever"
+    return {**state, "next_step": next_step, "user_intent": intent,
+            "entities": entities}
 
 
 # ── Retriever ─────────────────────────────────────────────────────────────────
 
-def _build_retriever_system(user_context: str) -> str:
+_MAX_CONTEXT_MESSAGES = 20
+
+
+def _trim_messages(messages):
+    """Keep the last N messages so checkpoint history doesn't blow the
+    context window on long-running threads."""
+    msgs = list(messages)
+    if len(msgs) <= _MAX_CONTEXT_MESSAGES:
+        return msgs
+    return msgs[-_MAX_CONTEXT_MESSAGES:]
+
+
+def _build_retriever_system(user_context: str, entities: dict = None) -> str:
     personalisation = (
         f"\n\nUser context (use to personalise recommendations):\n{user_context}"
         if user_context
         else ""
     )
+    entity_hint = ""
+    if entities:
+        bits = []
+        if entities.get("titles"):
+            bits.append(f"titles: {entities['titles']}")
+        if entities.get("people"):
+            bits.append(f"people: {entities['people']}")
+        if entities.get("genres"):
+            bits.append(f"genres: {entities['genres']}")
+        if entities.get("years"):
+            bits.append(f"years: {entities['years']}")
+        if bits:
+            entity_hint = (
+                "\n\nEntities already extracted from the user's message "
+                "(use these — do not re-parse):\n  " + "; ".join(bits)
+            )
     return (
         "You are a movie/TV research assistant. Choose the RIGHT tool for each query:\n\n"
-        "  search_vector_db    — pure vibe/mood/theme queries ('lonely introspective films',\n"
-        "                        'movies that feel like a dream', 'dark atmospheric cinema')\n"
         "  search_tmdb         — exact title lookup, release info, cast facts\n"
         "  search_tmdb_person  — filmography of actor/director ('SRK movies', 'Nolan films',\n"
         "                        'movies starring X', 'directed by Y')\n"
         "  discover_movies     — structured movie queries ('best Bollywood 2023', 'top Korean\n"
-        "                        thrillers', 'highest rated comedies', 'action films 90s')\n"
+        "                        thrillers', 'highest rated comedies', 'action films 90s').\n"
+        "                        For VIBE/MOOD queries ('mind-bending heist thriller',\n"
+        "                        'dark atmospheric cinema') translate the mood into the\n"
+        "                        keywords arg (comma-separated TMDb keywords like\n"
+        "                        'heist,twist-ending' or 'time-travel,dystopia') + genre.\n"
         "  discover_tv         — structured TV queries ('best Korean dramas', 'top crime shows',\n"
-        "                        'anime 2020s', 'Spanish series')\n"
+        "                        'anime 2020s', 'Spanish series'); keywords arg for vibes\n"
         "  get_similar_movies  — 'movies like X', 'similar to X', 'more like X'\n"
-        "  search_tmdb_trending — 'what's trending', 'what's popular now'\n\n"
+        "  search_tmdb_trending — 'what's trending', 'what's popular now', 'latest movies'\n"
+        "  my_history          — the user's OWN ratings, diary, watchlist, tracked shows.\n"
+        "                        'what did I rate X', 'what's on my watchlist',\n"
+        "                        'recommend based on what I watched'\n\n"
         "Rules:\n"
-        "- NEVER use search_vector_db for actor/director queries — use search_tmdb_person\n"
-        "- NEVER use search_vector_db for language/country queries — use discover_movies/tv\n"
-        "- For 'movies like X': use get_similar_movies (TMDb engine), optionally chain with\n"
-        "  search_vector_db for vibe refinement\n"
+        "- NEVER use discover_* for actor/director queries — use search_tmdb_person\n"
+        "- For 'movies like X': use get_similar_movies (TMDb engine)\n"
+        "- For personal-history questions ALWAYS use my_history\n"
+        "- For mood/vibe questions ALWAYS use discover_* with a keywords arg — never\n"
+        "  leave the vibe untranslated\n"
         "- Chain tools when useful\n"
         "- Always label each item as Movie or TV Show\n"
         "- Explain WHY each title fits the request"
         + personalisation
+        + entity_hint
     )
 
 
 def retriever_node(state: GraphState) -> GraphState:
-    """ReAct agent that searches ChromaDB and TMDb then formulates a reply."""
+    """ReAct agent that searches TMDb (cached) and user history, then replies."""
     messages = state["messages"]
     user_context = state.get("user_context") or ""
+    entities = state.get("entities") or {}
 
-    system_prompt = _build_retriever_system(user_context)
+    # Expose the user id to the my_history tool (same thread as agent exec)
+    user_id = state.get("user_id")
+    _CURRENT_USER_ID.set(user_id)
+
+    system_prompt = _build_retriever_system(user_context, entities)
     result = _RETRIEVER_AGENT.invoke(
-        {"messages": [SystemMessage(content=system_prompt), *list(messages)]}
+        {"messages": [SystemMessage(content=system_prompt),
+                      *_trim_messages(messages)]}
     )
 
     agent_messages = result["messages"]
@@ -168,8 +305,10 @@ def _build_chat_system(user_context: str) -> str:
     return (
         "You are a knowledgeable and friendly movie/TV expert assistant.\n"
         "Answer questions about films, TV, cinema history, and film concepts.\n"
-        "Be conversational. If the user asks for recommendations, provide them "
-        "with specific titles and reasons."
+        "Be conversational. Use markdown for structure (bold titles, bullet "
+        "lists) — your reply renders in a markdown-capable chat UI.\n"
+        "If the user asks for recommendations, tailor them to the user's "
+        "profile below when available, and explain why each pick fits."
         + personalisation
     )
 
@@ -180,7 +319,8 @@ def chat_node(state: GraphState) -> GraphState:
     user_context = state.get("user_context") or ""
 
     response = CHAT_MODEL.invoke(
-        [SystemMessage(content=_build_chat_system(user_context)), *messages]
+        [SystemMessage(content=_build_chat_system(user_context)),
+         *_trim_messages(messages)]
     )
     return {
         **state,
@@ -264,18 +404,27 @@ def enricher_node(state: GraphState) -> GraphState:
     """
     Extract titles from the last AI message, fetch TMDb metadata concurrently.
     Deduplicates titles before fetching.
+
+    Skips the LLM extraction entirely for short replies (greetings, thanks,
+    follow-up chatter) — there are no titles to enrich and each extraction
+    costs a model call.
     """
     messages = state["messages"]
 
     last_ai = next(
-        (m.content for m in reversed(messages) if isinstance(m, AIMessage)),
+        (m for m in reversed(messages) if isinstance(m, AIMessage)),
         None,
     )
-    if not last_ai:
+    last_text = (getattr(last_ai, "content", "") or "") if last_ai else ""
+    last_text = last_text if isinstance(last_text, str) else "".join(
+        str(p) for p in last_text)
+
+    # Skip: nothing to enrich for short conversational replies
+    if len(last_text.strip()) < 120:
         return {**state, "final_response_metadata": {"movies": [], "tv_shows": []}}
 
     try:
-        movie_data, tv_show_data = extract_media_with_llm(last_ai)
+        movie_data, tv_show_data = extract_media_with_llm(last_text)
     except Exception as e:
         print(f"Media extraction error: {e}")
         movie_data, tv_show_data = [], []

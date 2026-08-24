@@ -7,7 +7,14 @@ const BOOT = window.__CHAT_BOOTSTRAP__ || {};
       const userInput = document.getElementById("user-input");
       const sendButton = document.getElementById("send-button");
       const BOT_NAME = "CineBot";
-      // Models are now automatically selected per agent (Llama 3.1 8B for routing/retrieval, Llama 3.3 70B for chat)
+
+      // Markdown → sanitized HTML for bot messages
+      function renderMarkdown(text) {
+        if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+          return null; // CDN unavailable — caller falls back to textContent
+        }
+        return DOMPurify.sanitize(marked.parse(text || ""));
+      }
 
       function addMessage(sender, text) {
         const messageElement = document.createElement("div");
@@ -24,9 +31,16 @@ const BOOT = window.__CHAT_BOOTSTRAP__ || {};
           botNameElement.textContent = BOT_NAME;
           messageElement.appendChild(botNameElement);
 
-          const textElement = document.createElement("div");
-          textElement.textContent = text;
-          messageElement.appendChild(textElement);
+          const html = renderMarkdown(text);
+          if (html !== null) {
+            const textElement = document.createElement("div");
+            textElement.innerHTML = html;
+            messageElement.appendChild(textElement);
+          } else {
+            const textElement = document.createElement("div");
+            textElement.textContent = text;
+            messageElement.appendChild(textElement);
+          }
         } else {
           messageElement.textContent = text;
         }
@@ -69,12 +83,19 @@ const BOOT = window.__CHAT_BOOTSTRAP__ || {};
             wrap.appendChild(textEl);
             chatMessages.appendChild(wrap);
             chatMessages.scrollTop = chatMessages.scrollHeight;
-            return { wrap, textEl, cursor };
+            return { wrap, textEl, cursor, raw: "" };
         }
 
-        function appendToken(textEl, cursor, token) {
-            const node = document.createTextNode(token);
-            textEl.insertBefore(node, cursor);
+        function appendToken(bubble, token) {
+            bubble.raw += token;
+            const html = renderMarkdown(bubble.raw);
+            if (html !== null) {
+                // Re-render markdown live; keep cursor pinned at the end
+                bubble.textEl.innerHTML = html;
+                bubble.textEl.appendChild(bubble.cursor);
+            } else {
+                bubble.textEl.insertBefore(document.createTextNode(token), bubble.cursor);
+            }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
@@ -124,13 +145,12 @@ const BOOT = window.__CHAT_BOOTSTRAP__ || {};
 
                         } else if (data.type === 'token') {
                             if (!streamBubble) streamBubble = createStreamingBubble();
-                            appendToken(streamBubble.textEl, streamBubble.cursor, data.content);
+                            appendToken(streamBubble, data.content);
                             hasTokens = true;
 
                         } else if (data.type === 'final') {
                             // Remove blinking cursor
                             if (streamBubble) streamBubble.cursor.remove();
-                            // If retriever path (no token stream), show reply now
                             if (!hasTokens && data.reply) addMessage("bot", data.reply);
                             // Collapse thinking panel
                             if (thinkingPanel) thinkingPanel.open = false;

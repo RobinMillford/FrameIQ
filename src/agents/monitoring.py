@@ -130,35 +130,6 @@ def log_agent_decision(
     logger.info(f"Agent Decision: {json.dumps(log_data, indent=2)}")
 
 
-def log_tool_execution(
-    tool_name: str,
-    args: Dict[str, Any],
-    result: Any,
-    execution_time: float,
-    success: bool
-):
-    """
-    Log tool execution for monitoring.
-    
-    Args:
-        tool_name: Name of the tool
-        args: Tool arguments
-        result: Tool result
-        execution_time: Time taken to execute
-        success: Whether execution succeeded
-    """
-    log_data = {
-        "timestamp": datetime.now().isoformat(),
-        "tool": tool_name,
-        "args": args,
-        "execution_time": f"{execution_time:.2f}s",
-        "success": success,
-        "result_preview": str(result)[:200] if result else None
-    }
-    
-    logger.info(f"Tool Execution: {json.dumps(log_data, indent=2)}")
-
-
 def get_performance_metrics() -> Dict[str, Any]:
     """Get current performance metrics."""
     return _performance_tracker.get_metrics()
@@ -167,26 +138,3 @@ def get_performance_metrics() -> Dict[str, Any]:
 def reset_performance_metrics():
     """Reset performance tracking."""
     _performance_tracker.reset()
-
-
-class DebugLogger:
-    """Context manager for detailed debugging."""
-    
-    def __init__(self, operation_name: str):
-        self.operation_name = operation_name
-        self.start_time = None
-    
-    def __enter__(self):
-        self.start_time = time.time()
-        logger.debug(f"Starting: {self.operation_name}")
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        elapsed = time.time() - self.start_time
-        
-        if exc_type:
-            logger.error(f"Failed: {self.operation_name} after {elapsed:.2f}s - {exc_val}")
-        else:
-            logger.debug(f"Completed: {self.operation_name} in {elapsed:.2f}s")
-        
-        return False  # Don't suppress exceptions
