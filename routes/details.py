@@ -2,9 +2,42 @@ from flask import Blueprint, render_template
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
-from models import UserListItem, DiaryEntry, WatchProgress
+from models import UserListItem, DiaryEntry, WatchProgress, Review
 
 details = Blueprint('details', __name__)
+
+
+def _taste_match(user_id, item_genres):
+    """Percentage (0-100) affinity between the user's rating history and
+    the item's genres. None when there's no history to judge with."""
+    if not item_genres:
+        return None
+    try:
+        item_set = {g.strip().lower() for g in item_genres if g.strip()}
+        if not item_set:
+            return None
+        reviews = (
+            Review.query.filter_by(user_id=user_id)
+            .order_by(Review.created_at.desc()).limit(40).all()
+        )
+        if len(reviews) < 2:
+            return None
+        genre_hits = {}
+        for r in reviews:
+            if r.media and r.media.genres:
+                for g in str(r.media.genres).split(','):
+                    g = g.strip().lower()
+                    if g:
+                        genre_hits[g] = genre_hits.get(g, 0) + 1
+        if not genre_hits:
+            return None
+        overlap = sum(genre_hits.get(g, 0) for g in item_set)
+        # 55% floor — anything shares some DNA with your history
+        raw = overlap / max(len(item_set), 1)
+        return int(55 + min(raw, 1.0) * 44)
+    except Exception:
+        return None
+
 
 @details.route('/movie/<int:movie_id>')
 def movie_detail(movie_id):
@@ -40,16 +73,20 @@ def movie_detail(movie_id):
                 media_type='movie'
             ).order_by(DiaryEntry.watched_date.desc()).all()
         
+        taste_match = _taste_match(current_user.id, movie.get('genres')) if current_user.is_authenticated else None
+
         return render_template('movie_detail.html', movie=movie,
-                              user_watchlist_ids=user_watchlist_ids,
-                              user_wishlist_ids=user_wishlist_ids,
-                              user_viewed_ids=user_viewed_ids,
-                              user_lists_with_movie=user_lists_with_movie,
-                              diary_entries=diary_entries,
-                              today=datetime.now().strftime('%Y-%m-%d'))
+                               taste_match=taste_match,
+                               user_watchlist_ids=user_watchlist_ids,
+                               user_wishlist_ids=user_wishlist_ids,
+                               user_viewed_ids=user_viewed_ids,
+                               user_lists_with_movie=user_lists_with_movie,
+                               diary_entries=diary_entries,
+                               today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:
         print(f"Error fetching movie details: {e}")
         return render_template('error.html', message="Could not fetch movie details. Please try again later.")
+
 
 @details.route('/tv/<int:show_id>')
 def tv_detail(show_id):
@@ -101,17 +138,21 @@ def tv_detail(show_id):
             if last_wp and last_wp.progress_pct < 90:
                 watch_resume = last_wp
 
+        taste_match = _taste_match(current_user.id, show.get('genres')) if current_user.is_authenticated else None
+
         return render_template('tv_detail.html', show=show,
-                              user_watchlist_ids=user_watchlist_ids,
-                              user_wishlist_ids=user_wishlist_ids,
-                              user_viewed_ids=user_viewed_ids,
-                              user_lists_with_show=user_lists_with_show,
-                              diary_entries=diary_entries,
-                              watch_resume=watch_resume,
-                              today=datetime.now().strftime('%Y-%m-%d'))
+                               taste_match=taste_match,
+                               user_watchlist_ids=user_watchlist_ids,
+                               user_wishlist_ids=user_wishlist_ids,
+                               user_viewed_ids=user_viewed_ids,
+                               user_lists_with_show=user_lists_with_show,
+                               diary_entries=diary_entries,
+                               watch_resume=watch_resume,
+                               today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:
         print(f"Error fetching TV show details: {e}")
         return render_template('error.html', message="Could not fetch TV show details. Please try again later.")
+
 
 @details.route('/actor/<int:actor_id>')
 def actor_detail(actor_id):

@@ -6,8 +6,10 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon2.ico') }}">
     <title>{{ genre_name }} TV Shows - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -61,17 +63,9 @@
             width: 100%;
         }
 
-        #chatbot-button {
-            transition: all 0.3s ease;
-        }
-
-        #chatbot-button:hover {
-            transform: scale(1.1);
-        }
-
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
             min-height: 100vh;
         }
@@ -110,7 +104,7 @@
         }
     </style>
 </head>
-<body class="min-h-screen bg-gray-900 text-white font-['Poppins']">
+<body class="min-h-screen  text-white font-['Inter']">
     <!-- Navigation -->
     {% with accent="blue", back_href="/tv_shows", show_social_feed=false, show_auth=false %}{% include "partials/nav_detail.html" %}{% endwith %}
 
@@ -181,17 +175,12 @@
     </section>
 
     <!-- Chat Button -->
-    <button id="chatbot-button" 
-            class="fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600"
-            onclick="openChat()">
-        💬
-    </button>
 
     <script>
         function setupMobileMenu() {
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0 bg-gray-900 glass-effect hidden';
+            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
             mobileMenu.innerHTML = `
                 <div class="container mx-auto px-4 py-4">
                     <div class="flex flex-col space-y-4">
@@ -207,14 +196,8 @@
                 mobileMenu.classList.toggle('hidden');
             });
         }
-
-        function openChat() {
-            window.location.href = "/chat";
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            setupMobileMenu();
-        });
+});
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

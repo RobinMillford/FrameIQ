@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ user_list.title }} - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
         }
         
@@ -40,18 +42,18 @@
     </div>
 
     <!-- Navigation -->
-    <nav class="bg-gray-900 shadow-lg">
+    <nav class=" shadow-lg">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center space-x-6">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
-                    <a href="/discover" class="text-gray-300 hover:text-indigo-400 transition-colors">
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-[var(--accent)]">FrameIQ</a>
+                    <a href="/discover" class="text-gray-300 hover:text-[var(--accent)] transition-colors">
                         <i class="fas fa-compass"></i> Discover
                     </a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
-                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-indigo-400">
+                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">
                             <i class="fas fa-user"></i> {{ current_user.username }}
                         </a>
                     {% endif %}
@@ -72,8 +74,8 @@
         
         <!-- List Header -->
         <div class="mb-8">
-            <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
-                <a href="/lists" class="hover:text-indigo-400">My Lists</a>
+            <div class="flex items-center gap-2 text-sm text-[var(--text-mid)] mb-4">
+                <a href="/lists" class="hover:text-[var(--accent)]">My Lists</a>
                 <i class="fas fa-chevron-right text-xs"></i>
                 <span>{{ user_list.title }}</span>
             </div>
@@ -81,7 +83,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <div class="flex items-center gap-3 mb-2">
-                        <h1 class="text-4xl font-bold text-indigo-400">{{ user_list.title }}</h1>
+                        <h1 class="text-4xl font-bold text-[var(--accent)]">{{ user_list.title }}</h1>
                         {% if not user_list.is_public %}
                         <span class="text-sm bg-gray-700 text-gray-300 px-3 py-1 rounded">
                             <i class="fas fa-lock"></i> Private
@@ -90,7 +92,7 @@
                     </div>
                     
                     {% if user_list.description %}
-                    <p class="text-gray-400 mb-4">{{ user_list.description }}</p>
+                    <p class="text-[var(--text-mid)] mb-4">{{ user_list.description }}</p>
                     {% endif %}
                     
                     <!-- Week 2b: Categories -->
@@ -98,7 +100,7 @@
                         <!-- Categories will be loaded by JavaScript -->
                     </div>
                     
-                    <div class="flex items-center gap-4 text-sm text-gray-500">
+                    <div class="flex items-center gap-4 text-sm text-[var(--text-mid)]">
                         <span><i class="fas fa-user"></i> {{ user_list.user.username }}</span>
                         <span><i class="fas fa-film"></i> {{ items|length }} items</span>
                         <span><i class="fas fa-clock"></i> Created {{ user_list.created_at.strftime('%b %d, %Y') }}</span>
@@ -107,13 +109,13 @@
                 
                 <div class="flex gap-2 flex-wrap">
                     <!-- Week 2: Share Button (for all users) -->
-                    <button id="share-list-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    <button id="share-list-btn" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-share-alt"></i> Share
                     </button>
                     
                     {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
                     <!-- Week 2: Cover Upload Button -->
-                    <button id="upload-cover-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    <button id="upload-cover-btn" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-image"></i> Cover
                     </button>
                     <input type="file" id="cover-image-input" accept="image/*" style="display: none;">
@@ -141,13 +143,13 @@
         
         <!-- Week 2b: Collaborators Section (owner only) -->
         {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-        <div class="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+        <div class="mb-8  rounded-lg p-6 border border-gray-700">
             <h2 class="text-xl font-bold text-white mb-4">
                 <i class="fas fa-users"></i> Collaborators
             </h2>
             <div id="collaborators-list" class="space-y-2">
                 <!-- Loaded by JavaScript -->
-                <p class="text-gray-500 text-sm">Loading...</p>
+                <p class="text-[var(--text-mid)] text-sm">Loading...</p>
             </div>
         </div>
         
@@ -163,7 +165,7 @@
         <div id="list-items-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {% for item in items %}
             {% set media = item.media %}
-            <div class="list-item media-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 relative group"
+            <div class="list-item media-card  rounded-lg overflow-hidden border border-gray-700 hover:border-[var(--accent)] relative group"
                  data-item-id="{{ item.id }}"
                  {% if current_user.is_authenticated and current_user.id == user_list.user_id %}draggable="true"{% endif %}>
                 <a href="/{{ item.media_type }}/{{ media.tmdb_id }}" class="block">
@@ -182,7 +184,7 @@
                              onerror="this.src='/static/images/no-poster.svg'">
                         {% else %}
                         <div class="w-full aspect-[2/3] bg-gray-700 flex items-center justify-center">
-                            <i class="fas fa-film text-4xl text-gray-600"></i>
+                            <i class="fas fa-film text-4xl text-[var(--text-mid)]"></i>
                         </div>
                         {% endif %}
                         
@@ -196,7 +198,7 @@
                     <div class="p-3">
                         <h3 class="font-semibold text-white text-sm line-clamp-2 mb-1">{{ media.title }}</h3>
                         {% if media.release_date %}
-                        <p class="text-xs text-gray-400">{{ media.release_date.year }}</p>
+                        <p class="text-xs text-[var(--text-mid)]">{{ media.release_date.year }}</p>
                         {% endif %}
                     </div>
                 </a>
@@ -213,11 +215,11 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-            <i class="fas fa-film text-6xl text-gray-600 mb-4"></i>
-            <h3 class="text-2xl font-bold text-gray-400 mb-2">No Items Yet</h3>
-            <p class="text-gray-500 mb-6">Start adding movies and TV shows to this list</p>
-            <a href="{{ url_for('main.index') }}" class="inline-block bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+        <div class="text-center py-16  rounded-lg border border-gray-700">
+            <i class="fas fa-film text-6xl text-[var(--text-mid)] mb-4"></i>
+            <h3 class="text-2xl font-bold text-[var(--text-mid)] mb-2">No Items Yet</h3>
+            <p class="text-[var(--text-mid)] mb-6">Start adding movies and TV shows to this list</p>
+            <a href="{{ url_for('main.index') }}" class="inline-block bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 <i class="fas fa-search"></i> Browse Content
             </a>
         </div>
@@ -226,13 +228,13 @@
     
     <!-- Week 2: Share Modal -->
     <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+        <div class=" rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-indigo-400">
+                <h2 class="text-2xl font-bold text-[var(--accent)]">
                     <i class="fas fa-share-alt"></i> Share List
                 </h2>
                 <button onclick="document.getElementById('share-modal').classList.add('hidden')" 
-                        class="text-gray-400 hover:text-white">
+                        class="text-[var(--text-mid)] hover:text-white">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
@@ -243,14 +245,14 @@
                     <input type="text" 
                            id="share-url" 
                            readonly
-                           class="flex-1 bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                           class="flex-1 bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                            value="">
                     <button id="copy-link-btn" 
-                            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+                            class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
                         <i class="fas fa-copy"></i> Copy
                     </button>
                 </div>
-                <p class="text-xs text-gray-400 mt-2">
+                <p class="text-xs text-[var(--text-mid)] mt-2">
                     <i class="fas fa-info-circle"></i> Anyone with this link can view this list
                 </p>
             </div>
@@ -259,13 +261,13 @@
     
     <!-- Week 2b: Add Collaborator Modal -->
     <div id="add-collaborator-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+        <div class=" rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-green-400">
                     <i class="fas fa-user-plus"></i> Add Collaborator
                 </h2>
                 <button onclick="listAdvancedManager.closeAddCollaboratorModal()" 
-                        class="text-gray-400 hover:text-white">
+                        class="text-[var(--text-mid)] hover:text-white">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
@@ -298,13 +300,13 @@
     
     <!-- Week 2b: Category Selection Modal -->
     <div id="category-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 overflow-y-auto">
-        <div class="bg-gray-800 rounded-lg p-8 max-w-4xl w-full mx-4 my-8 border border-gray-700">
+        <div class=" rounded-lg p-8 max-w-4xl w-full mx-4 my-8 border border-gray-700">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-yellow-400">
                     <i class="fas fa-tags"></i> Add Categories
                 </h2>
                 <button onclick="listAdvancedManager.closeCategoryModal()" 
-                        class="text-gray-400 hover:text-white">
+                        class="text-[var(--text-mid)] hover:text-white">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
@@ -344,5 +346,6 @@
             }
         }
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

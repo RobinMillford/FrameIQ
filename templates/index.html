@@ -1,871 +1,368 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="icon"
-      type="image/x-icon"
-      href="{{ url_for('static', filename='favicon.ico') }}"
-    />
-    <title>FrameIQ - Intelligent Entertainment Discovery</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/frameiq-brand.css') }}"
-    />
-    <link
-      href="{{ url_for('static', filename='css/style.css') }}"
-      rel="stylesheet"
-    />
-    <style>
-      @keyframes gradient {
-        0% {
-          background-position: 0% 50%;
-        }
-        50% {
-          background-position: 100% 50%;
-        }
-        100% {
-          background-position: 0% 50%;
-        }
-      }
+{% extends "base.html" %}
 
-      @keyframes float {
-        0%, 100% {
-          transform: translateY(0px);
-        }
-        50% {
-          transform: translateY(-20px);
-        }
-      }
+{% block title %}FrameIQ — Your Film Brain{% endblock %}
 
-      @keyframes glow {
-        0%, 100% {
-          box-shadow: 0 0 20px rgba(0, 196, 204, 0.3), 0 0 40px rgba(255, 111, 97, 0.2);
-        }
-        50% {
-          box-shadow: 0 0 40px rgba(0, 196, 204, 0.5), 0 0 60px rgba(255, 111, 97, 0.4);
-        }
-      }
-
-      .animate-gradient {
-        background: linear-gradient(-45deg, #0a2f35, #1a4a4f, #2b6565, #1a4a4f);
-        background-size: 400% 400%;
-        animation: gradient 15s ease infinite;
-      }
-
-      .glass-effect {
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(255, 179, 71, 0.3);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-      }
-
-      .gradient-text {
-        background: linear-gradient(135deg, #ff6f61, #ffb347, #00c4cc);
-        background-size: 200% 200%;
-        animation: gradient 3s ease infinite;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-      }
-
-      .nav-link a {
+{% block extra_css %}
+<style>
+    /* ── Hero carousel ── */
+    .pick-hero {
         position: relative;
-        color: #f5f6f5;
-        font-weight: 500;
-        font-size: 1rem;
-        padding: 0.5rem 0;
-      }
-
-      .nav-link a::after {
-        content: "";
-        position: absolute;
-        bottom: -2px;
-        left: 0;
-        width: 0;
-        height: 3px;
-        background: linear-gradient(90deg, #00c4cc, #ff6f61);
-        transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        border-radius: 2px;
-      }
-
-      .nav-link a:hover::after {
-        width: 100%;
-      }
-
-      .nav-link a:hover {
-        color: #00c4cc;
-      }
-
-      body {
-        font-family: "Poppins", sans-serif;
-        background: linear-gradient(135deg, #0a2f35 0%, #1a4a4f 50%, #0a2f35 100%);
-        background-attachment: fixed;
-        color: #f5f6f5;
-        min-height: 100vh;
-        margin: 0;
-        padding: 0;
-        overflow-x: hidden;
-      }
-
-      .hero-section {
-        position: relative;
-        min-height: 650px;
-        padding-top: 8rem;
-        padding-bottom: 28rem;
+        min-height: 680px;
         display: flex;
-        align-items: center;
-        justify-content: center;
+        align-items: flex-end;
         overflow: hidden;
-      }
-      @media (max-width: 768px) {
-        .hero-section { min-height: 400px; padding-top: 5rem; padding-bottom: 10rem; }
-      }
+    }
 
-      .hero-backdrop {
+    /* Stacked backdrops — crossfade */
+    .hero-backdrop-layer {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        inset: 0;
+        z-index: 0;
         background-size: cover;
-        background-position: center;
-        filter: blur(5px) brightness(0.7);
-        transform: scale(1.1);
-        z-index: -2;
-        transition: transform 0.5s ease;
-      }
-
-      .hero-section:hover .hero-backdrop {
-        transform: scale(1.15);
-      }
-
-      .hero-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: radial-gradient(ellipse at center, rgba(10, 47, 53, 0.7) 0%, rgba(10, 47, 53, 0.9) 100%);
-        z-index: -1;
-      }
-
-      .hero-overlay::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: repeating-linear-gradient(
-          0deg,
-          transparent,
-          transparent 2px,
-          rgba(0, 196, 204, 0.03) 2px,
-          rgba(0, 196, 204, 0.03) 4px
-        );
+        background-position: center 20%;
+        opacity: 0;
+        transition: opacity 1.2s ease-in-out;
+        will-change: opacity;
         pointer-events: none;
-      }
-
-      .search-card {
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        animation: glow 3s ease-in-out infinite;
-        border: 2px solid transparent;
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(20px);
-      }
-
-      .search-card:hover {
-        transform: translateY(-8px) scale(1.02);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-        border-color: rgba(0, 196, 204, 0.5);
-      }
-
-      .search-card input {
-        font-size: 1.125rem;
-        font-weight: 400;
-      }
-
-      .hero-section h1 {
-        font-size: 3.5rem;
-        font-weight: 800;
-        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        animation: float 6s ease-in-out infinite;
-        line-height: 1.2;
-      }
-
-      .hero-section p {
-        font-size: 1.25rem;
-        font-weight: 300;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-        letter-spacing: 0.5px;
-      }
-
-      .movie-card,
-      .show-card,
-      .person-card {
-        height: 100%;
-        border-radius: 12px;
-        overflow: hidden;
-      }
-
-      .movie-card img,
-      .show-card img,
-      .person-card img {
-        height: 380px;
-        min-height: 380px;
-        transition: transform 0.5s ease;
-      }
-
-      .movie-card:hover img,
-      .show-card:hover img,
-      .person-card:hover img {
-        transform: scale(1.1);
-      }
-
-      .movie-card .p-4,
-      .show-card .p-4,
-      .person-card .p-4 {
-        padding: 1.25rem;
-        background: linear-gradient(to top, rgba(10, 47, 53, 0.95), rgba(10, 47, 53, 0.7));
-        min-height: 90px;
-      }
-
-      .movie-card h3,
-      .show-card h3,
-      .person-card h3 {
-        font-size: 1rem;
-        font-weight: 600;
-        line-height: 1.4;
-        margin-bottom: 0.5rem;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .movie-card h3:hover,
-      .show-card h3:hover,
-      .person-card h3:hover {
-        color: #00c4cc;
-      }
-
-      .movie-image,
-      .show-image,
-      .person-image {
-        aspect-ratio: 2/3;
-        object-fit: cover;
-        width: 100%;
-      }
-
-      section h2 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        position: relative;
-        display: inline-block;
-        padding-bottom: 0.75rem;
-      }
-
-      section h2::after {
-        content: '';
+    }
+    .hero-backdrop-layer.active { opacity: 1; }
+    .hero-backdrop-layer.active .kb-zoom {
         position: absolute;
-        bottom: 0;
-        left: 0;
-        width: 60%;
-        height: 4px;
-        background: linear-gradient(90deg, #ff6f61, #ffb347, #00c4cc);
+        inset: 0;
+        background: inherit;
+        animation: kenburns 22s ease-in-out infinite alternate;
+    }
+    @keyframes kenburns {
+        from { transform: scale(1); }
+        to   { transform: scale(1.07); }
+    }
+
+    /* Gradient — only bottom fade for text readability */
+    .hero-shade {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(to top,
+                    var(--bg-base) 0%,
+                    rgba(0, 0, 0, 0.4) 30%,
+                    rgba(0, 0, 0, 0.1) 55%,
+                    transparent 75%);
+        pointer-events: none;
+    }
+
+    /* Stacked content slides — ABOVE shade, clickable */
+    .hero-slide {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.8s ease-in-out;
+        display: flex;
+        align-items: flex-end;
+    }
+    .hero-slide.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .hero-slide.active .hero-copy > * {
+        animation: slide-up 0.6s var(--ease-out) both;
+    }
+    .hero-slide.active .hero-copy > *:nth-child(2) { animation-delay: 0.08s; }
+    .hero-slide.active .hero-copy > *:nth-child(3) { animation-delay: 0.16s; }
+    .hero-slide.active .hero-copy > *:nth-child(4) { animation-delay: 0.24s; }
+    .hero-slide.active .hero-copy > *:nth-child(5) { animation-delay: 0.32s; }
+    .hero-slide.active .hero-copy > *:nth-child(6) { animation-delay: 0.40s; }
+
+    @keyframes slide-up {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Text readability on any backdrop */
+    .hero-slide .h-display,
+    .hero-slide .font-slate,
+    .hero-slide .slate-chip,
+    .hero-slide .text-\[var\(--text-mid\)\] {
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.4);
+    }
+    .hero-slide .text-\[var\(--text-mid\)\] {
+        color: #D4D4D4 !important;
+    }
+
+    /* Hero poster */
+    .hero-poster {
+        width: 240px;
+        border-radius: var(--r-md);
+        overflow: hidden;
+        ring: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+        flex-shrink: 0;
+    }
+
+    /* CineBot reason */
+    .pick-reason {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 12px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: var(--r-sm);
+        padding: 14px 18px;
+        max-width: 560px;
+    }
+
+    /* Navigation dots */
+    .hero-dots {
+        position: absolute;
+        bottom: 24px;
+        right: 32px;
+        display: flex;
+        gap: 8px;
+        z-index: 5;
+    }
+    .hero-dot {
+        width: 8px;
+        height: 8px;
         border-radius: 2px;
-      }
+        background: rgba(255, 255, 255, 0.25);
+        cursor: pointer;
+        transition: all var(--dur-fast) var(--ease-out);
+        border: none;
+        padding: 0;
+    }
+    .hero-dot.active {
+        background: var(--accent);
+        width: 24px;
+    }
 
-      section {
-        padding-top: 5rem;
-        padding-bottom: 5rem;
-      }
+    .people-avatar {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        object-fit: cover;
+        transition: transform var(--dur-fast) var(--ease-out);
+    }
+    .people-avatar:hover { transform: scale(1.08); }
 
-      #autocomplete-items {
-        z-index: 9999;
-        position: fixed;
-      }
+    @media (max-width: 768px) {
+        .pick-hero { min-height: 480px; }
+        .hero-poster { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .hero-backdrop-layer.active .kb-zoom { animation: none; }
+        .hero-slide.active .hero-copy > * { animation: none; }
+    }
+</style>
+{% endblock %}
 
-      #autocomplete-items .hover\:bg-indigo-900\/50:hover {
-        background-color: rgba(0, 196, 204, 0.2);
-      }
+{% block content %}
 
-      .search-button {
-        background: linear-gradient(135deg, #ff6f61, #ffb347);
-        transition: all 0.3s ease;
-        font-weight: 600;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-      }
+<!-- ═══ Hero carousel ═══ -->
+{% if picks %}
+<section class="pick-hero -mt-[72px]" id="hero-carousel">
+    <!-- Backdrop layers -->
+    {% for p in picks %}
+    <div class="hero-backdrop-layer {{ 'active' if loop.first }}" data-slide="{{ loop.index0 }}" style="background-image: url('{{ p.backdrop }}')">
+        <div class="kb-zoom"></div>
+    </div>
+    {% endfor %}
 
-      .search-button:hover {
-        background: linear-gradient(135deg, #00c4cc, #00a8b0);
-        transform: scale(1.05);
-        box-shadow: 0 5px 15px rgba(0, 196, 204, 0.4);
-      }
+    <!-- Shade -->
+    <div class="hero-shade"></div>
 
-      /* Status Badges */
-      .px-4.pb-4 span {
-        font-weight: 600;
-        font-size: 0.8rem;
-        padding: 0.4rem 0.7rem;
-        border-radius: 6px;
-        letter-spacing: 0.3px;
-      }
+    <!-- Content slides -->
+    {% for p in picks %}
+    <div class="hero-slide {{ 'active' if loop.first }}" data-slide="{{ loop.index0 }}">
+        <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 pb-20 pt-44 w-full">
+            <div class="flex flex-col lg:flex-row gap-10 items-end">
 
-      /* Action Buttons */
-      .px-4.pb-4 a {
-        font-weight: 600;
-        font-size: 0.8rem;
-        padding: 0.4rem 0.7rem;
-        border-radius: 6px;
-        transition: all 0.3s ease;
-      }
+                <a href="/movie/{{ p.id }}" class="hero-poster poster-glow hidden md:block">
+                    <img src="{{ p.poster }}" alt="{{ p.title }}" class="w-full">
+                </a>
 
-      @media (max-width: 1024px) {
-        .hero-section h1 {
-          font-size: 2.75rem;
-        }
-        section h2 {
-          font-size: 2rem;
-        }
-      }
+                <div class="flex-1 min-w-0 hero-copy">
+                    <p class="font-slate text-[11px] tracking-[0.3em] text-[var(--accent)] uppercase mb-3">
+                        Tonight's Pick
+                    </p>
+                    <h1 class="h-display text-5xl md:text-7xl leading-[0.98] mb-4">
+                        <a href="/movie/{{ p.id }}" class="hover:text-[var(--accent)] transition-colors">{{ p.title }}</a>
+                    </h1>
+                    <div class="flex flex-wrap items-center gap-2 mb-4">
+                        <span class="slate-chip text-[var(--accent)]">★ {{ p.rating }}</span>
+                        {% if p.year %}<span class="slate-chip">{{ p.year }}</span>{% endif %}
+                        {% for g in p.genres %}<span class="slate-chip">{{ g }}</span>{% endfor %}
+                    </div>
+                    <p class="text-[var(--text-mid)] text-base leading-relaxed max-w-2xl mb-5">{{ p.overview }}</p>
 
-      @media (max-width: 768px) {
-        .hero-section {
-          min-height: 500px;
-          padding-top: 6rem;
-          padding-bottom: 3rem;
-        }
-        
-        .hero-section h1 {
-          font-size: 2.25rem;
-        }
-        
-        .hero-section p {
-          font-size: 1rem;
-        }
-        
-        section h2 {
-          font-size: 1.75rem;
-        }
-        
-        section {
-          padding-top: 3rem;
-          padding-bottom: 3rem;
-        }
+                    <div class="pick-reason mb-6">
+                        <div>
+                            <p class="font-slate text-[10px] uppercase tracking-[0.14em] text-[var(--accent)] mb-1">Cinebot</p>
+                            <p class="text-sm text-[var(--text-hi)] leading-snug">{{ p.reason }}</p>
+                        </div>
+                    </div>
 
-        .movie-card img,
-        .show-card img,
-        .person-card img {
-          height: 320px;
-          min-height: 320px;
-        }
-      }
+                    <div class="flex flex-wrap gap-3">
+                        <a href="/watch/movie/{{ p.id }}" class="inline-flex items-center gap-2 bg-white hover:bg-white/85 text-black font-bold text-sm px-7 py-3 rounded-[var(--r-md)] transition-all hover:-translate-y-px">
+                            <i data-lucide="play" class="w-4 h-4"></i> Watch now
+                        </a>
+                        <a href="/movie/{{ p.id }}" class="btn-ghost">
+                            <i data-lucide="info" class="w-4 h-4"></i> Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
 
-      @media (max-width: 640px) {
-        .movie-card img,
-        .show-card img,
-        .person-card img {
-          height: 280px;
-          min-height: 280px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-      <div class="container mx-auto px-4 py-4">
-        <div class="flex justify-between items-center">
-          <div class="frameiq-logo">
-            <div class="frameiq-logo-icon">🧠</div>
+    <!-- Dots -->
+    <div class="hero-dots">
+        {% for p in picks %}
+        <button class="hero-dot {{ 'active' if loop.first }}" data-slide="{{ loop.index0 }}"
+                aria-label="Slide {{ loop.index }}"></button>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- ══ Rails ══ -->
+<div class="max-w-screen-2xl mx-auto px-4 sm:px-6 space-y-12 pb-4">
+
+    {% for rail in rails %}
+    <section class="rise-in" aria-label="{{ rail.title }}">
+        <div class="flex items-end justify-between mb-4 gap-4">
             <div>
-              <div style="font-size: 1.5rem">FrameIQ</div>
-              <div class="frameiq-tagline">
-                Intelligent Entertainment Discovery
-              </div>
+                <h2 class="h-display text-xl">{{ rail.title }}</h2>
+                <p class="rail-header-sub">
+                    {% if rail.key == 'continue' %}▸ resume
+                    {% elif rail.key == 'because' %}{{ rail.subtitle }}
+                    {% else %}{{ rail.subtitle }}{% endif %}
+                </p>
             </div>
-          </div>
-          <div class="hidden md:flex space-x-8">
-            <a href="/movies" class="nav-link transition-colors">Movies</a>
-            <a href="/tv_shows" class="nav-link transition-colors">TV Shows</a>
-            <a href="/news" class="nav-link transition-colors">News</a>
-            <a href="/feed" class="nav-link transition-colors">Social Feed</a>
-            <a href="/discover" class="nav-link transition-colors">Discover</a>
-            <a href="/trending" class="nav-link transition-colors">Trending</a>
-            <a href="/stats" class="nav-link transition-colors">Stats</a>
-            <a
-              href="/chat"
-              class="nav-link transition-colors flex items-center"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 mr-1"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-              AI Chat
-            </a>
-          </div>
-          <div class="flex items-center space-x-4">
-            {% if current_user.is_authenticated %}
-            <div class="relative" id="profile-dropdown">
-              <button
-                id="profile-button"
-                class="flex items-center space-x-1 text-white hover:text-gray-300"
-              >
-                <i class="fas fa-user"></i>
-                <span>{{ current_user.username }}</span>
-                <i class="fas fa-caret-down"></i>
-              </button>
-              <div
-                id="profile-menu"
-                class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10"
-              >
-                <a
-                  href="{{ url_for('auth.profile') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >Profile</a
-                >
-                <a
-                  href="{{ url_for('main.watchlist') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >Watchlist</a
-                >
-                <a
-                  href="{{ url_for('main.wishlist') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >Wishlist</a
-                >
-                <a
-                  href="{{ url_for('main.viewed') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >Viewed</a
-                >
-                <a
-                  href="{{ url_for('main.stats_dashboard') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >My Stats</a
-                >
-                <a
-                  href="{{ url_for('auth.logout') }}"
-                  class="block px-4 py-2 text-sm hover:bg-gray-700"
-                  >Logout</a
-                >
-              </div>
+            <div class="hidden sm:flex gap-2 shrink-0">
+                <button class="rail-arrow" data-rail-scroll="-1" data-rail-target="rail-{{ rail.key }}" aria-label="Scroll {{ rail.title }} left">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                </button>
+                <button class="rail-arrow" data-rail-scroll="1" data-rail-target="rail-{{ rail.key }}" aria-label="Scroll {{ rail.title }} right">
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
             </div>
-            <!-- Mobile auth links -->
-            <div class="md:hidden">
-              <a
-                href="{{ url_for('auth.profile') }}"
-                class="text-white hover:text-gray-300 mr-2"
-                >Profile</a
-              >
-              <a
-                href="{{ url_for('auth.logout') }}"
-                class="text-white hover:text-gray-300"
-                >Logout</a
-              >
-            </div>
-            {% else %}
-            <div class="hidden md:block">
-              <a
-                href="{{ url_for('auth.login') }}"
-                class="text-white hover:text-gray-300 mr-2"
-                >Login</a
-              >
-              <a
-                href="{{ url_for('auth.register') }}"
-                class="text-white hover:text-gray-300"
-                >Register</a
-              >
-            </div>
-            <div class="md:hidden">
-              <a
-                href="{{ url_for('auth.login') }}"
-                class="text-white hover:text-gray-300"
-                >Login</a
-              >
-            </div>
-            {% endif %}
-          </div>
-          <button class="md:hidden" id="mobile-menu-button">
-            <svg
-              class="w-6 h-6"
-              fill="none"
-              stroke="#F5F6F5"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 6h16M4 12h16M4 18h16"
-              ></path>
-            </svg>
-          </button>
         </div>
-      </div>
-    </nav>
 
-    <!-- Hero Section with Search -->
-    <section class="hero-section">
-      <div
-        class="hero-backdrop"
-        id="dynamic-hero-backdrop"
-        style="background-image: url('{% if trending_backdrops %}{{ trending_backdrops[0].backdrop_path }}{% else %}https://image.tmdb.org/t/p/original/2Nti3gYAX513wvhp8IiLL6ZDyOm.jpg{% endif %}');"
-      ></div>
-      <div class="hero-overlay"></div>
-      <div
-        class="container mx-auto px-4 flex items-center justify-center h-full"
-      >
-        <div class="text-center">
-          <h1 class="text-4xl md:text-5xl font-bold mb-6 frameiq-gradient-text">
-            Discover Your Next Favorite
-          </h1>
-          <p class="text-lg text-gray-300 mb-8">
-            Powered by AI • Personalized for You
-          </p>
-          <form action="/search" method="POST" class="max-w-2xl mx-auto relative">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div
-              class="relative search-card glass-effect rounded-lg p-4 flex items-center gap-2"
-            >
-              <input
-                type="text"
-                name="query"
-                id="search-input"
-                placeholder="Search movies, TV shows, or people..."
-                class="w-full bg-transparent text-[#F5F6F5] placeholder-[#A9B8B5] focus:outline-none"
-                autocomplete="off"
-              />
-              <button
-                type="submit"
-                class="search-button text-white px-4 py-2 rounded-lg"
-              >
-                <svg
-                  class="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  ></path>
-                </svg>
-              </button>
-            </div>
-            <div
-              id="autocomplete-items"
-              class="glass-effect rounded-lg hidden max-h-96 overflow-y-auto shadow-2xl"
-              style="z-index: 9999;"
-            ></div>
-          </form>
+        {% if rail.kind == 'continue' %}
+        <div class="rail" id="rail-{{ rail.key }}">
+            {% for p in rail['entries'] %}
+            <a href="{{ p.watch_url }}" class="continue-card poster-glow group">
+                <div class="continue-thumb">
+                    {% if p.poster %}
+                    <img src="https://image.tmdb.org/t/p/w500{{ p.poster }}" alt="{{ p.title }}" loading="lazy">
+                    {% else %}
+                    <div class="w-full h-full flex items-center justify-center">
+                        <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
+                    </div>
+                    {% endif %}
+                    <div class="continue-progress"><div style="width: {{ p.progress }}%"></div></div>
+                </div>
+                <p class="mt-2 text-[13px] font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent)] transition-colors">{{ p.title }}</p>
+                <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.progress }}% watched</p>
+            </a>
+            {% endfor %}
         </div>
-      </div>
+        {% else %}
+        <div class="rail" id="rail-{{ rail.key }}">
+            {% set rail_type = 'tv' if rail.key in ('on_tv', 'popular_tv') else 'movie' %}
+            {% for item in rail['entries'] %}
+                {% if rail.key == 'because' %}
+                    {% set media_type = 'movie' %}
+                {% elif rail_type == 'tv' %}
+                    {% set media_type = 'tv' %}
+                {% else %}
+                    {% set media_type = 'movie' %}
+                {% endif %}
+                <div class="shrink-0 snap-start w-[148px] sm:w-[160px]">
+                    {% with item = item, media_type = media_type %}
+                    {% include "partials/rail_card.html" %}
+                    {% endwith %}
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </section>
+    {% endfor %}
 
-    <!-- TV Tracking Section -->
-    {% if current_user.is_authenticated %}
-    <section class="py-16 bg-gradient-to-br from-indigo-900/50 via-purple-900/50 to-pink-900/50">
-      <div class="container mx-auto px-4">
-        <div class="flex flex-col md:flex-row items-center gap-8">
-          <div class="flex-1">
-            <h2 class="text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
-              📺 Track Your TV Shows
-            </h2>
-            <p class="text-gray-300 text-lg mb-6">
-              Never miss an episode! Track your progress, get notifications for new episodes, and organize your watchlist just like Trakt.tv
-            </p>
-            <div class="flex flex-wrap gap-4 mb-6">
-              <div class="flex items-center gap-2 text-gray-300">
-                <svg class="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                </svg>
-                Episode-by-Episode Tracking
-              </div>
-              <div class="flex items-center gap-2 text-gray-300">
-                <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
-                </svg>
-                Upcoming Episodes Calendar
-              </div>
-              <div class="flex items-center gap-2 text-gray-300">
-                <svg class="w-5 h-5 text-purple-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
-                </svg>
-                Progress Statistics
-              </div>
-            </div>
-            <a href="/tv/dashboard" class="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-lg font-bold rounded-xl transition-all transform hover:scale-105 shadow-2xl">
-              🚀 Go to TV Dashboard
-            </a>
-          </div>
-          <div class="flex-1 grid grid-cols-2 gap-4">
-            <div class="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all">
-              <div class="text-green-400 text-4xl mb-2">▶️</div>
-              <div class="text-white text-2xl font-bold">Track Shows</div>
-              <div class="text-gray-400 text-sm">Mark episodes as watched</div>
-            </div>
-            <div class="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all">
-              <div class="text-blue-400 text-4xl mb-2">📅</div>
-              <div class="text-white text-2xl font-bold">Calendar</div>
-              <div class="text-gray-400 text-sm">See upcoming episodes</div>
-            </div>
-            <div class="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all">
-              <div class="text-purple-400 text-4xl mb-2">📊</div>
-              <div class="text-white text-2xl font-bold">Statistics</div>
-              <div class="text-gray-400 text-sm">View your progress</div>
-            </div>
-            <div class="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all">
-              <div class="text-yellow-400 text-4xl mb-2">⭐</div>
-              <div class="text-white text-2xl font-bold">Rate & Review</div>
-              <div class="text-gray-400 text-sm">Share your thoughts</div>
-            </div>
-          </div>
+    <!-- ══ Trending people ══ -->
+    {% if trending_people %}
+    <section class="rise-in" aria-label="Trending people">
+        <div class="mb-4">
+            <h2 class="h-display text-xl">Faces of the Week</h2>
+            <p class="rail-header-sub">most searched performers right now</p>
         </div>
-      </div>
+        <div class="rail">
+            {% for person in trending_people %}
+            <a href="/actor/{{ person.id }}" class="shrink-0 snap-start text-center group w-[92px]">
+                {% if person.profile_path %}
+                <img src="{{ person.profile_path }}" alt="{{ person.name }}" loading="lazy"
+                     class="people-avatar mx-auto ring-2 ring-[var(--line)] group-hover:ring-[var(--accent)] transition-all">
+                {% else %}
+                <div class="people-avatar mx-auto bg-[var(--bg-surface)] ring-2 ring-[var(--line)] flex items-center justify-center">
+                    <i data-lucide="user" class="w-6 h-6 text-[var(--text-low)]"></i>
+                </div>
+                {% endif %}
+                <p class="mt-2 text-xs font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent)] transition-colors">{{ person.name }}</p>
+            </a>
+            {% endfor %}
+        </div>
     </section>
     {% endif %}
+</div>
 
-    <!-- Activity Feed Section -->
-    <section class="py-16 bg-[#0a2f35]">
-      <div class="container mx-auto px-4">
-        <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
-          <div>
-            <h2 class="text-3xl font-bold mb-2 gradient-text">Activity Feed</h2>
-            <p class="text-gray-400">See what the community is watching and reviewing</p>
-          </div>
-          
-          {% if current_user.is_authenticated %}
-          <div class="flex bg-gray-900/50 rounded-lg p-1 border border-indigo-500/30">
-            <button id="feed-btn-following" class="px-6 py-2 rounded-md transition-all duration-300 text-sm font-medium bg-indigo-600 text-white shadow-lg" data-target="following">
-              Following
-            </button>
-            <button id="feed-btn-global" class="px-6 py-2 rounded-md transition-all duration-300 text-sm font-medium text-gray-400 hover:text-white" data-target="global">
-              Global
-            </button>
-          </div>
-          {% endif %}
-        </div>
-        
-        <div id="activity-feed-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <!-- Feed items will be loaded here via JS -->
-          <div class="col-span-full flex justify-center py-12">
-            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        </div>
-        
-        <div class="text-center mt-12">
-          <button id="load-more-feed" class="bg-transparent border border-indigo-500 text-indigo-400 hover:bg-indigo-500 hover:text-white px-8 py-3 rounded-lg transition-all duration-300 hidden">
-            Load More Activity
-          </button>
-        </div>
-      </div>
-    </section>
+<!-- ══ Hero carousel JS ══ -->
+<script>
+(function() {
+    const hero = document.getElementById('hero-carousel');
+    if (!hero) return;
 
-    <!-- Suggested Follows (Taste Twins) Section -->
-    {% if current_user.is_authenticated %}
-    <section class="py-16 bg-[#0a2f35] border-t border-gray-800">
-      <div class="container mx-auto px-4">
-        <div class="mb-8">
-          <h2 class="text-3xl font-bold mb-2 gradient-text">Taste Twins</h2>
-          <p class="text-gray-400">People with similar movie tastes you might want to follow</p>
-        </div>
-        
-        <div id="suggested-follows-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <!-- Suggested users will be loaded here via JS -->
-          <div class="col-span-full flex justify-center py-8">
-            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-    {% endif %}
+    const backdrops = hero.querySelectorAll('.hero-backdrop-layer');
+    const slides = hero.querySelectorAll('.hero-slide');
+    const dots = hero.querySelectorAll('.hero-dot');
+    const total = Math.min(backdrops.length, slides.length);
+    let current = 0;
+    let timer = null;
+    const INTERVAL = 7000;
 
-    <!-- Now Playing Section -->
-    <section class="py-16 bg-[#1A4A4F]">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Now Playing</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for movie in now_playing %}
-          {% with item = movie, media_type = "movie" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+    function goTo(index) {
+        // Wrap
+        current = (index + total) % total;
 
-    <!-- Popular Section -->
-    <section class="py-16">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Popular</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for movie in popular %}
-          {% with item = movie, media_type = "movie" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+        backdrops.forEach((b, i) => b.classList.toggle('active', i === current));
+        slides.forEach((s, i) => s.classList.toggle('active', i === current));
+        dots.forEach((d, i) => d.classList.toggle('active', i === current));
 
-    <!-- Upcoming Section -->
-    <section class="py-16 bg-[#1A4A4F]">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Upcoming</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for movie in upcoming %}
-          {% with item = movie, media_type = "movie" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+        // Restart the timer
+        clearInterval(timer);
+        timer = setInterval(next, INTERVAL);
+    }
 
-    <!-- Airing Today Section -->
-    <section class="py-16">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Airing Today</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for show in airing_today %}
-          {% with item = show, media_type = "tv" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+    function next() { goTo(current + 1); }
 
-    <!-- On The Air Section -->
-    <section class="py-16 bg-[#1A4A4F]">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">On The Air</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for show in on_the_air %}
-          {% with item = show, media_type = "tv" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+    // Dot clicks
+    dots.forEach((dot, i) => {
+        dot.addEventListener('click', () => goTo(i));
+    });
 
-    <!-- Popular TV Shows Section -->
-    <section class="py-16">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Popular TV Shows</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for show in popular_shows %}
-          {% with item = show, media_type = "tv" %}
-          {% include "partials/media_card.html" %}
-          {% endwith %}
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+    // Pause on hover
+    hero.addEventListener('mouseenter', () => clearInterval(timer));
+    hero.addEventListener('mouseleave', () => {
+        clearInterval(timer);
+        timer = setInterval(next, INTERVAL);
+    });
 
-    <!-- Trending People Section -->
-    <section class="py-16 bg-[#1A4A4F]">
-      <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Trending People</h2>
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6"
-        >
-          {% for person in trending_people %}
-          <a
-            href="/actor/{{ person.id }}"
-            class="person-card glass-effect rounded-lg overflow-hidden"
-          >
-            <img
-              src="{{ person.profile_path }}"
-              alt="{{ person.name }}"
-              class="person-image w-full"
-              onerror="this.src='/static/images/no-poster.svg'"
-            />
-            <div class="p-4">
-              <h3
-                class="font-semibold text-sm text-[#F5F6F5] transition-colors"
-              >
-                {{ person.name }}
-              </h3>
-              <p class="text-[#A9B8B5] text-xs">
-                {{ person.known_for_department }}
-              </p>
-            </div>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-    </section>
+    // Start
+    timer = setInterval(next, INTERVAL);
+})();
+</script>
 
-    <script>
-      // Page data rendered server-side for static/home.js
-      window.__HOME_BOOTSTRAP__ = {
-          mobileAuthLinks: `{% if current_user.is_authenticated %}<a href="{{ url_for('auth.profile') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Profile</a>
-                          <a href="{{ url_for('main.watchlist') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Watchlist</a>
-                          <a href="{{ url_for('main.wishlist') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Wishlist</a>
-                          <a href="{{ url_for('main.viewed') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Viewed</a>
-                          <a href="{{ url_for('main.stats_dashboard') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">My Stats</a>
-                          <a href="{{ url_for('auth.logout') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Logout</a>{% else %}<a href="{{ url_for('auth.login') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Login</a>
-                          <a href="{{ url_for('auth.register') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Register</a>{% endif %}`,
-          backdropUrls: [{% if trending_backdrops %}{% for backdrop in trending_backdrops %}"{{ backdrop.backdrop_path }}"{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}]
-      };
-    </script>
-    <script src="{{ url_for('static', filename='js/home.js') }}"></script>
-    
-    <!-- Particle Background & Animations -->
-    <canvas id="frameiq-particles"></canvas>
-    <script src="{{ url_for('static', filename='js/frameiq-animations.js') }}"></script>
-    
-    <!-- Social Features -->
-    <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/activity-feed.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/suggested-follows.js') }}"></script>
-  </body>
-</html>
+{% endblock %}

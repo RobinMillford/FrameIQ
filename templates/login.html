@@ -3,257 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - FrameIQ</title>
+    <title>Log in — FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: {
+                base: '#0B0B10', surface: '#14141C', elevated: '#1C1C26',
+                line: '#26262F', accent: '#F6B73C', 'accent-hi': '#FFD066',
+                amber: '#FFB454',
+            }, fontFamily: {
+                display: ['"Bricolage Grotesque"', 'Inter', 'sans-serif'],
+                body: ['Inter', 'sans-serif'],
+                slate: ['"JetBrains Mono"', 'monospace'],
+            }}},
+        };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #0f172a, #1e293b);
-            color: white;
-            min-height: 100vh;
-            margin: 0;
-            padding: 0;
-        }
-        
-        .login-container {
-            background: rgba(30, 41, 59, 0.8);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 450px;
-            width: 90%;
-            margin: 2rem auto;
-        }
-        
-        .input-field {
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            border-radius: 12px;
-            padding: 14px 16px;
-            color: white;
-            transition: all 0.3s ease;
-            width: 100%;
-        }
-        
-        .input-field:focus {
-            outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
-        }
-        
-        .login-button {
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 14px;
-            font-weight: 600;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            width: 100%;
-            margin-top: 1rem;
-        }
-        
-        .login-button:hover {
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.4);
-        }
-        
-        .oauth-button {
-            background: white;
-            color: #374151;
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            border-radius: 12px;
-            padding: 14px;
-            font-weight: 500;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-top: 1rem;
-        }
-        
-        .oauth-button:hover {
-            background: #f9fafb;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1);
-        }
-        
-        .divider {
-            display: flex;
-            align-items: center;
-            text-align: center;
-            color: #94a3b8;
-            margin: 24px 0;
-        }
-        
-        .divider::before,
-        .divider::after {
-            content: '';
-            flex: 1;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-        }
-        
-        .divider:not(:empty)::before {
-            margin-right: 16px;
-        }
-        
-        .divider:not(:empty)::after {
-            margin-left: 16px;
-        }
-        
-        .link-style {
-            color: #818cf8;
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        
-        .link-style:hover {
-            color: #6366f1;
-            text-decoration: underline;
-        }
-        
-        .form-title {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(to right, #818cf8, #c084fc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
-        }
-        
-        .form-subtitle {
-            color: #94a3b8;
-            margin-bottom: 24px;
-            font-size: 16px;
-        }
-        
-        .checkbox-container {
-            display: flex;
-            align-items: center;
-            margin: 16px 0;
-        }
-        
-        .checkbox-container input {
-            width: 18px;
-            height: 18px;
-            border-radius: 4px;
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            background: rgba(15, 23, 42, 0.7);
-            accent-color: #6366f1;
-            margin-right: 10px;
-        }
-        
-        .error-message {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            border-radius: 8px;
-            padding: 12px 16px;
-            color: #fecaca;
-            margin-bottom: 20px;
-        }
+        body { background: var(--bg-base, #0B0B10); color: #F4F4F6;
+               font-family: Inter, sans-serif; }
+        .grain { position: fixed; inset: 0; pointer-events: none; opacity: 0.025; z-index: 1;
+                 background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+        input:focus { border-color: #F6B73C !important; outline: none; }
+        .flash-error { background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.4);
+                       color: #F87171; padding: 10px 14px; border-radius: 10px; font-size: .875rem; }
+        .flash-msg { background: rgba(124,108,255,.12); border: 1px solid rgba(124,108,255,.4);
+                     color: #F6B73C; padding: 10px 14px; border-radius: 10px; font-size: .875rem; }
     </style>
 </head>
-<body>
-    <div class="min-h-screen flex items-center justify-center p-4">
-        <div class="login-container p-8">
-            <div class="text-center mb-8">
-                <h2 class="form-title">Welcome Back</h2>
-                <p class="form-subtitle">Sign in to your FrameIQ account</p>
-            </div>
-            
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}
-                    {% for message in messages %}
-                        <div class="error-message">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-            
-            <form method="POST">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="mb-5">
-                    <label for="username" class="sr-only">Username</label>
-                    <input
-                        class="input-field"
-                        type="text"
-                        id="username"
-                        name="username"
-                        placeholder="Username"
-                        autocomplete="username"
-                        required>
-                </div>
+<body class="min-h-screen flex items-center justify-center p-4 relative">
+    <div class="grain" aria-hidden="true"></div>
 
-                <div class="mb-5">
-                    <label for="password" class="sr-only">Password</label>
-                    <input
-                        class="input-field"
-                        type="password"
-                        id="password"
-                        name="password"
-                        placeholder="Password"
-                        autocomplete="current-password"
-                        required>
+    <div class="w-full max-w-[420px] relative z-10">
+        <!-- Logo -->
+        <div class="flex items-center gap-3 mb-8 justify-center">
+            <svg class="w-7 h-7" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                <path d="M2 9V4a2 2 0 012-2h5" stroke="#fff" stroke-width="2.5"/>
+                <path d="M19 2h5a2 2 0 012 2v5" stroke="#fff" stroke-width="2.5"/>
+                <path d="M26 19v5a2 2 0 01-2 2h-5" stroke="#fff" stroke-width="2.5"/>
+                <path d="M9 26H4a2 2 0 01-2-2v-5" stroke="#fff" stroke-width="2.5"/>
+                <rect x="11" y="11" width="6" height="6" fill="#F6B73C"/>
+            </svg>
+            <span class="font-display font-black uppercase tracking-[0.18em] text-xl">FrameIQ</span>
+        </div>
+
+        <div class="bg-[var(--bg-surface,#14141C)] border border-[var(--line,#26262F)] rounded-2xl p-8">
+            <h1 class="font-display font-bold text-2xl mb-1">Welcome back</h1>
+            <p class="font-slate text-[11px] text-[#B3B3B3] mb-6">your taste, remembered</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="{{ 'flash-error' if 'error' in category else 'flash-msg' }} mb-4">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
+
+            <form method="POST" action="/login" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div>
+                    <label class="font-slate text-[10px] uppercase tracking-[0.12em] text-[#B3B3B3] block mb-1.5">Username</label>
+                    <input type="text" name="username" required autofocus
+                           class="w-full bg-[var(--bg-base,#0B0B10)] border border-[#26262F] rounded-[10px] px-4 py-3 text-sm text-white transition-colors"
+                           placeholder="your username">
                 </div>
-                
-                <div class="checkbox-container">
-                    <input 
-                        type="checkbox" 
-                        id="remember_me" 
-                        name="remember_me">
-                    <label for="remember_me">Remember me</label>
+                <div>
+                    <label class="font-slate text-[10px] uppercase tracking-[0.12em] text-[#B3B3B3] block mb-1.5">Password</label>
+                    <input type="password" name="password" required
+                           class="w-full bg-[var(--bg-base,#0B0B10)] border border-[#26262F] rounded-[10px] px-4 py-3 text-sm text-white transition-colors"
+                           placeholder="••••••••">
                 </div>
-                
-                <button 
-                    class="login-button" 
-                    type="submit">
-                    Sign In
+                <button type="submit"
+                        class="w-full bg-white text-black font-bold hover:bg-white/85 font-semibold py-3 rounded-[10px] transition-all hover:brightness-110 hover:-translate-y-px text-sm">
+                    Log in
                 </button>
             </form>
-            
-            <div class="divider">or continue with</div>
-            
-            <a href="{{ url_for('oauth.google_login') }}" class="oauth-button">
-                <svg class="w-5 h-5" viewBox="0 0 24 24">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                </svg>
-                Sign in with Google
-            </a>
-            
-            <div class="text-center mt-6">
-                <p class="text-gray-400">
-                    Don't have an account?
-                    <a href="{{ url_for('auth.register') }}" class="link-style">Sign up</a>
-                </p>
-                <p class="text-gray-500 text-sm mt-2">
-                    <a href="{{ url_for('auth.forgot_password') }}" class="text-indigo-400 hover:text-indigo-300">Forgot password?</a>
-                </p>
+
+            <div class="flex items-center gap-3 my-6">
+                <div class="h-px bg-[#26262F] flex-1"></div>
+                <span class="font-slate text-[10px] text-[#B3B3B3]">OR</span>
+                <div class="h-px bg-[#26262F] flex-1"></div>
             </div>
+
+            <a href="/login/google" class="w-full flex items-center justify-center gap-3 bg-white/[0.06] hover:bg-white/[0.1] border border-[#26262F] text-white font-medium py-3 rounded-[10px] text-sm transition-colors">
+                <svg class="w-4 h-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 010-4.2V7.06H2.18a11 11 0 000 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 002.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+                Continue with Google
+            </a>
         </div>
+
+        <p class="text-center mt-6 text-sm text-[#B3B3B3]">
+            New to FrameIQ?
+            <a href="/register" class="text-[#F6B73C] hover:text-white font-medium">Create an account</a>
+        </p>
     </div>
-<script>
-    document.querySelector('form').addEventListener('submit', function() {
-        const btn = this.querySelector('button[type="submit"]');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = btn.dataset.loadingText || 'Please wait...';
-        }
-    });
-</script>
 </body>
 </html>

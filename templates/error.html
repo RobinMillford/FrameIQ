@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Error - ActorHub</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <style>
         body {
-            background-color: #111827;
+            background-color:  var(--bg-base);
             color: white;
             font-family: sans-serif;
             display: flex;
@@ -27,7 +28,7 @@
     <div class="error-container">
         <h1 class="text-3xl font-bold mb-4">Error</h1>
         <p class="mb-4">{{ message }}</p>
-        <a href="/" class="text-indigo-400 hover:text-indigo-300">Go Back Home</a>
+        <a href="/" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">Go Back Home</a>
     </div>
 </body>
 </html>

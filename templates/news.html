@@ -1,16 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>FrameIQ - Entertainment News</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+{% extends "base.html" %}
+
+{% block title %}FrameIQ - Entertainment News{% endblock %}
+
+{% block extra_css %}
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -29,7 +21,7 @@
         }
 
         .animate-gradient {
-            background: linear-gradient(-45deg, #0a2f35, #1a4a4f, #2b6565, #1a4a4f);
+            background: var(--bg-base);
             background-size: 400% 400%;
             animation: gradient 15s ease infinite;
         }
@@ -42,7 +34,7 @@
         }
 
         .gradient-text {
-            background: linear-gradient(135deg, #ff6f61, #ffb347, #00c4cc);
+            background: linear-gradient(135deg, #ff6f61, #ffb347, #F6B73C);
             background-size: 200% 200%;
             animation: gradient 3s ease infinite;
             -webkit-background-clip: text;
@@ -67,7 +59,7 @@
             left: 0;
             width: 0;
             height: 3px;
-            background: linear-gradient(90deg, #00c4cc, #ff6f61);
+            background: linear-gradient(90deg, #F6B73C, #ff6f61);
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 2px;
         }
@@ -77,12 +69,12 @@
         }
 
         .nav-link a:hover {
-            color: #00c4cc;
+            color: #F6B73C;
         }
 
         body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #0a2f35 0%, #1a4a4f 50%, #0a2f35 100%);
+            font-family: Inter, sans-serif;
+            background: var(--bg-base);
             background-attachment: fixed;
             color: #f5f6f5;
             min-height: 100vh;
@@ -188,7 +180,7 @@
         }
 
         .news-card h3:hover {
-            color: #00c4cc;
+            color: #F6B73C;
         }
 
         .news-card p {
@@ -225,7 +217,7 @@
             left: 0;
             width: 60%;
             height: 4px;
-            background: linear-gradient(90deg, #ff6f61, #ffb347, #00c4cc);
+            background: linear-gradient(90deg, #ff6f61, #ffb347, #F6B73C);
             border-radius: 2px;
         }
 
@@ -243,7 +235,7 @@
             border-radius: 6px;
             font-size: 0.75rem;
             font-weight: 600;
-            color: #00c4cc;
+            color: #F6B73C;
             margin-top: 0.5rem;
         }
 
@@ -310,50 +302,10 @@
             }
         }
     </style>
-</head>
-<body>
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <div class="frameiq-logo">
-                    <div class="frameiq-logo-icon">🧠</div>
-                    <div>
-                        <div style="font-size: 1.5rem">FrameIQ</div>
-                        <div class="frameiq-tagline">Intelligent Entertainment Discovery</div>
-                    </div>
-                </div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="nav-link transition-colors">Home</a>
-                    <a href="/movies" class="nav-link transition-colors">Movies</a>
-                    <a href="/tv_shows" class="nav-link transition-colors">TV Shows</a>
-                    <a href="/news" class="nav-link transition-colors">News</a>
-                    <a href="/feed" class="nav-link transition-colors">Social Feed</a>
-                    <a href="/chat" class="nav-link transition-colors flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                        AI Chat
-                    </a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    {% if current_user.is_authenticated %}
-                    {% include "partials/profile_dropdown.html" %}
-                    {% else %}
-                    <div class="hidden md:block">
-                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-gray-300 mr-2">Login</a>
-                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-gray-300">Register</a>
-                    </div>
-                    {% endif %}
-                </div>
-                <button class="md:hidden" id="mobile-menu-button">
-                    <svg class="w-6 h-6" fill="none" stroke="#F5F6F5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </nav>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
+{% endblock %}
+
+{% block content %}
 
     <!-- Hero Section -->
     <section class="hero-section animate-gradient">
@@ -371,7 +323,7 @@
     </section>
 
     <!-- News Section -->
-    <section class="py-16 bg-[#1A4A4F]">
+    <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 gradient-text">Recent Headlines</h2>
             {% if error %}
@@ -412,7 +364,13 @@
         </div>
     </section>
 
-    <script>
+    
+    
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script><script>
         document.addEventListener('DOMContentLoaded', function() {
             // Profile dropdown
             const profileButton = document.getElementById('profile-button');
@@ -442,25 +400,25 @@
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0 bg-[#1A4A4F] glass-effect hidden z-40';
+            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden z-40';
             mobileMenu.innerHTML = `
                 <div class="container mx-auto px-4 py-4">
                     <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-[#F5F6F5] hover:text-[#00C4CC]">Home</a>
-                        <a href="/movies" class="text-[#F5F6F5] hover:text-[#00C4CC]">Movies</a>
-                        <a href="/tv_shows" class="text-[#F5F6F5] hover:text-[#00C4CC]">TV Shows</a>
-                        <a href="/news" class="text-[#F5F6F5] hover:text-[#00C4CC]">News</a>
-                        <a href="/feed" class="text-[#F5F6F5] hover:text-[#00C4CC]">Social Feed</a>
-                        <a href="/chat" class="text-[#F5F6F5] hover:text-[#00C4CC]">AI Chat</a>
+                        <a href="/" class="text-[#F5F6F5] hover:text-[#F6B73C]">Home</a>
+                        <a href="/movies" class="text-[#F5F6F5] hover:text-[#F6B73C]">Movies</a>
+                        <a href="/tv_shows" class="text-[#F5F6F5] hover:text-[#F6B73C]">TV Shows</a>
+                        <a href="/news" class="text-[#F5F6F5] hover:text-[#F6B73C]">News</a>
+                        <a href="/feed" class="text-[#F5F6F5] hover:text-[#F6B73C]">Social Feed</a>
+                        <a href="/chat" class="text-[#F5F6F5] hover:text-[#F6B73C]">AI Chat</a>
                         {% if current_user.is_authenticated %}
-                            <a href="{{ url_for('auth.profile') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Profile</a>
-                            <a href="{{ url_for('main.watchlist') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Watchlist</a>
-                            <a href="{{ url_for('main.wishlist') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Wishlist</a>
-                            <a href="{{ url_for('main.viewed') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Viewed</a>
-                            <a href="{{ url_for('auth.logout') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Logout</a>
+                            <a href="{{ url_for('auth.profile') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Profile</a>
+                            <a href="{{ url_for('main.watchlist') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Watchlist</a>
+                            <a href="{{ url_for('main.wishlist') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Wishlist</a>
+                            <a href="{{ url_for('main.viewed') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Viewed</a>
+                            <a href="{{ url_for('auth.logout') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Logout</a>
                         {% else %}
-                            <a href="{{ url_for('auth.login') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Login</a>
-                            <a href="{{ url_for('auth.register') }}" class="text-[#F5F6F5] hover:text-[#00C4CC]">Register</a>
+                            <a href="{{ url_for('auth.login') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Login</a>
+                            <a href="{{ url_for('auth.register') }}" class="text-[#F5F6F5] hover:text-[#F6B73C]">Register</a>
                         {% endif %}
                     </div>
                 </div>
@@ -471,6 +429,5 @@
                 mobileMenu.classList.toggle('hidden');
             });
         });
-    </script>
-</body>
-</html>
+    </script></script>
+{% endblock %}

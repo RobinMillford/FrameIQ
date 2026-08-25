@@ -1,41 +1,11 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="csrf-token" content="{{ csrf_token() }}" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-    <link
-      rel="icon"
-      type="image/x-icon"
-      href="{{ url_for('static', filename='favicon3.ico') }}"
-    />
-    <title>FrameIQ AI Chat</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/frameiq-brand.css') }}"
-    />
-    <link
-      href="{{ url_for('static', filename='css/style.css') }}"
-      rel="stylesheet"
-    />
+{% extends "base.html" %}
+
+{% block title %}FrameIQ AI Chat{% endblock %}
+
+{% block body_attrs %}{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <style>
       @keyframes gradient {
         0% {
@@ -77,7 +47,7 @@
       }
 
       .animate-gradient {
-        background: linear-gradient(-45deg, #0a2f35, #1a4a4f, #2b6565, #1a4a4f);
+        background: var(--bg-base);
         background-size: 400% 400%;
         animation: gradient 15s ease infinite;
       }
@@ -90,7 +60,7 @@
       }
 
       .gradient-text {
-        background: linear-gradient(135deg, #ff6f61, #ffb347, #00c4cc);
+        background: linear-gradient(135deg, #ff6f61, #ffb347, #F6B73C);
         background-size: 200% 200%;
         animation: gradient 3s ease infinite;
         -webkit-background-clip: text;
@@ -114,7 +84,7 @@
         left: 0;
         width: 0;
         height: 3px;
-        background: linear-gradient(90deg, #00c4cc, #ff6f61);
+        background: linear-gradient(90deg, #F6B73C, #ff6f61);
         transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         border-radius: 2px;
       }
@@ -124,12 +94,12 @@
       }
 
       .nav-link a:hover {
-        color: #00c4cc;
+        color: #F6B73C;
       }
 
       body {
-        font-family: "Poppins", sans-serif;
-        background: linear-gradient(135deg, #0a2f35 0%, #1a4a4f 50%, #0a2f35 100%);
+        font-family: "Inter", sans-serif;
+        background: var(--bg-base);
         background-attachment: fixed;
         color: #f5f6f5;
         min-height: 100vh;
@@ -155,7 +125,7 @@
         background: rgba(10, 47, 53, 0.9);
         backdrop-filter: blur(15px);
         border-bottom: 2px solid rgba(0, 196, 204, 0.3);
-        font-family: "Poppins", sans-serif;
+        font-family: "Inter", sans-serif;
         font-weight: 700;
         letter-spacing: 0.5px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -215,7 +185,7 @@
       }
 
       .user {
-        background: linear-gradient(135deg, #ff6f61, #ffb347);
+        background: none; -webkit-text-fill-color: var(--text-hi); color: var(--text-hi);
         color: white;
         align-self: flex-end;
         text-align: left;
@@ -236,7 +206,7 @@
       }
 
       .bot .font-semibold {
-        color: #00c4cc;
+        color: #F6B73C;
         font-weight: 700;
         font-size: 1.05rem;
         margin-bottom: 0.5rem;
@@ -278,7 +248,7 @@
       .thinking-panel summary {
         cursor: pointer;
         font-weight: 600;
-        color: #00c4cc;
+        color: #F6B73C;
         user-select: none;
         list-style: none;
         display: flex;
@@ -300,7 +270,7 @@
         display: inline-block;
         width: 2px;
         height: 1em;
-        background: #00c4cc;
+        background: #F6B73C;
         margin-left: 1px;
         vertical-align: middle;
         animation: blink 0.7s step-end infinite;
@@ -335,7 +305,7 @@
         max-height: 10rem;
         overflow-y: auto;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        font-family: "Poppins", sans-serif;
+        font-family: "Inter", sans-serif;
         font-weight: 400;
         line-height: 1.5;
       }
@@ -347,12 +317,12 @@
 
       textarea:focus {
         background: rgba(255, 255, 255, 0.12);
-        border-color: #00c4cc;
+        border-color: #F6B73C;
         box-shadow: 0 0 0 3px rgba(0, 196, 204, 0.2);
       }
 
       #send-button {
-        background: linear-gradient(135deg, #ff6f61, #ffb347);
+        background: none; -webkit-text-fill-color: var(--text-hi); color: var(--text-hi);
         color: white;
         border: none;
         padding: 1rem 1.75rem;
@@ -370,7 +340,7 @@
       }
 
       #send-button:hover {
-        background: linear-gradient(135deg, #00c4cc, #00a8b0);
+        background: linear-gradient(135deg, #F6B73C, #00a8b0);
         transform: translateY(-3px);
         box-shadow: 0 10px 20px rgba(0, 196, 204, 0.4);
       }
@@ -401,7 +371,7 @@
         font-weight: 700;
         margin-bottom: 1.5rem;
         text-align: center;
-        background: linear-gradient(135deg, #ff6f61, #ffb347, #00c4cc);
+        background: linear-gradient(135deg, #ff6f61, #ffb347, #F6B73C);
         background-size: 200% 200%;
         animation: gradient 3s ease infinite;
         -webkit-background-clip: text;
@@ -420,7 +390,7 @@
         transform: translateX(-50%);
         width: 60%;
         height: 3px;
-        background: linear-gradient(90deg, #ff6f61, #ffb347, #00c4cc);
+        background: linear-gradient(90deg, #ff6f61, #ffb347, #F6B73C);
         border-radius: 2px;
       }
 
@@ -498,7 +468,7 @@
       }
 
       .media-title-text:hover {
-        color: #00c4cc;
+        color: #F6B73C;
       }
 
       /* Responsive Fixes */
@@ -566,44 +536,9 @@
         }
       }
     </style>
-  </head>
-  <body>
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-      <div class="container mx-auto px-4 py-4">
-        <div class="flex justify-between items-center">
-          <div class="frameiq-logo">
-            <div class="frameiq-logo-icon">🧠</div>
-            <div>
-              <div style="font-size: 1.5rem">FrameIQ</div>
-              <div class="frameiq-tagline">AI Chat Assistant</div>
-            </div>
-          </div>
-          <div class="hidden md:flex space-x-8">
-            <a href="/" class="nav-link hover:text-cyan-400 transition-colors">Home</a>
-            <a href="/movies" class="nav-link hover:text-cyan-400 transition-colors">Movies</a>
-            <a href="/tv_shows" class="nav-link hover:text-cyan-400 transition-colors">TV Shows</a>
-            <a href="/news" class="nav-link hover:text-cyan-400 transition-colors">News</a>
-            <a href="/feed" class="nav-link hover:text-cyan-400 transition-colors">Social Feed</a>
-          </div>
-          <div class="flex items-center space-x-4">
-            {% if current_user.is_authenticated %}
-            {% include "partials/profile_dropdown.html" %}
-            {% else %}
-            <div class="hidden md:block">
-              <a href="{{ url_for('auth.login') }}" class="text-white hover:text-gray-300 mr-2">Login</a>
-              <a href="{{ url_for('auth.register') }}" class="text-white hover:text-gray-300">Register</a>
-            </div>
-            {% endif %}
-          </div>
-          <button class="md:hidden" id="mobile-menu-button">
-            <svg class="w-6 h-6" fill="none" stroke="#F5F6F5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </nav>
+{% endblock %}
+
+{% block content %}
 
     <div id="chat-widget" class="pt-20">
       <h1 class="gradient-text">FrameIQ AI Assistant - CineBot</h1>
@@ -634,17 +569,23 @@
       </div>
     </div>
 
-<script>
+
+    
+      
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{{ url_for('static', filename='js/chat-page.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script><script>
       // Page data for static/chat-page.js
       window.__CHAT_BOOTSTRAP__ = {
-          mobileAuthLinks: `{% if current_user.is_authenticated %}<a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[#00C4CC]">Profile</a>
-                            <a href="{{ url_for('main.watchlist') }}" class="text-white hover:text-[#00C4CC]">Watchlist</a>
-                            <a href="{{ url_for('main.wishlist') }}" class="text-white hover:text-[#00C4CC]">Wishlist</a>
-                            <a href="{{ url_for('main.viewed') }}" class="text-white hover:text-[#00C4CC]">Viewed</a>
-                            <a href="{{ url_for('auth.logout') }}" class="text-white hover:text-[#00C4CC]">Logout</a>{% else %}<a href="{{ url_for('auth.login') }}" class="text-white hover:text-[#00C4CC]">Login</a>
-                            <a href="{{ url_for('auth.register') }}" class="text-white hover:text-[#00C4CC]">Register</a>{% endif %}`
+          mobileAuthLinks: `{% if current_user.is_authenticated %}<a href="{{ url_for('auth.profile') }}" class="text-white hover:text-white">Profile</a>
+                            <a href="{{ url_for('main.watchlist') }}" class="text-white hover:text-white">Watchlist</a>
+                            <a href="{{ url_for('main.wishlist') }}" class="text-white hover:text-white">Wishlist</a>
+                            <a href="{{ url_for('main.viewed') }}" class="text-white hover:text-white">Viewed</a>
+                            <a href="{{ url_for('auth.logout') }}" class="text-white hover:text-white">Logout</a>{% else %}<a href="{{ url_for('auth.login') }}" class="text-white hover:text-white">Login</a>
+                            <a href="{{ url_for('auth.register') }}" class="text-white hover:text-white">Register</a>{% endif %}`
       };
-    </script>
-    <script src="{{ url_for('static', filename='js/chat-page.js') }}"></script>
-  </body>
-</html>
+    </script></script>
+{% endblock %}

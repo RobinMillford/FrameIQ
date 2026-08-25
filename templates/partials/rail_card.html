@@ -1,0 +1,37 @@
+{# Compact poster card for horizontal rails.
+   Params: item  — normalized: id, title/name, poster_path OR poster,
+                   release_date/first_air_date OR year, vote_average OR rating
+           media_type — 'movie' | 'tv' #}
+{% set is_movie = media_type == 'movie' %}
+{% set item_title = item.title if item.title else item.name %}
+{% set item_date = item.release_date if item.release_date else item.first_air_date %}
+{% set year = (item_date[:4] if item_date else '') or item.year or '' %}
+{% set rating = item.vote_average if item.vote_average is defined else item.rating %}
+{% set poster = item.poster_path if item.poster_path else item.poster %}
+{% set href = ('/movie/' ~ item.id) if is_movie else ('/tv/' ~ item.id) %}
+
+<a href="{{ href }}" class="rail-card poster-glow group block shrink-0 snap-start w-[148px] sm:w-[160px]">
+    <div class="poster-box relative overflow-hidden rounded-xl bg-[var(--bg-surface)] ring-1 ring-[var(--line)] aspect-[2/3]">
+        {% if poster %}
+            {% if poster.startswith('/') %}
+            <img src="https://image.tmdb.org/t/p/w342{{ poster }}" alt="{{ item_title }}" loading="lazy"
+                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            {% else %}
+            <img src="{{ poster }}" alt="{{ item_title }}" loading="lazy"
+                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                 onerror="this.src='/static/images/no-poster.svg'">
+            {% endif %}
+        {% else %}
+            <div class="w-full h-full flex items-center justify-center">
+                <i data-lucide="film" class="w-7 h-7 text-[var(--text-low)]"></i>
+            </div>
+        {% endif %}
+        {% if rating %}
+        <span class="absolute top-2 left-2 font-slate text-[10px] bg-black/70 backdrop-blur px-1.5 py-0.5 rounded-md text-[var(--amber)]">
+            ★ {{ "%.1f"|format(rating) }}
+        </span>
+        {% endif %}
+    </div>
+    <p class="mt-2 text-[13px] font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent-hi)] transition-colors">{{ item_title }}</p>
+    <p class="font-slate text-[10px] text-[var(--text-low)]">{{ year }}</p>
+</a>

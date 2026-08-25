@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #0f172a, #1e293b);
+            font-family: Inter, sans-serif;
+            background: var(--bg-base);
             color: white;
             min-height: 100vh;
             margin: 0;
@@ -18,11 +19,11 @@
         }
         
         .register-container {
-            background: rgba(30, 41, 59, 0.8);
+            background: var(--bg-surface);
             backdrop-filter: blur(10px);
             border-radius: 16px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--line);
             max-width: 500px;
             width: 90%;
             margin: 2rem auto;
@@ -174,6 +175,8 @@
     </style>
 </head>
 <body>
+    <div class="grain" aria-hidden="true"></div>
+    <>
     <div class="min-h-screen flex items-center justify-center p-4">
         <div class="register-container p-8">
             <div class="text-center mb-8">
@@ -281,7 +284,7 @@
             </a>
             
             <div class="text-center mt-6">
-                <p class="text-gray-400">
+                <p class="text-[var(--text-mid)]">
                     Already have an account? 
                     <a href="{{ url_for('auth.login') }}" class="link-style">Sign in</a>
                 </p>

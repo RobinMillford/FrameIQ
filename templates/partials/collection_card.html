@@ -4,20 +4,20 @@
            interactive — true for the "All Items" section card (adds data
                          attributes for filters + priority selector)
            priority    — current priority value ('high'|'medium'|'low') #}
-<div class="media-card {{ 'watchlist-card ' if collection == 'watchlist' and interactive else '' }}bg-gray-800 rounded-lg overflow-hidden shadow-lg"{%- if interactive %} data-category="{{ item.media_type }}"{% endif %}{%- if interactive and collection != 'viewed' %} data-media-id="{{ item.tmdb_id }}" data-priority="{{ priority }}"{% endif %}>
+<div class="media-card {{ 'watchlist-card ' if collection == 'watchlist' and interactive else '' }} rounded-lg overflow-hidden shadow-lg"{%- if interactive %} data-category="{{ item.media_type }}"{% endif %}{%- if interactive and collection != 'viewed' %} data-media-id="{{ item.tmdb_id }}" data-priority="{{ priority }}"{% endif %}>
     <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
         {% if item.poster_path %}
             <img src="https://image.tmdb.org/t/p/w500{{ item.poster_path }}" alt="{{ item.title }}" class="w-full h-64 object-cover">
         {% else %}
             <div class="bg-gray-700 h-64 flex items-center justify-center">
-                <span class="text-gray-500">No Image</span>
+                <span class="text-[var(--text-mid)]">No Image</span>
             </div>
         {% endif %}
     </a>
     <div class="p-4">
         <h3 class="font-bold text-lg mb-1 truncate">{{ item.title }}</h3>
         {% if item.release_date %}
-            <p class="text-gray-400 text-sm mb-2">{{ item.release_date }}</p>
+            <p class="text-[var(--text-mid)] text-sm mb-2">{{ item.release_date }}</p>
         {% endif %}
         {% if item.rating %}
             <div class="flex items-center mb-3">
@@ -36,7 +36,7 @@
             <span class="text-xs bg-pink-600 text-white px-2 py-1 rounded">Wishlist</span>
             {% endif %}
             {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
-            <span class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Watchlist</span>
+            <span class="text-xs bg-[var(--accent)] text-white px-2 py-1 rounded">Watchlist</span>
             {% endif %}
         </div>
         {% if interactive and collection != 'viewed' %}
@@ -50,7 +50,7 @@
         </div>
         {% endif %}
         <div class="flex justify-between items-center{% if collection == 'watchlist' and interactive %} mt-3{% endif %}">
-            <a href="/{{ item.media_type }}/{{ item.tmdb_id }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View Details</a>
+            <a href="/{{ item.media_type }}/{{ item.tmdb_id }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View Details</a>
             <div class="flex gap-1">
                 {% if collection == 'watchlist' %}
                     {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
@@ -76,7 +76,7 @@
                     {% endif %}
                 {% elif collection == 'wishlist' %}
                     {% if (item.tmdb_id, item.media_type) not in user_watchlist_ids %}
-                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-indigo-400 hover:text-indigo-300 text-sm" title="Add to Watchlist">
+                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm" title="Add to Watchlist">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
@@ -98,7 +98,7 @@
                     {% endif %}
                 {% else %}
                     {% if (item.tmdb_id, item.media_type) not in user_watchlist_ids %}
-                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-indigo-400 hover:text-indigo-300 text-sm" title="Add to Watchlist">
+                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm" title="Add to Watchlist">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>

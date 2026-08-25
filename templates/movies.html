@@ -1,14 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>Movie Recommender System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+{% extends "base.html" %}
+
+{% block title %}Movie Recommender System{% endblock %}
+
+{% block extra_css %}
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -110,14 +104,6 @@
             width: 100%;
         }
 
-#chatbot-button {
-            transition: all 0.3s ease;
-}
-
-#chatbot-button:hover {
-            transform: scale(1.1);
-        }
-
         .trailer-card {
             transition: all 0.3s ease;
         }
@@ -133,27 +119,10 @@
             overflow-y: auto;
         }
     </style>
-</head>
-<body class="min-h-screen bg-gray-900 text-white font-['Poppins']">
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <div class="text-2xl font-bold gradient-text">FrameIQ</div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="nav-link hover:text-indigo-400 transition-colors">Home</a>
-                    <a href="/tv_shows" class="nav-link hover:text-indigo-400 transition-colors">TV Shows</a>
-                    <a href="/news" class="nav-link hover:text-indigo-400 transition-colors">News</a>
-                    <a href="/chat" class="nav-link hover:text-indigo-400 transition-colors">AI Chat</a>
-                </div>
-                <button class="md:hidden" id="mobile-menu-button">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </nav>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
+{% endblock %}
+
+{% block content %}
 
     <!-- Hero Section -->
     <section class="pt-32 pb-20 animate-gradient">
@@ -161,7 +130,7 @@
             <h1 class="text-5xl md:text-7xl font-bold mb-8 animate__animated animate__fadeInDown gradient-text">
                 Discover Your Next Favorite Movie
             </h1>
-            <p class="text-xl mb-12 animate__animated animate__fadeInUp text-indigo-200 float">
+            <p class="text-xl mb-12 animate__animated animate__fadeInUp text-[var(--text-mid)] float">
                 Get personalized recommendations powered by AI
             </p>
             
@@ -175,7 +144,7 @@
                         <div id="autocomplete-items" class="absolute w-full mt-2 glass-effect rounded-lg hidden"></div>
                     </div>
                     <button type="submit" 
-                            class="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all transform hover:scale-105">
+                            class="px-8 py-4 bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all transform hover:scale-105">
                         Find Movies
                     </button>
                 </form>
@@ -184,7 +153,7 @@
     </section>
 
     <!-- Featured Trailers Section -->
-    <section class="py-20 bg-gray-800">
+    <section class="py-20">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-12 text-center gradient-text">Latest Trailers</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" id="featured-trailers">
@@ -212,19 +181,19 @@
     </section>
 
     <!-- Categories Section -->
-    <section class="py-20 bg-gray-800">
+    <section class="py-20">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-12 text-center gradient-text">Browse by Category</h2>
             
             <!-- Top Categories -->
             <div class="mb-12">
-                <h3 class="text-xl font-semibold mb-6 text-center text-indigo-200">Popular Categories</h3>
+                <h3 class="text-xl font-semibold mb-6 text-center text-[var(--text-mid)]">Popular Categories</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     <!-- Action Category -->
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Action</h4>
-                            <a href="/genre/action" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/action" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="action-movies">
                             <!-- Loading skeleton -->
@@ -238,7 +207,7 @@
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Comedy</h4>
-                            <a href="/genre/comedy" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/comedy" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="comedy-movies">
                             <!-- Loading skeleton -->
@@ -252,7 +221,7 @@
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Drama</h4>
-                            <a href="/genre/drama" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/drama" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="drama-movies">
                             <!-- Loading skeleton -->
@@ -266,7 +235,7 @@
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Romance</h4>
-                            <a href="/genre/romance" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/romance" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="romance-movies">
                             <!-- Loading skeleton -->
@@ -280,7 +249,7 @@
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Thriller</h4>
-                            <a href="/genre/thriller" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/thriller" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="thriller-movies">
                             <!-- Loading skeleton -->
@@ -294,7 +263,7 @@
                     <div class="category-section glass-effect rounded-lg p-6">
                         <div class="flex justify-between items-center mb-4">
                             <h4 class="text-lg font-semibold">Horror</h4>
-                            <a href="/genre/horror" class="text-indigo-400 hover:text-indigo-300 text-sm">View All →</a>
+                            <a href="/genre/horror" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View All →</a>
                         </div>
                         <div class="flex overflow-x-auto gap-4 pb-4" id="horror-movies">
                             <!-- Loading skeleton -->
@@ -309,12 +278,12 @@
     </section>
 
     <!-- Chat Button -->
-    <button id="chatbot-button" 
-            class="fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-lg"
-            onclick="openChat()">
-        💬
-    </button>
 
-<script src="{{ url_for('static', filename='js/movies-page.js') }}"></script>
-</body>
-</html>
+
+    
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{{ url_for('static', filename='js/movies-page.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+{% endblock %}

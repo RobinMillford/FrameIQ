@@ -6,13 +6,15 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Profile - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color: var(--bg-base);
             color: white;
         }
         
@@ -43,10 +45,10 @@
     {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4 py-8">
-        <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+        <div class=" rounded-lg shadow-lg p-6">
             <div class="flex justify-between items-center mb-6">
-                <h1 class="text-3xl font-bold text-indigo-400">My Profile</h1>
-                <a href="{{ url_for('auth.edit_profile') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded transition duration-300">
+                <h1 class="text-3xl font-bold text-[var(--accent)]">My Profile</h1>
+                <a href="{{ url_for('auth.edit_profile') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
                     Edit Profile
                 </a>
             </div>
@@ -77,10 +79,10 @@
                                 </div>
                             {% endif %}
                             <h2 class="text-xl font-bold">{{ current_user.username }}</h2>
-                            <p class="text-gray-400">{{ current_user.email }}</p>
-                            <p class="text-gray-400 text-sm mt-2">Member since {{ current_user.date_joined.strftime('%B %d, %Y') }}</p>
+                            <p class="text-[var(--text-mid)]">{{ current_user.email }}</p>
+                            <p class="text-[var(--text-mid)] text-sm mt-2">Member since {{ current_user.date_joined.strftime('%B %d, %Y') }}</p>
                             <div class="mt-4">
-                                <a href="{{ url_for('main.user_profile', user_id=current_user.id) }}" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded transition duration-300">
+                                <a href="{{ url_for('main.user_profile', user_id=current_user.id) }}" class="inline-block bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-sm font-semibold py-2 px-4 rounded transition duration-300">
                                     View Public Profile
                                 </a>
                             </div>
@@ -91,7 +93,7 @@
                             {% if current_user.bio %}
                                 <p>{{ current_user.bio }}</p>
                             {% else %}
-                                <p class="text-gray-400">No bio available.</p>
+                                <p class="text-[var(--text-mid)]">No bio available.</p>
                             {% endif %}
                         </div>
                     </div>
@@ -101,13 +103,13 @@
                     <!-- Tabs -->
                     <div class="overflow-x-auto -mx-1">
                     <div class="flex border-b border-gray-700 mb-6 min-w-max px-1">
-                        <button id="tab-overview" class="px-6 py-2 border-b-2 border-indigo-500 text-indigo-400 font-semibold focus:outline-none whitespace-nowrap">
+                        <button id="tab-overview" class="px-6 py-2 border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold focus:outline-none whitespace-nowrap">
                             Overview
                         </button>
-                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
+                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-transparent text-[var(--text-mid)] hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
                             Reviews
                         </button>
-                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
+                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-[var(--text-mid)] hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
                             Insights
                         </button>
                     </div>
@@ -116,87 +118,119 @@
                     <div id="overview-content">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Watchlist</h3>
-                                <p class="text-gray-400">Movies and shows you want to watch</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Watchlist</h3>
+                                <p class="text-[var(--text-mid)]">Movies and shows you want to watch</p>
                                 <div class="mt-4">
-                                    <a href="{{ url_for('main.watchlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.watchlist|length }})</a>
+                                    <a href="{{ url_for('main.watchlist') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.watchlist|length }})</a>
                                 </div>
                             </div>
                             
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Wishlist</h3>
-                                <p class="text-gray-400">Your favorite movies and shows</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Wishlist</h3>
+                                <p class="text-[var(--text-mid)]">Your favorite movies and shows</p>
                                 <div class="mt-4">
-                                    <a href="{{ url_for('main.wishlist') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.wishlist|length }})</a>
+                                    <a href="{{ url_for('main.wishlist') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.wishlist|length }})</a>
                                 </div>
                             </div>
                             
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Viewing History</h3>
-                                <p class="text-gray-400">Movies and shows you've watched</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Viewing History</h3>
+                                <p class="text-[var(--text-mid)]">Movies and shows you've watched</p>
                                 <div class="mt-4">
-                                    <a href="{{ url_for('main.viewed') }}" class="text-indigo-400 hover:text-indigo-300">View all ({{ current_user.viewed_media|length }})</a>
+                                    <a href="{{ url_for('main.viewed') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.viewed_media|length }})</a>
                                 </div>
                             </div>
                             
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">My Lists</h3>
-                                <p class="text-gray-400">Custom curated collections</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">My Lists</h3>
+                                <p class="text-[var(--text-mid)]">Custom curated collections</p>
                                 <div class="mt-4 flex gap-2">
-                                    <button onclick="openCreateListModal()" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                    <button onclick="openCreateListModal()" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
                                         <i class="fas fa-plus"></i> Create New
                                     </button>
-                                    <span class="text-gray-500">•</span>
-                                    <a href="/lists" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                    <span class="text-[var(--text-mid)]">•</span>
+                                    <a href="/lists" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
                                         <i class="fas fa-list"></i> View All
                                     </a>
-                                    <span class="text-gray-500">•</span>
-                                    <span class="text-gray-400 text-sm" id="lists-count">Loading...</span>
+                                    <span class="text-[var(--text-mid)]">•</span>
+                                    <span class="text-[var(--text-mid)] text-sm" id="lists-count">Loading...</span>
                                 </div>
                             </div>
                             
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Diary</h3>
-                                <p class="text-gray-400">Your watch history</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Diary</h3>
+                                <p class="text-[var(--text-mid)]">Your watch history</p>
                                 <div class="mt-4">
-                                    <a href="/diary" class="text-indigo-400 hover:text-indigo-300 text-sm">View Diary</a>
-                                    <span class="text-gray-500 mx-2">•</span>
-                                    <span class="text-gray-400 text-sm" id="diary-count">Loading...</span>
+                                    <a href="/diary" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View Diary</a>
+                                    <span class="text-[var(--text-mid)] mx-2">•</span>
+                                    <span class="text-[var(--text-mid)] text-sm" id="diary-count">Loading...</span>
                                 </div>
                             </div>
                             
                             <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-indigo-400">Recommendations</h3>
-                                <p class="text-gray-400">Personalized suggestions</p>
+                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Recommendations</h3>
+                                <p class="text-[var(--text-mid)]">Personalized suggestions</p>
                                 <div class="mt-4">
-                                    <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300">View all</a>
+                                    <a href="{{ url_for('auth.profile_recommendations') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all</a>
                                 </div>
                             </div>
                         </div>
                         
+                        <!-- Taste DNA -->
+                        {% if taste_genres %}
+                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
+                            <h3 class="text-xl font-semibold mb-1 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Taste DNA</h3>
+                            <p class="font-slate text-[10px] text-[var(--text-low)] mb-4">derived from your ratings</p>
+                            <div class="space-y-3">
+                                {% for genre, count in taste_genres %}
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="text-[var(--text-hi)] font-medium">{{ genre }}</span>
+                                        <span class="font-slate text-[var(--text-low)]">{{ count }}</span>
+                                    </div>
+                                    <div class="h-2 rounded-full bg-black/40 overflow-hidden">
+                                        <div class="h-full rounded-full"
+                                             style="width: {{ (count / taste_max * 100)|round }}%; background: linear-gradient(90deg, var(--accent), #fff);"></div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Quick stats strip -->
+                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
+                            <div class="grid grid-cols-4 gap-3 text-center mb-2">
+                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.diary }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">DIARY</div></div>
+                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.watching }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">TRACKING</div></div>
+                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.watchlist }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">WATCHLIST</div></div>
+                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.viewed }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">VIEWED</div></div>
+                            </div>
+                        </div>
+
                         <!-- Personal Stats -->
                         <div class="bg-gray-700 rounded-lg p-6 mb-6">
-                            <h3 class="text-xl font-semibold mb-4 text-indigo-400">Your Stats</h3>
+                            <h3 class="text-xl font-semibold mb-4 text-[var(--accent)]">Your Stats</h3>
                             <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
                                 <div>
-                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.watchlist|length }}</div>
-                                    <div class="text-gray-400 text-sm">Watchlist</div>
+                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.watchlist|length }}</div>
+                                    <div class="text-[var(--text-mid)] text-sm">Watchlist</div>
                                 </div>
                                 <div>
-                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.wishlist|length }}</div>
-                                    <div class="text-gray-400 text-sm">Wishlist</div>
+                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.wishlist|length }}</div>
+                                    <div class="text-[var(--text-mid)] text-sm">Wishlist</div>
                                 </div>
                                 <div>
-                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.viewed_media|length }}</div>
-                                    <div class="text-gray-400 text-sm">Viewed</div>
+                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.viewed_media|length }}</div>
+                                    <div class="text-[var(--text-mid)] text-sm">Viewed</div>
                                 </div>
                                 <div>
-                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.followers_count or 0 }}</div>
-                                    <div class="text-gray-400 text-sm">Followers</div>
+                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.followers_count or 0 }}</div>
+                                    <div class="text-[var(--text-mid)] text-sm">Followers</div>
                                 </div>
                                 <div>
-                                    <div class="text-2xl font-bold text-indigo-400">{{ current_user.following_count or 0 }}</div>
-                                    <div class="text-gray-400 text-sm">Following</div>
+                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.following_count or 0 }}</div>
+                                    <div class="text-[var(--text-mid)] text-sm">Following</div>
                                 </div>
                             </div>
                         </div>
@@ -204,20 +238,20 @@
                         <!-- Quick Recommendations Preview -->
                         <div class="bg-gray-700 rounded-lg p-6">
                             <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-xl font-semibold text-indigo-400">Recommended for You</h3>
-                                <a href="{{ url_for('auth.profile_recommendations') }}" class="text-indigo-400 hover:text-indigo-300 text-sm">View all</a>
+                                <h3 class="text-xl font-semibold text-[var(--accent)]">Recommended for You</h3>
+                                <a href="{{ url_for('auth.profile_recommendations') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View all</a>
                             </div>
-                            <p class="text-gray-400 mb-4">Based on your watchlist, wishlist, and viewing history</p>
+                            <p class="text-[var(--text-mid)] mb-4">Based on your watchlist, wishlist, and viewing history</p>
                             
                             <!-- Preview of recommendations -->
                             <div class="text-center py-4" id="recommendations-preview">
-                                <p class="text-gray-400">Loading personalized recommendations...</p>
+                                <p class="text-[var(--text-mid)]">Loading personalized recommendations...</p>
                             </div>
                         </div>
                     </div>
 
                     <div id="reviews-content" class="hidden">
-                        <h3 class="text-2xl font-bold mb-6 text-indigo-400">Your Reviews</h3>
+                        <h3 class="text-2xl font-bold mb-6 text-[var(--accent)]">Your Reviews</h3>
                         <div class="space-y-6">
                         {% if reviews %}
                             {% for review in reviews %}
@@ -234,7 +268,7 @@
                                                  onerror="this.src='/static/images/no-poster.svg'">
                                             <div>
                                                 <h4 class="text-lg font-bold">
-                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">
+                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-[var(--accent)] transition-colors">
                                                         {{ review.media.title }}
                                                     </a>
                                                 </h4>
@@ -244,12 +278,12 @@
                                                             <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
                                                         {% endfor %}
                                                     </div>
-                                                    <span class="text-gray-400 text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
+                                                    <span class="text-[var(--text-mid)] text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="flex gap-2">
-                                            <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}#review-{{ review.id }}" class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                            <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}#review-{{ review.id }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
                                                 <i class="fas fa-edit"></i> Edit
                                             </a>
                                         </div>
@@ -259,9 +293,9 @@
                             {% endfor %}
                         {% else %}
                             <div class="text-center py-12 bg-gray-700 rounded-xl border border-gray-600">
-                                <i class="fas fa-comment-slash text-4xl text-gray-600 mb-4"></i>
-                                <p class="text-gray-400">You haven't written any reviews yet.</p>
-                                <a href="{{ url_for('main.index') }}" class="mt-4 inline-block text-indigo-400 hover:text-indigo-300">Browse movies and shows</a>
+                                <i class="fas fa-comment-slash text-4xl text-[var(--text-mid)] mb-4"></i>
+                                <p class="text-[var(--text-mid)]">You haven't written any reviews yet.</p>
+                                <a href="{{ url_for('main.index') }}" class="mt-4 inline-block text-[var(--accent)] hover:text-[var(--accent-hi)]">Browse movies and shows</a>
                             </div>
                         {% endif %}
                         </div>
@@ -270,35 +304,35 @@
                     <div id="insights-content" class="hidden">
                         <!-- Insights Dashboard -->
                         <div class="bg-gray-700 rounded-lg p-6 mb-6 border border-gray-600">
-                            <h3 class="text-xl font-semibold mb-6 text-indigo-400">Visual Insights</h3>
+                            <h3 class="text-xl font-semibold mb-6 text-[var(--accent)]">Visual Insights</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                                 <!-- Genre Distribution -->
-                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Genre DNA</h4>
+                                <div class=" rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Genre DNA</h4>
                                     <div class="h-64 relative">
                                         <canvas id="genre-chart"></canvas>
                                     </div>
                                 </div>
                                 
                                 <!-- Rating Distribution -->
-                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Rating Distribution</h4>
+                                <div class=" rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Rating Distribution</h4>
                                     <div class="h-64 relative">
                                         <canvas id="rating-dist-chart"></canvas>
                                     </div>
                                 </div>
 
                                 <!-- Media Mix -->
-                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Media Mix</h4>
+                                <div class=" rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Media Mix</h4>
                                     <div class="h-64 relative">
                                         <canvas id="media-mix-chart"></canvas>
                                     </div>
                                 </div>
 
                                 <!-- Monthly Activity -->
-                                <div class="bg-gray-800 rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-indigo-300">Recent Activity</h4>
+                                <div class=" rounded-xl p-6 border border-gray-600">
+                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Recent Activity</h4>
                                     <div class="h-64 relative">
                                         <canvas id="activity-chart"></canvas>
                                     </div>
@@ -307,35 +341,35 @@
 
                             <!-- Statistics Grid Extension -->
                             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Total Watched</div>
-                                    <div id="stat-total-watched" class="text-xl font-bold text-indigo-400">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1" id="stat-movie-tv-split">- / -</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Total Watched</div>
+                                    <div id="stat-total-watched" class="text-xl font-bold text-[var(--accent)]">-</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1" id="stat-movie-tv-split">- / -</div>
                                 </div>
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Avg Rating</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Avg Rating</div>
                                     <div id="stat-avg-rating" class="text-xl font-bold text-pink-400">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1">out of 5.0</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">out of 5.0</div>
                                 </div>
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Reviews</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Reviews</div>
                                     <div id="stat-total-reviews" class="text-xl font-bold text-purple-400">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1">total written</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">total written</div>
                                 </div>
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Watchlist Progress</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Watchlist Progress</div>
                                     <div id="stat-watchlist-completion" class="text-xl font-bold text-green-400">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1">completion rate</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">completion rate</div>
                                 </div>
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Top Genre (Rank)</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Top Genre (Rank)</div>
                                     <div id="stat-top-genre" class="text-lg font-bold text-yellow-500">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1">by count</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">by count</div>
                                 </div>
-                                <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-gray-400 text-xs mb-1">Highest Rated</div>
+                                <div class=" rounded-xl p-4 text-center border border-gray-600">
+                                    <div class="text-[var(--text-mid)] text-xs mb-1">Highest Rated</div>
                                     <div id="stat-best-genre" class="text-lg font-bold text-orange-500">-</div>
-                                    <div class="text-[10px] text-gray-500 mt-1">avg performance</div>
+                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">avg performance</div>
                                 </div>
                             </div>
                         </div>
@@ -354,8 +388,8 @@
     
     <!-- Create List Modal -->
     <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6 text-indigo-400">Create New List</h2>
+        <div class=" rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6 text-[var(--accent)]">Create New List</h2>
             
             <div class="space-y-4">
                 <div>
@@ -369,7 +403,7 @@
                 </div>
                 
                 <div class="flex items-center">
-                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
+                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-[var(--accent)] bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
                     <label for="list-public" class="ml-2 text-sm text-gray-300">Make this list public</label>
                 </div>
             </div>
@@ -384,5 +418,6 @@
             </div>
         </div>
     </div>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

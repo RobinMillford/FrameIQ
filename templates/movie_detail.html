@@ -1,18 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>{{ movie.title }} - FrameIQ</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tags.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/reviews.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/friends-activity.css') }}">
-    <style>
+{% extends "base.html" %}
+
+{% block title %}{{ movie.title }} - FrameIQ{% endblock %}
+
+{% block body_attrs %}data-media-id="{{ movie.id }}" data-media-type="movie" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tags.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reviews.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/friends-activity.css') }}">
+<style>
+
         @keyframes gradient {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
@@ -57,7 +54,7 @@
         }
 
         body {
-            font-family: 'Poppins', sans-serif;
+            font-family: Inter, sans-serif;
             background-color: #111827;
             color: white;
             min-height: 100vh;
@@ -222,12 +219,12 @@
             .rating-circle::before { width: 52px; height: 52px; }
             .modal-content { max-width: 95vw; margin: 1rem; }
         }
-    </style>
-</head>
-<body data-media-id="{{ movie.id }}" data-media-type="movie" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}">
-    <!-- Navigation -->
-    {% with accent = "indigo", with_diary = true %}{% include "partials/nav_detail.html" %}{% endwith %}
+    
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
+{% endblock %}
 
+{% block content %}
     <!-- Hero Section -->
     <section class="hero-section pb-20">
         <div class="hero-backdrop" style="background-image: url('{{ movie.backdrop_path }}');"></div>
@@ -243,17 +240,17 @@
                 <div class="md:col-span-2 movie-info">
                     <h1 class="text-4xl md:text-5xl font-bold mb-2">{{ movie.title }}</h1>
                     <div class="flex flex-wrap items-center gap-2 mb-4">
-                        <span class="text-indigo-300">{{ movie.release_date }}</span>
-                        <span class="text-gray-400">•</span>
-                        <span class="text-indigo-300">{{ movie.runtime }}</span>
-                        <span class="text-gray-400">•</span>
+                        <span class="text-[var(--accent-hi)]">{{ movie.release_date }}</span>
+                        <span class="text-[var(--text-mid)]">•</span>
+                        <span class="text-[var(--accent-hi)]">{{ movie.runtime }}</span>
+                        <span class="text-[var(--text-mid)]">•</span>
                         {% if movie.certification %}
-                        <span class="bg-indigo-900/50 text-indigo-200 px-2 py-1 rounded-full text-sm">{{ movie.certification }}</span>
-                        <span class="text-gray-400">•</span>
+                        <span class="bg-white/5 text-[var(--text-mid)] px-2 py-1 rounded-full text-sm">{{ movie.certification }}</span>
+                        <span class="text-[var(--text-mid)]">•</span>
                         {% endif %}
                         <div class="flex flex-wrap gap-1">
                             {% for genre in movie.genres %}
-                            <span class="bg-indigo-900/50 text-indigo-200 px-2 py-1 rounded-full text-sm">{{ genre }}</span>
+                            <span class="bg-white/5 text-[var(--text-mid)] px-2 py-1 rounded-full text-sm">{{ genre }}</span>
                             {% endfor %}
                         </div>
                     </div>
@@ -265,13 +262,23 @@
                         </div>
                         <div>
                             <div class="text-lg font-semibold">User Score</div>
-                            <div class="text-sm text-gray-400">{{ movie.vote_count }} votes</div>
+                            <div class="text-sm text-[var(--text-mid)]">{{ movie.vote_count }} votes</div>
                         </div>
                     </div>
+
+                    {% if taste_match %}
+                    <div class="taste-match mb-6" title="Based on your rating history">
+                        <span class="tm-ring" style="--pct: {{ taste_match }}" data-pct="{{ taste_match }}%"></span>
+                        <div>
+                            <strong>{{ taste_match }}% Taste Match</strong>
+                            <div class="text-[10px] text-[var(--text-low)] font-slate">based on your ratings</div>
+                        </div>
+                    </div>
+                    {% endif %}
                     
                     <!-- Watch Now Button -->
                     <a href="/watch/movie/{{ movie.id }}"
-                       class="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-6 py-3 rounded-lg font-semibold mb-3 transition-all shadow-lg shadow-indigo-900/40 hover:shadow-indigo-700/50 hover:scale-105 active:scale-100">
+                       class="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-[var(--accent)] hover:to-[var(--accent-hi)] text-white px-6 py-3 rounded-lg font-semibold mb-3 transition-all shadow-lg shadow-indigo-900/40 hover:shadow-indigo-700/50 hover:scale-105 active:scale-100">
                         <i class="fas fa-play"></i> Watch Now
                     </a>
 
@@ -305,7 +312,7 @@
                         </span>
                         {% endif %}
                         {% if (movie.id, 'movie') in user_watchlist_ids %}
-                        <span class="text-sm bg-indigo-600 text-white px-3 py-1 rounded flex items-center gap-1">
+                        <span class="text-sm bg-[var(--accent)] text-white px-3 py-1 rounded flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
@@ -338,7 +345,7 @@
                         <div class="flex flex-wrap gap-2">
                             {% if (movie.id, 'movie') not in user_watchlist_ids %}
                             <div class="relative group">
-                                <button onclick="togglePriorityDropdown('watchlist-priority')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-indigo-600 transition-colors">
+                                <button onclick="togglePriorityDropdown('watchlist-priority')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-[var(--accent)] transition-colors">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                     </svg>
@@ -347,7 +354,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                     </svg>
                                 </button>
-                                <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
+                                <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0  rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
                                     <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
                                         <span class="text-xl">🔥</span> High Priority
                                     </a>
@@ -371,7 +378,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                     </svg>
                                 </button>
-                                <div id="wishlist-priority" class="hidden absolute top-full mt-1 left-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
+                                <div id="wishlist-priority" class="hidden absolute top-full mt-1 left-0  rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
                                     <a href="{{ url_for('main.add_to_wishlist', media_id=movie.id, media_type='movie', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
                                         <span class="text-xl">🔥</span> High Priority
                                     </a>
@@ -415,7 +422,7 @@
                     {% if current_user.is_authenticated %}
                     <div class="mt-6 mb-6 p-4 glass-effect rounded-lg">
                         <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
                             </svg>
                             Your Tags
@@ -423,7 +430,7 @@
                         
                         <!-- Tags Display -->
                         <div id="tags-display" class="mb-3 flex flex-wrap gap-2 min-h-[2rem]">
-                            <p class="text-gray-400 text-sm">Loading tags...</p>
+                            <p class="text-[var(--text-mid)] text-sm">Loading tags...</p>
                         </div>
                         
                         <!-- Tag Input -->
@@ -433,17 +440,17 @@
                                     type="text" 
                                     id="tag-input" 
                                     placeholder="Add a tag (e.g., 'mind-bending', 'must-watch')" 
-                                    class="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="flex-1  text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     maxlength="30"
                                 />
                                 <button onclick="tagManager.addTag(document.getElementById('tag-input').value)" 
-                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
+                                        class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
                                     Add
                                 </button>
                             </div>
                             
                             <!-- Autocomplete Suggestions -->
-                            <div id="tag-suggestions" class="hidden absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
+                            <div id="tag-suggestions" class="hidden absolute top-full left-0 right-0 mt-1  border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
                             </div>
                             
                             <!-- Feedback Messages -->
@@ -451,13 +458,13 @@
                             <div id="tag-success" class="hidden mt-2 text-green-400 text-sm"></div>
                         </div>
                         
-                        <p class="text-xs text-gray-400 mt-2">Tags help you organize and find movies later. Max 20 tags per movie.</p>
+                        <p class="text-xs text-[var(--text-mid)] mt-2">Tags help you organize and find movies later. Max 20 tags per movie.</p>
                     </div>
                     {% endif %}
                     
                     <!-- Like Button Section -->
                     {% if current_user.is_authenticated %}
-                    <div class="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-gray-700">
+                    <div class="/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-gray-700">
                         <div id="like-button-container" class="flex items-center justify-between">
                             <!-- Populated by likes-manager.js -->
                         </div>
@@ -467,7 +474,7 @@
                     
                     <!-- Tagline -->
                     {% if movie.tagline %}
-                    <p class="text-xl text-indigo-200 italic mb-6">"{{ movie.tagline }}"</p>
+                    <p class="text-xl text-[var(--text-mid)] italic mb-6">"{{ movie.tagline }}"</p>
                     {% endif %}
                     
                     <!-- Overview -->
@@ -480,15 +487,15 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% if movie.director %}
                         <div>
-                            <h3 class="text-lg font-semibold text-indigo-300">{{ movie.director }}</h3>
-                            <p class="text-gray-400">Director</p>
+                            <h3 class="text-lg font-semibold text-[var(--accent-hi)]">{{ movie.director }}</h3>
+                            <p class="text-[var(--text-mid)]">Director</p>
                         </div>
                         {% endif %}
                         
                         {% if movie.writer %}
                         <div>
-                            <h3 class="text-lg font-semibold text-indigo-300">{{ movie.writer }}</h3>
-                            <p class="text-gray-400">Writer</p>
+                            <h3 class="text-lg font-semibold text-[var(--accent-hi)]">{{ movie.writer }}</h3>
+                            <p class="text-[var(--text-mid)]">Writer</p>
                         </div>
                         {% endif %}
                     </div>
@@ -499,13 +506,13 @@
 
 <!-- Popular with Friends Section -->
 {% if current_user.is_authenticated %}
-<section class="py-16 bg-gray-900/30">
+<section class="py-16">
     <div class="container mx-auto px-4 max-w-4xl">
         <div id="popular-with-friends" 
              data-media-id="{{ movie['id'] }}" 
              data-media-type="movie">
-            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                <p class="text-gray-400 text-center py-4">
+            <div class=" rounded-lg p-6 border border-gray-700">
+                <p class="text-[var(--text-mid)] text-center py-4">
                     <i class="fas fa-spinner fa-spin"></i> Loading friends activity...
                 </p>
             </div>
@@ -516,7 +523,7 @@
 
 <!-- Comments Section -->
 {% if current_user.is_authenticated %}
-<section class="py-16 bg-gray-900/50">
+<section class="py-16">
     <div class="container mx-auto px-4 max-w-4xl">
         <div class="glass-effect rounded-lg p-8">
             <h2 class="text-3xl font-bold mb-6 gradient-text flex items-center gap-2">
@@ -531,15 +538,15 @@
                 <textarea 
                     id="comment-input" 
                     placeholder="Share your thoughts about this movie..."
-                    class="w-full bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    class="w-full  text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                     rows="4"
                     maxlength="5000"
                 ></textarea>
                 <div class="flex justify-between items-center mt-3">
-                    <span id="comment-char-count" class="text-xs text-gray-400">0 / 5000</span>
+                    <span id="comment-char-count" class="text-xs text-[var(--text-mid)]">0 / 5000</span>
                     <button 
                         type="submit" 
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Post Comment
                     </button>
@@ -551,7 +558,7 @@
             
             <!-- Comments List -->
             <div id="media-comments-list">
-                <p class="text-gray-400 text-center py-8">Loading comments...</p>
+                <p class="text-[var(--text-mid)] text-center py-8">Loading comments...</p>
             </div>
         </div>
     </div>
@@ -559,7 +566,7 @@
 {% endif %}
 
 <!-- Cast Section -->
-<section class="py-16 bg-gray-900">
+<section class="py-16">
     <div class="container mx-auto px-4">
         <h2 class="text-3xl font-bold mb-8 gradient-text">Top Billed Cast</h2>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6" id="cast-grid">
@@ -567,22 +574,22 @@
             <a href="/actor/{{ cast.id }}" class="cast-card glass-effect rounded-lg overflow-hidden block">
                 <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='/static/images/no-poster.svg'">
                 <div class="p-4">
-                    <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ cast.name }}</h3>
-                    <p class="text-gray-400 text-xs">{{ cast.character }}</p>
+                    <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ cast.name }}</h3>
+                    <p class="text-[var(--text-mid)] text-xs">{{ cast.character }}</p>
                 </div>
             </a>
             {% endfor %}
         </div>
         <div class="text-center mt-8">
-            <button id="view-full-cast" class="text-indigo-400 hover:text-indigo-300 transition-colors">View Full Cast & Crew</button>
+            <button id="view-full-cast" class="text-[var(--accent)] hover:text-[var(--accent-hi)] transition-colors">View Full Cast & Crew</button>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 hidden" id="full-cast-grid">
             {% for cast in movie.cast[6:] %}
             <a href="/actor/{{ cast.id }}" class="cast-card glass-effect rounded-lg overflow-hidden block">
                 <img src="{{ cast.profile_path }}" alt="{{ cast.name }}" class="cast-image w-full" onerror="this.src='/static/images/no-poster.svg'">
                 <div class="p-4">
-                    <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ cast.name }}</h3>
-                    <p class="text-gray-400 text-xs">{{ cast.character }}</p>
+                    <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ cast.name }}</h3>
+                    <p class="text-[var(--text-mid)] text-xs">{{ cast.character }}</p>
                 </div>
             </a>
             {% endfor %}
@@ -623,7 +630,7 @@
         </div>
     </section>    <!-- Write Your Review Section -->
     {% if current_user.is_authenticated %}
-    <section class="py-16 bg-gradient-to-b from-gray-900 to-gray-800">
+    <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 gradient-text">Write Your Review</h2>
             
@@ -636,7 +643,7 @@
                             <div id="star-rating" class="flex space-x-1">
                                 <!-- Stars will be generated by JavaScript -->
                             </div>
-                            <span id="rating-value" class="text-2xl font-bold text-indigo-400 ml-4">0.0</span>
+                            <span id="rating-value" class="text-2xl font-bold text-[var(--accent)] ml-4">0.0</span>
                         </div>
                         <input type="hidden" id="rating-input" name="rating" value="0">
                     </div>
@@ -644,32 +651,32 @@
                     <!-- Review Text (Optional) -->
                     <div>
                         <label for="review-content" class="block text-lg font-semibold mb-3">
-                            Your Review <span class="text-gray-400 text-sm font-normal">(Optional)</span>
+                            Your Review <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
                         <textarea 
                             id="review-content" 
                             name="content"
                             rows="6" 
-                            class="w-full bg-gray-800 border border-gray-700 rounded-lg p-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                            class="w-full  border border-gray-700 rounded-lg p-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                             placeholder="Share your thoughts about this movie..."
                         ></textarea>
                         <div class="flex justify-between mt-2">
-                            <span id="char-count" class="text-sm text-gray-400">0 characters</span>
-                            <span class="text-sm text-gray-500">Max 2000 characters</span>
+                            <span id="char-count" class="text-sm text-[var(--text-mid)]">0 characters</span>
+                            <span class="text-sm text-[var(--text-mid)]">Max 2000 characters</span>
                         </div>
                     </div>
 
                     <!-- Watched Date -->
                     <div>
                         <label for="watched-date" class="block text-lg font-semibold mb-3">
-                            When did you watch it? <span class="text-gray-400 text-sm font-normal">(Optional)</span>
+                            When did you watch it? <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
                         <input 
                             type="date" 
                             id="watched-date" 
                             name="watched_date"
                             max="{{ today }}"
-                            class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            class=" border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                     </div>
 
@@ -679,7 +686,7 @@
                             type="checkbox" 
                             id="contains-spoilers" 
                             name="contains_spoilers"
-                            class="w-5 h-5 text-indigo-600 bg-gray-800 border-gray-700 rounded focus:ring-indigo-500"
+                            class="w-5 h-5 text-[var(--accent)]  border-gray-700 rounded focus:ring-indigo-500"
                         >
                         <label for="contains-spoilers" class="text-gray-300">
                             This review contains spoilers
@@ -701,7 +708,7 @@
                         <button 
                             type="button" 
                             id="cancel-review-btn"
-                            class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
+                            class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors"
                         >
                             Cancel
                         </button>
@@ -737,10 +744,10 @@
             
             <!-- Review Tabs -->
             <div class="flex space-x-4 mb-8 border-b border-gray-700">
-                <button id="user-reviews-tab" class="tab-button px-6 py-3 font-semibold text-indigo-400 border-b-2 border-indigo-400 transition-colors">
+                <button id="user-reviews-tab" class="tab-button px-6 py-3 font-semibold text-[var(--accent)] border-b-2 border-[var(--accent)] transition-colors">
                     User Reviews (<span id="user-review-count">0</span>)
                 </button>
-                <button id="tmdb-reviews-tab" class="tab-button px-6 py-3 font-semibold text-gray-400 hover:text-gray-300 transition-colors">
+                <button id="tmdb-reviews-tab" class="tab-button px-6 py-3 font-semibold text-[var(--text-mid)] hover:text-gray-300 transition-colors">
                     TMDb Reviews ({{ movie.reviews|length }})
                 </button>
             </div>
@@ -770,7 +777,7 @@
                                         </svg>
                                         {% endfor %}
                                     </div>
-                                    <span class="text-gray-400 text-sm ml-2">{{ review.created_at }}</span>
+                                    <span class="text-[var(--text-mid)] text-sm ml-2">{{ review.created_at }}</span>
                                 </div>
                             </div>
                         </div>
@@ -887,15 +894,15 @@
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0 bg-gray-900 glass-effect hidden';
+            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
             mobileMenu.innerHTML = `
                 <div class="container mx-auto px-4 py-4">
                     <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-white hover:text-indigo-400">Home</a>
-                        <a href="/movies" class="text-white hover:text-indigo-400">Movies</a>
-                        <a href="/tv_shows" class="text-white hover:text-indigo-400">TV Shows</a>
-                        <a href="/news" class="text-white hover:text-indigo-400">News</a>
-                        <a href="/chat" class="text-white hover:text-indigo-400">AI Chat</a>
+                        <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
+                        <a href="/movies" class="text-white hover:text-[var(--accent)]">Movies</a>
+                        <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
+                        <a href="/news" class="text-white hover:text-[var(--accent)]">News</a>
+                        <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
                     </div>
                 </div>
             `;
@@ -904,18 +911,6 @@
             mobileMenuButton.addEventListener('click', () => {
                 mobileMenu.classList.toggle('hidden');
             });
-
-            // Add floating chat button
-            const chatButton = document.createElement('a');
-            chatButton.href = '/chat';
-            chatButton.id = 'chatbot-button';
-            chatButton.className = 'fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg z-40 transition-all duration-300 hover:scale-110';
-            chatButton.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-            `;
-            document.body.appendChild(chatButton);
 
             // Trending backdrops rotation (using server-provided data)
             // Note: This is handled by the server-side template, but we need to handle it in JavaScript
@@ -1136,20 +1131,20 @@
             
             if (userReviewsTab && tmdbReviewsTab) {
                 userReviewsTab.addEventListener('click', () => {
-                    userReviewsTab.classList.add('text-indigo-400', 'border-b-2', 'border-indigo-400');
-                    userReviewsTab.classList.remove('text-gray-400');
-                    tmdbReviewsTab.classList.remove('text-indigo-400', 'border-b-2', 'border-indigo-400');
-                    tmdbReviewsTab.classList.add('text-gray-400');
+                    userReviewsTab.classList.add('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
+                    userReviewsTab.classList.remove('text-[var(--text-mid)]');
+                    tmdbReviewsTab.classList.remove('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
+                    tmdbReviewsTab.classList.add('text-[var(--text-mid)]');
                     
                     userReviewsContent.classList.remove('hidden');
                     tmdbReviewsContent.classList.add('hidden');
                 });
                 
                 tmdbReviewsTab.addEventListener('click', () => {
-                    tmdbReviewsTab.classList.add('text-indigo-400', 'border-b-2', 'border-indigo-400');
-                    tmdbReviewsTab.classList.remove('text-gray-400');
-                    userReviewsTab.classList.remove('text-indigo-400', 'border-b-2', 'border-indigo-400');
-                    userReviewsTab.classList.add('text-gray-400');
+                    tmdbReviewsTab.classList.add('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
+                    tmdbReviewsTab.classList.remove('text-[var(--text-mid)]');
+                    userReviewsTab.classList.remove('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
+                    userReviewsTab.classList.add('text-[var(--text-mid)]');
                     
                     tmdbReviewsContent.classList.remove('hidden');
                     userReviewsContent.classList.add('hidden');
@@ -1171,8 +1166,8 @@
                         if (data.reviews.length === 0) {
                             userReviewsGrid.innerHTML = `
                                 <div class="col-span-full text-center py-12">
-                                    <i class="fas fa-comment-slash text-4xl text-gray-600 mb-4"></i>
-                                    <p class="text-gray-400">No user reviews yet. Be the first to review!</p>
+                                    <i class="fas fa-comment-slash text-4xl text-[var(--text-mid)] mb-4"></i>
+                                    <p class="text-[var(--text-mid)]">No user reviews yet. Be the first to review!</p>
                                 </div>
                             `;
                         } else {
@@ -1200,7 +1195,7 @@
                     userReviewsGrid.innerHTML = `
                         <div class="col-span-full text-center py-12">
                             <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
-                            <p class="text-gray-400">Failed to load reviews. Please try again later.</p>
+                            <p class="text-[var(--text-mid)]">Failed to load reviews. Please try again later.</p>
                         </div>
                     `;
                 }
@@ -1237,11 +1232,11 @@
                                 </a>
                                 <div>
                                     <div class="flex items-center gap-2">
-                                        <a href="/user/${review.user.id}" class="hover:text-indigo-400 transition-colors">
+                                        <a href="/user/${review.user.id}" class="hover:text-[var(--accent)] transition-colors">
                                             <h3 class="font-semibold">${review.user.username}</h3>
                                         </a>
                                         ${!review.is_author_self ? `
-                                            <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-2 py-0.5 rounded transition-all" 
+                                            <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-2 py-0.5 rounded transition-all" 
                                                     data-follow-button 
                                                     data-user-id="${review.user.id}" 
                                                     data-following="${review.is_following_author}"
@@ -1255,13 +1250,13 @@
                                             ${starsHTML}
                                         </div>
                                         <span class="text-yellow-400 font-semibold mr-2">${review.rating.toFixed(1)}</span>
-                                        <span class="text-gray-400 text-sm">${formattedDate}</span>
+                                        <span class="text-[var(--text-mid)] text-sm">${formattedDate}</span>
                                     </div>
                                 </div>
                             </div>
                             ${isOwnReview ? `
                                 <div class="flex space-x-2">
-                                    <button class="text-indigo-400 hover:text-indigo-300 text-sm">
+                                    <button class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
                                         <i class="fas fa-edit"></i> Edit
                                     </button>
                                     <button class="text-red-400 hover:text-red-300 text-sm">
@@ -1271,15 +1266,15 @@
                             ` : ''}
                         </div>
                         ${review.contains_spoilers ? '<div class="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded px-3 py-1 text-yellow-400 text-sm mb-3 inline-block"><i class="fas fa-exclamation-triangle mr-1"></i> Contains Spoilers</div>' : ''}
-                        <p class="text-gray-300 mb-4">${review.content || '<em class="text-gray-500">No written review</em>'}</p>
+                        <p class="text-gray-300 mb-4">${review.content || '<em class="text-[var(--text-mid)]">No written review</em>'}</p>
                         <div class="flex items-center space-x-6 pt-4 border-t border-gray-700">
-                            <button class="like-button flex items-center space-x-2 text-gray-400 hover:text-red-400 transition-colors ${isLiked ? 'text-red-400' : ''}" 
+                            <button class="like-button flex items-center space-x-2 text-[var(--text-mid)] hover:text-red-400 transition-colors ${isLiked ? 'text-red-400' : ''}" 
                                     data-review-id="${review.id}" 
                                     data-liked="${isLiked}">
                                 <i class="fas fa-heart"></i>
                                 <span class="like-count">${review.likes_count}</span>
                             </button>
-                            <button class="comment-toggle flex items-center space-x-2 text-gray-400 hover:text-indigo-400 transition-colors" 
+                            <button class="comment-toggle flex items-center space-x-2 text-[var(--text-mid)] hover:text-[var(--accent)] transition-colors" 
                                     data-review-id="${review.id}">
                                 <i class="fas fa-comment"></i>
                                 <span>${review.comments_count} Comments</span>
@@ -1290,17 +1285,17 @@
                         <div id="comments-section-${review.id}" class="hidden mt-6 pt-4 border-t border-gray-800">
                             <div class="mb-6">
                                 <textarea id="comment-input-${review.id}" 
-                                          class="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 transition-colors" 
+                                          class="w-full  border border-gray-700 rounded-lg p-3 text-sm text-gray-200 focus:outline-none focus:border-[var(--accent)] transition-colors" 
                                           placeholder="Write a comment..." rows="2"></textarea>
                                 <div class="flex justify-end mt-2">
-                                    <button class="submit-comment bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors" 
+                                    <button class="submit-comment bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors" 
                                             data-review-id="${review.id}">Post Comment</button>
                                 </div>
                             </div>
                             <div id="comments-list-${review.id}" class="space-y-4">
                                 <!-- Comments will be loaded here -->
                                 <div class="text-center py-4">
-                                    <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-indigo-500 rounded-full" role="status"></div>
+                                    <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-[var(--accent)] rounded-full" role="status"></div>
                                 </div>
                             </div>
                         </div>
@@ -1384,7 +1379,7 @@
                     
                     if (response.ok) {
                         if (data.comments.length === 0) {
-                            list.innerHTML = '<p class="text-gray-500 text-sm text-center py-2">No comments yet. Start the conversation!</p>';
+                            list.innerHTML = '<p class="text-[var(--text-mid)] text-sm text-center py-2">No comments yet. Start the conversation!</p>';
                         } else {
                             list.innerHTML = renderCommentTree(data.comments, reviewId);
                             attachReplyListeners(reviewId);
@@ -1410,24 +1405,24 @@
                                      class="w-7 h-7 rounded-full" onerror="this.src='/static/images/default_avatar.svg'">
                                 <div class="flex-1">
                                     <div class="flex items-center space-x-2">
-                                        <span class="text-indigo-400 text-xs font-semibold">${comment.user.username}</span>
-                                        <span class="text-gray-500 text-[10px]">${formattedDate}</span>
+                                        <span class="text-[var(--accent)] text-xs font-semibold">${comment.user.username}</span>
+                                        <span class="text-[var(--text-mid)] text-[10px]">${formattedDate}</span>
                                     </div>
                                     <p class="text-gray-300 text-sm mt-1">${comment.content}</p>
                                     <div class="flex items-center space-x-3 mt-2">
-                                        <button class="reply-toggle text-gray-500 hover:text-indigo-400 text-[10px] font-medium transition-colors" 
+                                        <button class="reply-toggle text-[var(--text-mid)] hover:text-[var(--accent)] text-[10px] font-medium transition-colors" 
                                                 data-comment-id="${comment.id}" data-review-id="${reviewId}">
                                             Reply
                                         </button>
                                     </div>
                                     <!-- Inline Reply Form -->
                                     <div id="reply-form-${comment.id}" class="hidden mt-3">
-                                        <textarea class="reply-input-${comment.id} w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs text-gray-200 focus:outline-none focus:border-indigo-500" 
+                                        <textarea class="reply-input-${comment.id} w-full  border border-gray-700 rounded p-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--accent)]" 
                                                   placeholder="Reply to ${comment.user.username}..." rows="2"></textarea>
                                         <div class="flex space-x-2 mt-2">
-                                            <button class="submit-reply bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-3 py-1 rounded" 
+                                            <button class="submit-reply bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-[10px] px-3 py-1 rounded" 
                                                     data-comment-id="${comment.id}" data-review-id="${reviewId}">Post Reply</button>
-                                            <button class="cancel-reply text-gray-500 hover:text-gray-300 text-[10px] px-3 py-1" 
+                                            <button class="cancel-reply text-[var(--text-mid)] hover:text-gray-300 text-[10px] px-3 py-1" 
                                                     data-comment-id="${comment.id}">Cancel</button>
                                         </div>
                                     </div>
@@ -1626,16 +1621,16 @@
     {% with media_id = movie['id'], media_type = "movie" %}{% include "partials/modal_list.html" %}{% endwith %}
 
     <!-- More Like This Section -->
-    <section class="py-16 bg-gray-900/50">
+    <section class="py-16">
         <div class="container mx-auto px-4">
             <div id="more-like-this" 
                  data-media-id="{{ movie['id'] }}" 
                  data-media-type="movie">
-                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div class=" rounded-lg p-6 border border-gray-700">
                     <h3 class="text-2xl font-bold text-white mb-4">
                         <i class="fas fa-film"></i> More Like This
                     </h3>
-                    <p class="text-gray-400 text-center py-4">
+                    <p class="text-[var(--text-mid)] text-center py-4">
                         <i class="fas fa-spinner fa-spin"></i> Loading recommendations...
                     </p>
                 </div>
@@ -1647,4 +1642,4 @@
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
 </body>
-</html>
+</html>{% endblock %}

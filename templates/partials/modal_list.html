@@ -2,25 +2,25 @@
    Params: media_id — TMDb id of the item
            media_type — 'movie' or 'tv' (drives data attrs + icon) #}
 <div id="list-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-    <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
+    <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4">
         <h2 class="text-2xl font-bold mb-6">Add to List</h2>
 
         <div class="space-y-4">
             <div>
                 <label for="list-select" class="block text-sm font-semibold mb-2">Select List *</label>
-                <select id="list-select" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <select id="list-select" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500">
                     <option value="">Loading...</option>
                 </select>
             </div>
 
-            <p class="text-sm text-gray-400">Don't have a list yet? Create one from your profile page.</p>
+            <p class="text-sm text-[var(--text-mid)]">Don't have a list yet? Create one from your profile page.</p>
         </div>
 
         <div class="flex space-x-4 mt-6">
             <button onclick="addToSelectedList()" class="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 Add to List
             </button>
-            <button onclick="closeListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
+            <button onclick="closeListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
                 Cancel
             </button>
         </div>

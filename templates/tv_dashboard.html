@@ -7,7 +7,7 @@
     <div class="container mx-auto px-4 max-w-7xl">
         <!-- Breadcrumb Navigation -->
         <div class="mb-6">
-            <nav class="flex items-center gap-2 text-sm text-gray-400">
+            <nav class="flex items-center gap-2 text-sm text-[var(--text-mid)]">
                 <a href="/" class="hover:text-white transition-colors">Home</a>
                 <span>›</span>
                 <span class="text-white">TV Dashboard</span>
@@ -104,7 +104,7 @@
                         <span class="text-4xl">▶️</span>
                         Continue Watching
                     </h2>
-                    <a href="/tv/my-shows?status=watching" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                    <a href="/tv/my-shows?status=watching" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm font-medium">
                         View All →
                     </a>
                 </div>
@@ -120,7 +120,7 @@
                         <span class="text-4xl">✅</span>
                         Recently Completed
                     </h2>
-                    <a href="/tv/my-shows?status=completed" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                    <a href="/tv/my-shows?status=completed" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm font-medium">
                         View All →
                     </a>
                 </div>
@@ -136,7 +136,7 @@
                         <span class="text-4xl">📅</span>
                         Upcoming This Week
                     </h2>
-                    <a href="/tv/calendar" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                    <a href="/tv/calendar" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm font-medium">
                         Full Calendar →
                     </a>
                 </div>
@@ -174,7 +174,7 @@
         <div id="empty-state" class="hidden text-center py-20">
             <div class="text-8xl mb-6">📺</div>
             <h3 class="text-3xl font-bold text-white mb-4">Start Tracking TV Shows</h3>
-            <p class="text-gray-400 text-lg mb-8 max-w-md mx-auto">
+            <p class="text-[var(--text-mid)] text-lg mb-8 max-w-md mx-auto">
                 Track your progress, get notifications for new episodes, and organize your watchlist
             </p>
             <a href="/tv_shows" class="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-lg font-bold rounded-xl transition-all transform hover:scale-105 shadow-2xl">
@@ -314,22 +314,22 @@ function displayQuickStats(shows) {
         <div class="stat-card">
             <div class="text-green-400 text-3xl mb-2">▶️</div>
             <div class="text-white text-3xl font-bold">${watching}</div>
-            <div class="text-gray-400 text-sm">Watching</div>
+            <div class="text-[var(--text-mid)] text-sm">Watching</div>
         </div>
         <div class="stat-card">
             <div class="text-blue-400 text-3xl mb-2">✅</div>
             <div class="text-white text-3xl font-bold">${completed}</div>
-            <div class="text-gray-400 text-sm">Completed</div>
+            <div class="text-[var(--text-mid)] text-sm">Completed</div>
         </div>
         <div class="stat-card">
             <div class="text-yellow-400 text-3xl mb-2">📋</div>
             <div class="text-white text-3xl font-bold">${planToWatch}</div>
-            <div class="text-gray-400 text-sm">Plan to Watch</div>
+            <div class="text-[var(--text-mid)] text-sm">Plan to Watch</div>
         </div>
         <div class="stat-card">
-            <div class="text-purple-400 text-3xl mb-2">📺</div>
+            <div class="text-[var(--accent-hi)] text-3xl mb-2">📺</div>
             <div class="text-white text-3xl font-bold">${totalEpisodes}</div>
-            <div class="text-gray-400 text-sm">Episodes Watched</div>
+            <div class="text-[var(--text-mid)] text-sm">Episodes Watched</div>
         </div>
     `;
     document.getElementById('quick-stats').innerHTML = statsHTML;
@@ -343,7 +343,7 @@ async function loadContinueWatching(shows) {
     const container = document.getElementById('continue-watching');
     
     if (watching.length === 0) {
-        container.innerHTML = '<p class="col-span-full text-gray-400 text-center py-8">No shows currently watching</p>';
+        container.innerHTML = '<p class="col-span-full text-[var(--text-mid)] text-center py-8">No shows currently watching</p>';
         return;
     }
     
@@ -362,7 +362,7 @@ async function loadRecentlyCompleted(shows) {
     const container = document.getElementById('recently-completed');
     
     if (completed.length === 0) {
-        container.innerHTML = '<p class="col-span-full text-gray-400 text-center py-8">No completed shows yet</p>';
+        container.innerHTML = '<p class="col-span-full text-[var(--text-mid)] text-center py-8">No completed shows yet</p>';
         return;
     }
     
@@ -382,7 +382,7 @@ async function loadUpcomingWeek() {
         const container = document.getElementById('upcoming-week');
         
         if (episodes.length === 0) {
-            container.innerHTML = '<p class="text-gray-400 text-center py-8 bg-white/5 rounded-xl">No upcoming episodes this week</p>';
+            container.innerHTML = '<p class="text-[var(--text-mid)] text-center py-8 bg-white/5 rounded-xl">No upcoming episodes this week</p>';
             return;
         }
         
@@ -395,11 +395,11 @@ async function loadUpcomingWeek() {
                      onerror="this.src='/static/images/no-image.png'">
                 <div class="flex-1">
                     <div class="text-white font-semibold">${ep.show_name}</div>
-                    <div class="text-sm text-indigo-300">S${ep.season_number}E${ep.episode_number} • ${ep.episode_name || 'TBA'}</div>
+                    <div class="text-sm text-[var(--accent-hi)]">S${ep.season_number}E${ep.episode_number} • ${ep.episode_name || 'TBA'}</div>
                 </div>
                 <div class="text-right">
                     <div class="text-white font-semibold">${formatDate(ep.air_date)}</div>
-                    <div class="text-xs text-gray-400">${ep.days_until_air} days</div>
+                    <div class="text-xs text-[var(--text-mid)]">${ep.days_until_air} days</div>
                 </div>
             </div>
         `).join('');
@@ -413,7 +413,7 @@ async function loadByStatus(status) {
     const container = document.getElementById(containerId);
     
     if (shows.length === 0) {
-        container.innerHTML = '<p class="col-span-full text-gray-400 text-center py-12">No shows in this category</p>';
+        container.innerHTML = '<p class="col-span-full text-[var(--text-mid)] text-center py-12">No shows in this category</p>';
         return;
     }
     
@@ -441,7 +441,7 @@ function renderShowCard(show, details) {
                  onerror="this.src='/static/images/no-poster.png'">
             <div class="overlay">
                 <div class="text-white font-semibold text-sm truncate">${details.name}</div>
-                <div class="text-xs text-indigo-300">${show.watched_episodes}/${show.total_episodes} episodes</div>
+                <div class="text-xs text-[var(--accent-hi)]">${show.watched_episodes}/${show.total_episodes} episodes</div>
             </div>
         </div>
     `;
@@ -465,8 +465,8 @@ function renderShowCardLarge(show, details) {
             <div class="p-4">
                 <h3 class="text-white font-semibold mb-2 truncate">${details.name}</h3>
                 <div class="flex justify-between text-sm mb-2">
-                    <span class="text-gray-400">${show.watched_episodes}/${show.total_episodes} eps</span>
-                    <span class="text-indigo-300">${show.progress_percentage}%</span>
+                    <span class="text-[var(--text-mid)]">${show.watched_episodes}/${show.total_episodes} eps</span>
+                    <span class="text-[var(--accent-hi)]">${show.progress_percentage}%</span>
                 </div>
                 <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
                     <div class="${statusColors[show.status]} h-full" style="width: ${show.progress_percentage}%"></div>
@@ -478,7 +478,7 @@ function renderShowCardLarge(show, details) {
 
 async function loadCalendarView() {
     const container = document.getElementById('calendar-view');
-    container.innerHTML = '<div class="flex justify-center items-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>';
+    container.innerHTML = '<div class="flex justify-center items-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[var(--accent)]"></div></div>';
     
     try {
         const response = await fetch('/api/tv/upcoming-episodes');
@@ -489,10 +489,10 @@ async function loadCalendarView() {
                 <div class="text-center py-20">
                     <div class="text-6xl mb-4">📅</div>
                     <h3 class="text-2xl font-bold text-white mb-3">No Upcoming Episodes</h3>
-                    <p class="text-gray-400 mb-6">
+                    <p class="text-[var(--text-mid)] mb-6">
                         No episodes scheduled in the next 7 days for your tracked shows.
                     </p>
-                    <a href="/tv/upcoming" class="inline-block px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all">
+                    <a href="/tv/upcoming" class="inline-block px-6 py-3 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white rounded-lg transition-all">
                         View Full Calendar
                     </a>
                 </div>
@@ -514,8 +514,8 @@ async function loadCalendarView() {
             html += `
                 <div>
                     <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-3">
-                        <span class="text-indigo-400">${formatDate(date)}</span>
-                        <span class="text-gray-500 text-sm font-normal">${date}</span>
+                        <span class="text-[var(--accent)]">${formatDate(date)}</span>
+                        <span class="text-[var(--text-mid)] text-sm font-normal">${date}</span>
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             `;
@@ -531,13 +531,13 @@ async function loadCalendarView() {
                              onerror="this.src='/static/images/no-poster.png'">
                         <div class="p-4">
                             <h4 class="text-white font-semibold mb-1">${ep.show_name}</h4>
-                            <p class="text-sm text-indigo-300 mb-2">S${ep.season_number}E${ep.episode_number}: ${ep.episode_name || 'Episode ' + ep.episode_number}</p>
-                            ${ep.episode_overview ? `<p class="text-xs text-gray-400 line-clamp-2">${ep.episode_overview}</p>` : ''}
+                            <p class="text-sm text-[var(--accent-hi)] mb-2">S${ep.season_number}E${ep.episode_number}: ${ep.episode_name || 'Episode ' + ep.episode_number}</p>
+                            ${ep.episode_overview ? `<p class="text-xs text-[var(--text-mid)] line-clamp-2">${ep.episode_overview}</p>` : ''}
                             <div class="mt-3 flex justify-between items-center">
-                                <span class="text-xs ${ep.watched ? 'text-green-400' : 'text-gray-400'}">
+                                <span class="text-xs ${ep.watched ? 'text-green-400' : 'text-[var(--text-mid)]'}">
                                     ${ep.watched ? '✓ Watched' : 'Not watched'}
                                 </span>
-                                <span class="text-xs text-indigo-400">${ep.days_until_air} days</span>
+                                <span class="text-xs text-[var(--accent)]">${ep.days_until_air} days</span>
                             </div>
                         </div>
                     </div>
@@ -550,7 +550,7 @@ async function loadCalendarView() {
         html += '</div>';
         html += `
             <div class="text-center mt-8">
-                <a href="/tv/upcoming" class="inline-block px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all">
+                <a href="/tv/upcoming" class="inline-block px-6 py-3 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white rounded-lg transition-all">
                     View Full Calendar (All Upcoming Episodes)
                 </a>
             </div>
@@ -561,7 +561,7 @@ async function loadCalendarView() {
         container.innerHTML = `
             <div class="text-center py-12">
                 <p class="text-red-400 mb-4">Error loading upcoming episodes</p>
-                <a href="/tv/upcoming" class="text-indigo-400 hover:text-indigo-300">View full calendar page</a>
+                <a href="/tv/upcoming" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View full calendar page</a>
             </div>
         `;
     }

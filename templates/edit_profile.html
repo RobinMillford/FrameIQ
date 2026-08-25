@@ -5,30 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Profile - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
         }
     </style>
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="bg-gray-900 shadow-lg">
+    <nav class=" shadow-lg">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-[var(--accent)]">FrameIQ</a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
-                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-indigo-400">Profile</a>
-                        <a href="{{ url_for('auth.logout') }}" class="text-white hover:text-indigo-400">Logout</a>
+                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">Profile</a>
+                        <a href="{{ url_for('auth.logout') }}" class="text-white hover:text-[var(--accent)]">Logout</a>
                     {% else %}
-                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
-                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-indigo-400">Register</a>
+                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-[var(--accent)]">Login</a>
+                        <a href="{{ url_for('auth.register') }}" class="text-white hover:text-[var(--accent)]">Register</a>
                     {% endif %}
                 </div>
             </div>
@@ -36,8 +38,8 @@
     </nav>
 
     <div class="container mx-auto px-4 py-8">
-        <div class="bg-gray-800 rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
-            <h1 class="text-3xl font-bold mb-6 text-indigo-400">Edit Profile</h1>
+        <div class=" rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6 text-[var(--accent)]">Edit Profile</h1>
             
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
@@ -52,42 +54,42 @@
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="username">Username</label>
                     <input 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         type="text" 
                         id="username" 
                         name="username" 
                         value="{{ current_user.username }}" 
                         disabled>
-                    <p class="text-gray-400 text-sm mt-1">Username cannot be changed</p>
+                    <p class="text-[var(--text-mid)] text-sm mt-1">Username cannot be changed</p>
                 </div>
                 
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="email">Email</label>
                     <input 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         type="email" 
                         id="email" 
                         name="email" 
                         value="{{ current_user.email }}" 
                         disabled>
-                    <p class="text-gray-400 text-sm mt-1">Email cannot be changed</p>
+                    <p class="text-[var(--text-mid)] text-sm mt-1">Email cannot be changed</p>
                 </div>
                 
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="profile_picture">Profile Picture</label>
                     <input 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         type="file" 
                         id="profile_picture" 
                         name="profile_picture" 
                         accept="image/*">
-                    <p class="text-gray-400 text-sm mt-1">Upload a profile picture (JPG, PNG, GIF)</p>
+                    <p class="text-[var(--text-mid)] text-sm mt-1">Upload a profile picture (JPG, PNG, GIF)</p>
                 </div>
                 
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="first_name">First Name</label>
                     <input 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         type="text" 
                         id="first_name" 
                         name="first_name" 
@@ -97,7 +99,7 @@
                 <div class="mb-4">
                     <label class="block text-gray-300 mb-2" for="last_name">Last Name</label>
                     <input 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         type="text" 
                         id="last_name" 
                         name="last_name" 
@@ -107,7 +109,7 @@
                 <div class="mb-6">
                     <label class="block text-gray-300 mb-2" for="bio">Bio</label>
                     <textarea 
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]" 
                         id="bio" 
                         name="bio" 
                         rows="4">{{ current_user.bio or '' }}</textarea>
@@ -118,7 +120,7 @@
                         Cancel
                     </a>
                     <button 
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300" 
+                        class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300" 
                         type="submit">
                         Save Changes
                     </button>
@@ -126,5 +128,6 @@
             </form>
         </div>
     </div>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

@@ -6,25 +6,27 @@
     <title>Discover Lists - FrameIQ</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
 </head>
-<body class="bg-gray-900 text-white min-h-screen">
+<body class=" text-white min-h-screen">
     <!-- Navigation -->
-    <nav class="bg-gray-900 shadow-lg border-b border-gray-800">
+    <nav class=" shadow-lg border-b border-gray-800">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center space-x-6">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
-                    <a href="/lists" class="text-gray-300 hover:text-indigo-400 transition-colors">
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-[var(--accent)]">FrameIQ</a>
+                    <a href="/lists" class="text-gray-300 hover:text-[var(--accent)] transition-colors">
                         <i class="fas fa-list"></i> My Lists
                     </a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
-                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-indigo-400">
+                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">
                             <i class="fas fa-user"></i> {{ current_user.username }}
                         </a>
                     {% else %}
-                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-indigo-400">Login</a>
+                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-[var(--accent)]">Login</a>
                     {% endif %}
                 </div>
             </div>
@@ -34,25 +36,25 @@
     <div class="container mx-auto px-4 py-8">
         <!-- Header -->
         <div class="mb-8">
-            <h1 class="text-4xl font-bold text-indigo-400 mb-2">
+            <h1 class="text-4xl font-bold text-[var(--accent)] mb-2">
                 <i class="fas fa-compass"></i> Discover Lists
             </h1>
-            <p class="text-gray-400">Explore curated collections from the community</p>
+            <p class="text-[var(--text-mid)]">Explore curated collections from the community</p>
         </div>
 
         <!-- Filters -->
-        <div class="bg-gray-800 rounded-lg p-6 mb-8 border border-gray-700">
+        <div class=" rounded-lg p-6 mb-8 border border-gray-700">
             <div class="flex flex-wrap gap-4 items-center">
                 <div>
-                    <label class="text-sm text-gray-400 mb-2 block">Sort By</label>
-                    <select id="sort-select" class="bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <label class="text-sm text-[var(--text-mid)] mb-2 block">Sort By</label>
+                    <select id="sort-select" class="bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
                         <option value="recent">Most Recent</option>
                         <option value="popular">Most Popular</option>
                         <option value="trending">Trending</option>
                     </select>
                 </div>
                 <div class="flex-grow"></div>
-                <div class="text-sm text-gray-400" id="results-count">
+                <div class="text-sm text-[var(--text-mid)]" id="results-count">
                     Loading...
                 </div>
             </div>
@@ -65,15 +67,15 @@
 
         <!-- Loading State -->
         <div id="loading" class="text-center py-12">
-            <i class="fas fa-spinner fa-spin text-4xl text-indigo-400 mb-4"></i>
-            <p class="text-gray-400">Loading lists...</p>
+            <i class="fas fa-spinner fa-spin text-4xl text-[var(--accent)] mb-4"></i>
+            <p class="text-[var(--text-mid)]">Loading lists...</p>
         </div>
 
         <!-- Empty State -->
-        <div id="empty-state" class="hidden text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-            <i class="fas fa-inbox text-6xl text-gray-600 mb-4"></i>
-            <h3 class="text-2xl font-bold text-gray-400 mb-2">No Lists Found</h3>
-            <p class="text-gray-500">Try changing your filters</p>
+        <div id="empty-state" class="hidden text-center py-16  rounded-lg border border-gray-700">
+            <i class="fas fa-inbox text-6xl text-[var(--text-mid)] mb-4"></i>
+            <h3 class="text-2xl font-bold text-[var(--text-mid)] mb-2">No Lists Found</h3>
+            <p class="text-[var(--text-mid)]">Try changing your filters</p>
         </div>
 
         <!-- Pagination -->
@@ -81,7 +83,7 @@
             <button id="prev-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                 <i class="fas fa-chevron-left"></i> Previous
             </button>
-            <span id="page-info" class="px-4 py-2 text-gray-400"></span>
+            <span id="page-info" class="px-4 py-2 text-[var(--text-mid)]"></span>
             <button id="next-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                 Next <i class="fas fa-chevron-right"></i>
             </button>
@@ -135,12 +137,12 @@
         function createListCard(list) {
             const card = document.createElement('a');
             card.href = list.slug ? `/lists/l/${list.slug}` : `/lists/${list.id}`;
-            card.className = 'block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 transition-all transform hover:-translate-y-1';
+            card.className = 'block  rounded-lg overflow-hidden border border-gray-700 hover:border-[var(--accent)] transition-all transform hover:-translate-y-1';
             
             // Cover image or gradient
             const coverHtml = list.cover_image 
                 ? `<img src="${list.cover_image}" alt="${list.title}" class="w-full h-48 object-cover">`
-                : `<div class="w-full h-48 bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
+                : `<div class="w-full h-48 bg-gradient-to-br from-[var(--accent)] to-[var(--accent)] flex items-center justify-center">
                     <i class="fas fa-film text-6xl text-white opacity-50"></i>
                    </div>`;
             
@@ -152,9 +154,9 @@
                         ${!list.is_public ? '<span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded ml-2"><i class="fas fa-lock"></i></span>' : ''}
                     </div>
                     
-                    ${list.description ? `<p class="text-gray-400 text-sm mb-4 line-clamp-2">${list.description}</p>` : ''}
+                    ${list.description ? `<p class="text-[var(--text-mid)] text-sm mb-4 line-clamp-2">${list.description}</p>` : ''}
                     
-                    <div class="flex items-center justify-between text-sm text-gray-500">
+                    <div class="flex items-center justify-between text-sm text-[var(--text-mid)]">
                         <div class="flex items-center gap-3">
                             <span><i class="fas fa-film"></i> ${list.item_count} items</span>
                             <span><i class="fas fa-user"></i> ${list.user.username}</span>
@@ -210,5 +212,6 @@
         // Initial load
         loadLists();
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

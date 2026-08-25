@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Lists - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
         }
         
@@ -26,15 +28,15 @@
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="bg-gray-900 shadow-lg">
+    <nav class=" shadow-lg">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center">
-                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-indigo-400">FrameIQ</a>
+                    <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-[var(--accent)]">FrameIQ</a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
-                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-indigo-400">
+                        <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">
                             <i class="fas fa-user"></i> {{ current_user.username }}
                         </a>
                     {% endif %}
@@ -46,10 +48,10 @@
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-8">
             <div>
-                <h1 class="text-4xl font-bold text-indigo-400 mb-2">My Lists</h1>
-                <p class="text-gray-400">Manage your custom curated collections</p>
+                <h1 class="text-4xl font-bold text-[var(--accent)] mb-2">My Lists</h1>
+                <p class="text-[var(--text-mid)]">Manage your custom curated collections</p>
             </div>
-            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all flex items-center gap-2">
+            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all flex items-center gap-2">
                 <i class="fas fa-plus"></i> Create New List
             </button>
         </div>
@@ -57,7 +59,7 @@
         {% if user_lists %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for list in user_lists %}
-            <a href="/lists/{{ list.id }}" class="list-card bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-indigo-500 block">
+            <a href="/lists/{{ list.id }}" class="list-card  rounded-lg p-6 border border-gray-700 hover:border-[var(--accent)] block">
                 <div class="flex justify-between items-start mb-4">
                     <h3 class="text-xl font-bold text-white">{{ list.title }}</h3>
                     {% if not list.is_public %}
@@ -68,10 +70,10 @@
                 </div>
                 
                 {% if list.description %}
-                <p class="text-gray-400 text-sm mb-4 line-clamp-2">{{ list.description }}</p>
+                <p class="text-[var(--text-mid)] text-sm mb-4 line-clamp-2">{{ list.description }}</p>
                 {% endif %}
                 
-                <div class="flex items-center justify-between text-sm text-gray-500">
+                <div class="flex items-center justify-between text-sm text-[var(--text-mid)]">
                     <span>
                         <i class="fas fa-film"></i> {{ list.items.count() }} items
                     </span>
@@ -83,11 +85,11 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-            <i class="fas fa-list text-6xl text-gray-600 mb-4"></i>
-            <h3 class="text-2xl font-bold text-gray-400 mb-2">No Lists Yet</h3>
-            <p class="text-gray-500 mb-6">Create your first custom list to organize your favorite movies and TV shows</p>
-            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+        <div class="text-center py-16  rounded-lg border border-gray-700">
+            <i class="fas fa-list text-6xl text-[var(--text-mid)] mb-4"></i>
+            <h3 class="text-2xl font-bold text-[var(--text-mid)] mb-2">No Lists Yet</h3>
+            <p class="text-[var(--text-mid)] mb-6">Create your first custom list to organize your favorite movies and TV shows</p>
+            <button onclick="openCreateListModal()" class="bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 <i class="fas fa-plus"></i> Create Your First List
             </button>
         </div>
@@ -96,28 +98,28 @@
 
     <!-- Create List Modal -->
     <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6 text-indigo-400">Create New List</h2>
+        <div class=" rounded-lg p-8 w-full max-w-md mx-4">
+            <h2 class="text-2xl font-bold mb-6 text-[var(--accent)]">Create New List</h2>
             
             <div class="space-y-4">
                 <div>
                     <label for="list-title" class="block text-sm font-semibold mb-2">List Title *</label>
-                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
                 </div>
                 
                 <div>
                     <label for="list-description" class="block text-sm font-semibold mb-2">Description (Optional)</label>
-                    <textarea id="list-description" rows="3" placeholder="Describe your list..." class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                    <textarea id="list-description" rows="3" placeholder="Describe your list..." class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] resize-none"></textarea>
                 </div>
                 
                 <div class="flex items-center">
-                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
+                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-[var(--accent)] bg-gray-700 border-gray-600 rounded focus:ring-[var(--accent)]">
                     <label for="list-public" class="ml-2 text-sm text-gray-300">Make this list public</label>
                 </div>
             </div>
             
             <div class="flex space-x-4 mt-6">
-                <button onclick="createList()" class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                <button onclick="createList()" class="flex-1 bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                     Create List
                 </button>
                 <button onclick="closeCreateListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">
@@ -172,5 +174,6 @@
             }
         }
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

@@ -1,0 +1,409 @@
+/* ═══════════════════════════════════════════════════════════════════
+   D1 — Chrome: command palette, CineBot slide-over, toasts, skeletons
+   Loaded after tokens.css.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Page-enter fade */
+@keyframes page-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: page-enter 0.35s var(--ease-out) both; }
+
+/* Skeleton shimmer */
+.skeleton {
+    background: linear-gradient(110deg, var(--bg-surface) 30%,
+                var(--bg-elevated) 45%, var(--bg-surface) 60%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+    border-radius: 10px;
+}
+@keyframes shimmer { to { background-position-x: -200%; } }
+
+/* ── Global toast ── */
+.fi-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translate(-50%, 80px);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    border-left: 3px solid #fff;
+    color: var(--text-hi);
+    font-size: 0.875rem;
+    padding: 12px 18px;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: transform var(--dur-panel) var(--ease-out),
+                opacity var(--dur-panel) var(--ease-out);
+    max-width: min(92vw, 420px);
+}
+.fi-toast.show { transform: translate(-50%, 0); opacity: 1; }
+.fi-toast.success { border-left-color: var(--success); }
+.fi-toast.error   { border-left-color: var(--danger); }
+
+/* ── Command palette (⌘K) ── */
+.cmdk-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    background: rgba(5, 5, 8, 0.6);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vh 16px 16px;
+}
+.cmdk-overlay.open { display: flex; animation: fade-in 0.15s ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+
+.cmdk-panel {
+    width: 100%;
+    max-width: 560px;
+    background: var(--bg-elevated);
+    border: 1px solid #34343F;
+    border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    animation: rise-in 0.2s var(--ease-out) both;
+}
+
+.cmdk-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-hi);
+    font-size: 1rem;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+}
+.cmdk-input::placeholder { color: var(--text-low); }
+
+.cmdk-results {
+    max-height: 46vh;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.cmdk-group {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-low);
+    padding: 10px 12px 4px;
+}
+
+.cmdk-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--text-mid);
+    font-size: 0.875rem;
+}
+.cmdk-item .cmdk-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-low);
+}
+.cmdk-item .cmdk-item-title { color: var(--text-hi); }
+.cmdk-item .cmdk-item-sub {
+    font-size: 0.75rem;
+    color: var(--text-low);
+    font-family: var(--font-mono);
+}
+.cmdk-item.selected { background: rgba(255, 255, 255, 0.08); color: var(--text-hi); }
+.cmdk-item.selected .cmdk-icon { color: var(--accent); }
+
+.cmdk-poster {
+    width: 32px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+}
+
+.cmdk-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-low);
+    font-size: 0.875rem;
+}
+
+.cmdk-hint {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--text-low);
+}
+.cmdk-hint kbd {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+/* ── CineBot slide-over ── */
+.cinebot-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 390;
+    background: rgba(5, 5, 8, 0.5);
+    display: none;
+}
+.cinebot-overlay.open { display: block; animation: fade-in 0.2s ease-out; }
+
+.cinebot-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 395;
+    width: min(420px, 100vw);
+    background: var(--bg-surface);
+    border-left: 1px solid var(--line);
+    box-shadow: -24px 0 80px rgba(0, 0, 0, 0.55);
+    transform: translateX(100%);
+    transition: transform var(--dur-panel) var(--ease-out);
+    display: flex;
+    flex-direction: column;
+}
+.cinebot-panel.open { transform: translateX(0); }
+
+.cinebot-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-elevated);
+}
+.cinebot-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--text-hi);
+}
+.cinebot-title .cinebot-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 0;
+    background: var(--accent);
+}
+.cinebot-context {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--text-low);
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cinebot-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.cinebot-msg {
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 0.875rem;
+    line-height: 1.55;
+}
+.cinebot-msg.user {
+    align-self: flex-end;
+    background: #fff;
+    color: #000;
+    border-bottom-right-radius: 4px;
+}
+.cinebot-msg.bot {
+    align-self: flex-start;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    color: var(--text-hi);
+    border-bottom-left-radius: 4px;
+}
+.cinebot-msg.bot p { margin: 0 0 8px; }
+.cinebot-msg.bot p:last-child { margin-bottom: 0; }
+.cinebot-msg.bot ul, .cinebot-msg.bot ol { margin: 4px 0; padding-left: 18px; }
+.cinebot-msg.bot strong { color: var(--accent-hi); }
+
+.cinebot-msg .cursor-blink::after {
+    content: "▍";
+    animation: blink 1s step-end infinite;
+    color: var(--accent-hi);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.cinebot-inputbar {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-elevated);
+}
+.cinebot-inputbar input {
+    flex: 1;
+    background: var(--bg-base);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text-hi);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color var(--dur-fast) var(--ease-out);
+}
+.cinebot-inputbar input:focus { border-color: #fff; }
+.cinebot-inputbar input::placeholder { color: var(--text-low); }
+.cinebot-inputbar button {
+    background: #fff;
+    border: none;
+    border-radius: var(--r-md);
+    width: 42px;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--dur-fast) var(--ease-out);
+}
+.cinebot-inputbar button:hover { background: #d9d9d9; }
+.cinebot-inputbar button:disabled { opacity: 0.5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+    .cinebot-panel { transition: none; }
+}
+
+/* ── Rails (D2 home) ── */
+.rail {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    padding-bottom: 10px;
+    scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+.rail > * { scroll-snap-align: start; }
+
+.rail-arrow {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+    color: var(--text-mid);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out),
+                color var(--dur-fast) var(--ease-out);
+}
+.rail-arrow:hover { background: rgba(255, 255, 255, 0.12); color: var(--text-hi); }
+
+.rail-header-sub {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.05em;
+    color: var(--text-low);
+    margin-top: 2px;
+}
+
+/* Continue-watching progress card */
+.continue-card {
+    width: 220px;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+}
+.continue-thumb {
+    position: relative;
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--line);
+}
+.continue-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+.continue-card:hover .continue-thumb img { transform: scale(1.05); }
+.continue-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+}
+.continue-progress > div {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--amber));
+}
+
+/* Hero (Tonight's Pick) */
+.pick-hero {
+    position: relative;
+    min-height: 520px;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+}
+.pick-hero-backdrop {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 20%;
+    animation: kenburns 24s ease-in-out infinite alternate;
+}
+@keyframes kenburns {
+    from { transform: scale(1); }
+    to   { transform: scale(1.08); }
+}
+.pick-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top,
+                var(--bg-base) 4%,
+                rgba(11, 11, 16, 0.55) 45%,
+                rgba(11, 11, 16, 0.2) 100%);
+}
+.pick-hero-content { position: relative; z-index: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+    .pick-hero-backdrop { animation: none; }
+}

@@ -1,0 +1,92 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Projector beam — a barely-visible warm light that slowly shifts,
+   like light leaking through a film gate. CSS-only, zero JS.
+   Attach <div class="projector"></div> after the grain div.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.projector {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* The beam — a warm cone from upper-left, barely there */
+.projector::before {
+    content: "";
+    position: absolute;
+    top: -30%;
+    left: -20%;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(
+        ellipse at center,
+        rgba(246, 183, 60, 0.015) 0%,
+        rgba(246, 183, 60, 0.008) 40%,
+        transparent 70%
+    );
+    animation: beam-drift 40s ease-in-out infinite alternate;
+}
+
+/* A secondary cooler beam from lower-right — the fill light */
+.projector::after {
+    content: "";
+    position: absolute;
+    bottom: -20%;
+    right: -15%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(
+        ellipse at center,
+        rgba(120, 130, 200, 0.012) 0%,
+        rgba(120, 130, 200, 0.006) 40%,
+        transparent 70%
+    );
+    animation: beam-drift-2 55s ease-in-out infinite alternate;
+}
+
+/* The dust: micro-specks drifting in the beam, like dust in projector light */
+.projector-dust {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.dust-speck {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    animation: dust-drift linear infinite;
+}
+
+@keyframes beam-drift {
+    0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
+    25%  { transform: translate(4%, 3%) rotate(1deg) scale(1.05); }
+    50%  { transform: translate(-2%, 5%) rotate(-0.5deg) scale(1.02); }
+    75%  { transform: translate(3%, -2%) rotate(0.5deg) scale(1.06); }
+    100% { transform: translate(-1%, 1%) rotate(0deg) scale(1); }
+}
+
+@keyframes beam-drift-2 {
+    0%   { transform: translate(0, 0) scale(1); }
+    33%  { transform: translate(-3%, -4%) scale(1.04); }
+    66%  { transform: translate(4%, 2%) scale(1.01); }
+    100% { transform: translate(-1%, -1%) scale(1.03); }
+}
+
+@keyframes dust-drift {
+    0%   { transform: translate(0, 0); opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translate(var(--dx, 20px), var(--dy, -60px)); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .projector::before, .projector::after { animation: none; }
+    .dust-speck { animation: none; opacity: 0.05; }
+}

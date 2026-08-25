@@ -6,8 +6,10 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>{{ genre_name }} Movies - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -61,17 +63,9 @@
             width: 100%;
         }
 
-        #chatbot-button {
-            transition: all 0.3s ease;
-        }
-
-        #chatbot-button:hover {
-            transform: scale(1.1);
-        }
-
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
             min-height: 100vh;
         }
@@ -110,7 +104,7 @@
         }
     </style>
 </head>
-<body class="min-h-screen bg-gray-900 text-white font-['Poppins']">
+<body class="min-h-screen  text-white font-['Inter']">
     <!-- Navigation -->
     {% with accent="indigo", back_href="/movies", show_social_feed=false, show_auth=false %}{% include "partials/nav_detail.html" %}{% endwith %}
 
@@ -120,7 +114,7 @@
             <h1 class="text-5xl md:text-7xl font-bold mb-8 animate__animated animate__fadeInDown gradient-text">
                 {{ genre_name }} Movies
             </h1>
-            <p class="text-xl mb-12 animate__animated animate__fadeInUp text-indigo-200">
+            <p class="text-xl mb-12 animate__animated animate__fadeInUp text-[var(--text-mid)]">
                 Discover the best {{ genre_name.lower() }} movies for your next movie night
             </p>
         </div>
@@ -147,12 +141,12 @@
                         <span class="text-xs bg-pink-600 text-white px-2 py-1 rounded">Wishlist</span>
                         {% endif %}
                         {% if (movie.id, 'movie') in user_watchlist_ids %}
-                        <span class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Watchlist</span>
+                        <span class="text-xs bg-[var(--accent)] text-white px-2 py-1 rounded">Watchlist</span>
                         {% endif %}
                         
                         <!-- Action buttons - allow adding to multiple lists -->
                         {% if (movie.id, 'movie') not in user_watchlist_ids %}
-                        <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie') }}" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-1 py-1 rounded" title="Add to Watchlist">
+                        <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie') }}" class="text-xs bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-1 py-1 rounded" title="Add to Watchlist">
                             <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
@@ -181,23 +175,18 @@
     </section>
 
     <!-- Chat Button -->
-    <button id="chatbot-button" 
-            class="fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-lg bg-gradient-to-r from-indigo-600 to-purple-600"
-            onclick="openChat()">
-        💬
-    </button>
 
     <script>
         function setupMobileMenu() {
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0 bg-gray-900 glass-effect hidden';
+            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
             mobileMenu.innerHTML = `
                 <div class="container mx-auto px-4 py-4">
                     <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-white hover:text-indigo-400">Home</a>
-                        <a href="/tv_shows" class="text-white hover:text-indigo-400">TV Shows</a>
-                        <a href="/chat" class="text-white hover:text-indigo-400">AI Chat</a>
+                        <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
+                        <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
+                        <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
                     </div>
                 </div>
             `;
@@ -207,14 +196,8 @@
                 mobileMenu.classList.toggle('hidden');
             });
         }
-
-        function openChat() {
-            window.location.href = "/chat";
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            setupMobileMenu();
-        });
+});
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

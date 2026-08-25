@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Watchlist - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/priorities.css') }}">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
         }
         .media-card {
@@ -35,7 +37,7 @@
 
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold text-indigo-400">My Watchlist</h1>
+            <h1 class="text-3xl font-bold text-[var(--accent)]">My Watchlist</h1>
             <a href="{{ url_for('main.index') }}" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded transition duration-300">
                 Back to Home
             </a>
@@ -147,10 +149,10 @@
                             {% endfor %}
                         </div>
                     {% else %}
-                        <div class="bg-gray-800 rounded-lg p-8 text-center">
+                        <div class=" rounded-lg p-8 text-center">
                             <h3 class="text-xl font-semibold mb-2">No movies in your watchlist</h3>
-                            <p class="text-gray-400 mb-4">Add movies to your watchlist to see them here.</p>
-                            <a href="{{ url_for('main.movies') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded transition duration-300">
+                            <p class="text-[var(--text-mid)] mb-4">Add movies to your watchlist to see them here.</p>
+                            <a href="{{ url_for('main.movies') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
                                 Browse Movies
                             </a>
                         </div>
@@ -208,10 +210,10 @@
                             {% endfor %}
                         </div>
                     {% else %}
-                        <div class="bg-gray-800 rounded-lg p-8 text-center">
+                        <div class=" rounded-lg p-8 text-center">
                             <h3 class="text-xl font-semibold mb-2">No TV shows in your watchlist</h3>
-                            <p class="text-gray-400 mb-4">Add TV shows to your watchlist to see them here.</p>
-                            <a href="{{ url_for('main.tv_shows') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded transition duration-300">
+                            <p class="text-[var(--text-mid)] mb-4">Add TV shows to your watchlist to see them here.</p>
+                            <a href="{{ url_for('main.tv_shows') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
                                 Browse TV Shows
                             </a>
                         </div>
@@ -269,10 +271,10 @@
                             {% endfor %}
                         </div>
                     {% else %}
-                        <div class="bg-gray-800 rounded-lg p-8 text-center">
+                        <div class=" rounded-lg p-8 text-center">
                             <h3 class="text-xl font-semibold mb-2">No anime in your watchlist</h3>
-                            <p class="text-gray-400 mb-4">Add anime to your watchlist to see them here.</p>
-                            <a href="{{ url_for('main.tv_shows') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded transition duration-300">
+                            <p class="text-[var(--text-mid)] mb-4">Add anime to your watchlist to see them here.</p>
+                            <a href="{{ url_for('main.tv_shows') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
                                 Browse Anime
                             </a>
                         </div>
@@ -280,10 +282,10 @@
                 </div>
             </div>
         {% else %}
-            <div class="bg-gray-800 rounded-lg p-8 text-center">
+            <div class=" rounded-lg p-8 text-center">
                 <h2 class="text-xl font-semibold mb-2">Your watchlist is empty</h2>
-                <p class="text-gray-400 mb-4">Add movies and TV shows to your watchlist to keep track of what you want to watch.</p>
-                <a href="{{ url_for('main.index') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded transition duration-300">
+                <p class="text-[var(--text-mid)] mb-4">Add movies and TV shows to your watchlist to keep track of what you want to watch.</p>
+                <a href="{{ url_for('main.index') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
                     Browse Movies & TV Shows
                 </a>
             </div>
@@ -292,5 +294,6 @@
 
     <script src="{{ url_for('static', filename='js/watchlist-ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/watchlist-priority-handler.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

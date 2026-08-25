@@ -1,7 +1,7 @@
 # File: routes/auth.py
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from models import db, User, Review
+from models import TVShowProgress, db, User, Review
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import limiter
 from datetime import datetime
@@ -32,6 +32,7 @@ cloudinary.config(
     api_secret=os.getenv('CLOUDINARY_API_SECRET')
 )
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -47,6 +48,7 @@ def _valid_image_bytes(stream):
     if header[:6] in (b'GIF87a', b'GIF89a'):
         return True
     return False
+
 
 @auth.route('/register', methods=['GET', 'POST'])
 @limiter.limit("5 per minute; 20 per hour")
@@ -124,6 +126,7 @@ def register():
     
     return render_template('register.html')
 
+
 @auth.route('/login', methods=['GET', 'POST'])
 @limiter.limit("10 per minute; 50 per hour")
 def login():
@@ -151,6 +154,7 @@ def login():
     
     return render_template('login.html')
 
+
 @auth.route('/logout')
 @login_required
 def logout():
@@ -158,12 +162,45 @@ def logout():
     flash('You have been logged out')
     return redirect(url_for('main.index'))
 
+
 @auth.route('/profile')
 @login_required
 def profile():
     # Fetch recent reviews for the authenticated user
     recent_reviews = current_user.user_reviews.order_by(db.desc(Review.created_at)).all()
-    return render_template('profile.html', reviews=recent_reviews)
+
+    # Taste DNA — top genres derived from rated items
+    from collections import Counter
+    genre_counts = Counter()
+    for r in recent_reviews:
+        if r.media and r.media.genres:
+            for g in str(r.media.genres).split(','):
+                g = g.strip()
+                if g:
+                    genre_counts[g] += 1
+    top_genres = genre_counts.most_common(6)
+    max_count = top_genres[0][1] if top_genres else 1
+
+    # Quick stats strip
+    from models import DiaryEntry, user_watchlist, user_viewed
+    diary_count = DiaryEntry.query.filter_by(user_id=current_user.id).count()
+    watching_count = TVShowProgress.query.filter_by(
+        user_id=current_user.id, status='watching').count()
+    wl_count = db.session.execute(
+        user_watchlist.select().where(user_watchlist.c.user_id == current_user.id)
+    ).rowcount
+    viewed_count = db.session.execute(
+        user_viewed.select().where(user_viewed.c.user_id == current_user.id)
+    ).rowcount
+
+    return render_template('profile.html', reviews=recent_reviews,
+                           taste_genres=top_genres,
+                           taste_max=max_count,
+                           stats={'diary': diary_count,
+                                  'watching': watching_count,
+                                  'watchlist': wl_count,
+                                  'viewed': viewed_count})
+
 
 def _build_recommendations(unique_user_items, max_total, max_per_item):
     """
@@ -230,6 +267,7 @@ def profile_recommendations():
                            user_wishlist_ids=user_wishlist_ids,
                            user_viewed_ids=user_viewed_ids)
 
+
 @auth.route('/profile/recommendations-preview')
 @login_required
 @limiter.limit("10 per minute")
@@ -241,6 +279,7 @@ def profile_recommendations_preview():
 
     final_recommendations = _build_recommendations(unique_user_items, max_total=6, max_per_item=2)
     return jsonify({'recommendations': final_recommendations})
+
 
 @auth.route('/profile/edit', methods=['GET', 'POST'])
 @login_required
@@ -294,6 +333,7 @@ def edit_profile():
 
 # ── Email verification ────────────────────────────────────────────────────────
 
+
 @auth.route('/verify-email/<token>')
 def verify_email(token):
     logger.info("verify_email: start")
@@ -339,6 +379,7 @@ def resend_verification():
 
 
 # ── Password reset ────────────────────────────────────────────────────────────
+
 
 @auth.route('/forgot-password', methods=['GET', 'POST'])
 @limiter.limit("5 per minute; 10 per hour")

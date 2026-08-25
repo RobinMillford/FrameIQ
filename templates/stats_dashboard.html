@@ -139,7 +139,7 @@
     <div class="flex justify-between items-center mb-8">
         <div>
             <h1 class="text-4xl font-bold gradient-text">📊 Your Stats</h1>
-            <p class="text-gray-400 mt-2">Dive into your viewing patterns and statistics</p>
+            <p class="text-[var(--text-mid)] mt-2">Dive into your viewing patterns and statistics</p>
         </div>
         <a href="/stats/year-in-review" class="yir-button">
             🎉 Year in Review
@@ -149,7 +149,7 @@
     <!-- Loading State -->
     <div id="loading-state" class="loading-spinner">
         <div class="spinner"></div>
-        <p class="text-gray-400 mt-4">Loading your stats...</p>
+        <p class="text-[var(--text-mid)] mt-4">Loading your stats...</p>
     </div>
     
     <!-- Main Content -->
@@ -328,7 +328,7 @@ class StatsManager {
         if (data.success) {
             const container = document.getElementById('top-genres-list');
             if (data.top_genres.length === 0) {
-                container.innerHTML = '<p class="text-gray-400">No genre data yet. Start watching!</p>';
+                container.innerHTML = '<p class="text-[var(--text-mid)]">No genre data yet. Start watching!</p>';
             } else {
                 container.innerHTML = data.top_genres.map(g => 
                     `<span class="genre-badge">${g.genre} (${g.count})</span>`
@@ -344,7 +344,7 @@ class StatsManager {
         if (data.success) {
             const container = document.getElementById('decades-list');
             if (data.decade_stats.length === 0) {
-                container.innerHTML = '<p class="text-gray-400">No decade data yet. Start watching!</p>';
+                container.innerHTML = '<p class="text-[var(--text-mid)]">No decade data yet. Start watching!</p>';
             } else {
                 container.innerHTML = data.decade_stats.map(d => 
                     `<span class="decade-badge">${d.decade} (${d.count})</span>`

@@ -7,13 +7,15 @@
     <title>My Diary - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #0a2f35;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: #f5f6f5;
             min-height: 100vh;
         }
@@ -44,8 +46,8 @@
                 </div>
                 <div class="flex items-center space-x-3">
                     {% if current_user.is_authenticated %}
-                        <a href="/profile" class="hidden sm:flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
-                            <i class="fas fa-user-circle text-gray-400"></i>
+                        <a href="/profile" class="hidden sm:flex items-center space-x-2 /50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
+                            <i class="fas fa-user-circle text-[var(--text-mid)]"></i>
                             <span class="text-sm font-medium">{{ current_user.username }}</span>
                         </a>
                     {% else %}
@@ -92,15 +94,15 @@
         <div class="diary-container">
             <div class="mb-8">
                 <h1 class="text-4xl font-bold mb-2">My Diary</h1>
-                <p class="text-gray-400">Your chronological watch history</p>
+                <p class="text-[var(--text-mid)]">Your chronological watch history</p>
             </div>
 
             <!-- Filter Options -->
             <div class="glass-effect rounded-lg p-4 mb-6 flex gap-4">
-                <select id="year-filter" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700">
+                <select id="year-filter" class=" text-white px-4 py-2 rounded-lg border border-gray-700">
                     <option value="">All Years</option>
                 </select>
-                <select id="month-filter" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700">
+                <select id="month-filter" class=" text-white px-4 py-2 rounded-lg border border-gray-700">
                     <option value="">All Months</option>
                     <option value="1">January</option>
                     <option value="2">February</option>
@@ -154,8 +156,8 @@
                 if (data.entries.length === 0 && page === 1) {
                     document.getElementById('diary-entries').innerHTML = `
                         <div class="text-center py-20">
-                            <i class="fas fa-book-open text-6xl text-gray-600 mb-4"></i>
-                            <p class="text-gray-400 text-lg">Your diary is empty. Start logging your watches!</p>
+                            <i class="fas fa-book-open text-6xl text-[var(--text-mid)] mb-4"></i>
+                            <p class="text-[var(--text-mid)] text-lg">Your diary is empty. Start logging your watches!</p>
                         </div>
                     `;
                     return;
@@ -171,7 +173,7 @@
                                 <div class="flex justify-between items-start">
                                     <div>
                                         <h3 class="text-lg font-semibold">${entry.media.title}</h3>
-                                        <p class="text-sm text-gray-400">Watched on ${new Date(entry.watched_date).toLocaleDateString()}</p>
+                                        <p class="text-sm text-[var(--text-mid)]">Watched on ${new Date(entry.watched_date).toLocaleDateString()}</p>
                                         ${entry.is_rewatch ? '<span class="text-xs bg-yellow-600 text-white px-2 py-1 rounded mt-1 inline-block">Rewatch</span>' : ''}
                                     </div>
                                     ${entry.rating ? `<div class="text-yellow-400 text-lg">★ ${entry.rating}</div>` : ''}
@@ -220,5 +222,6 @@
             loadDiaryEntries(currentPage, year || null, month || null);
         });
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

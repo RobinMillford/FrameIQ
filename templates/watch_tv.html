@@ -8,9 +8,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <style>
         * { font-family: 'Inter', sans-serif; }
-        body { background: #080808; color: #e5e7eb; }
+        body { background: var(--bg-base); color: #e5e7eb; }
 
         /* ── Backdrop hero ── */
         #backdrop-hero {
@@ -173,30 +175,30 @@
     <div class="max-w-screen-2xl mx-auto flex items-center justify-between gap-2">
         <!-- Left -->
         <div class="flex items-center gap-2 shrink-0">
-            <a href="javascript:history.back()" class="flex items-center gap-1 text-gray-400 hover:text-white px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/10">
+            <a href="javascript:history.back()" class="flex items-center gap-1 text-[var(--text-mid)] hover:text-white px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/10">
                 <i class="fas fa-arrow-left"></i>
                 <span class="hidden sm:inline">Back</span>
             </a>
-            <a href="/" class="text-indigo-400 font-bold text-lg">FrameIQ</a>
+            <a href="/" class="text-[var(--accent)] font-bold text-lg">FrameIQ</a>
         </div>
         <!-- Center -->
-        <div class="hidden md:flex items-center gap-3 text-sm text-gray-400 min-w-0">
+        <div class="hidden md:flex items-center gap-3 text-sm text-[var(--text-mid)] min-w-0">
             {% if media_type == 'anime' %}
                 <i class="fas fa-dragon text-pink-400 shrink-0"></i>
             {% else %}
-                <i class="fas fa-tv text-indigo-400 shrink-0"></i>
+                <i class="fas fa-tv text-[var(--accent)] shrink-0"></i>
             {% endif %}
             <span class="text-white font-medium truncate">{{ show.name }}</span>
-            <span class="text-gray-600 text-xs shrink-0">S{{ season }} E{{ episode }}</span>
+            <span class="text-[var(--text-mid)] text-xs shrink-0">S{{ season }} E{{ episode }}</span>
         </div>
         <!-- Right -->
         {% if current_user.is_authenticated %}
-        <a href="/profile" class="flex items-center gap-1 text-sm text-gray-400 hover:text-white shrink-0">
-            <i class="fas fa-user-circle text-indigo-400"></i>
+        <a href="/profile" class="flex items-center gap-1 text-sm text-[var(--text-mid)] hover:text-white shrink-0">
+            <i class="fas fa-user-circle text-[var(--accent)]"></i>
             <span class="hidden sm:inline">{{ current_user.username }}</span>
         </a>
         {% else %}
-        <a href="/login" class="text-sm text-indigo-400 hover:text-indigo-300 shrink-0 whitespace-nowrap">Login</a>
+        <a href="/login" class="text-sm text-[var(--accent)] hover:text-[var(--accent)] shrink-0 whitespace-nowrap">Login</a>
         {% endif %}
     </div>
 </nav>
@@ -215,10 +217,10 @@
                         {% if media_type == 'anime' %}
                             <i class="fas fa-dragon text-pink-400 shrink-0"></i>
                         {% else %}
-                            <i class="fas fa-tv text-indigo-400 shrink-0"></i>
+                            <i class="fas fa-tv text-[var(--accent)] shrink-0"></i>
                         {% endif %}
                         <span class="text-sm text-white font-medium truncate">{{ show.name }}</span>
-                        <span class="text-gray-500 text-xs shrink-0">S{{ season }} E{{ episode }}</span>
+                        <span class="text-[var(--text-mid)] text-xs shrink-0">S{{ season }} E{{ episode }}</span>
                     </div>
                     <button onclick="toggleTheater(false)"
                             class="flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-gray-300 transition-colors shrink-0">
@@ -228,7 +230,7 @@
 
                 <!-- Source switcher -->
                 <div id="source-switcher" class="flex flex-wrap items-center gap-2 mb-3">
-                    <span class="text-xs text-gray-500 uppercase tracking-wide mr-1">Servers</span>
+                    <span class="text-xs text-[var(--text-mid)] uppercase tracking-wide mr-1">Servers</span>
                     {% for src in sources %}
                     <button onclick="switchSource('{{ src.key }}')" data-key="{{ src.key }}"
                             class="src-btn text-xs px-3.5 py-1.5 rounded-full font-medium
@@ -237,7 +239,7 @@
                     </button>
                     {% endfor %}
                     <button onclick="toggleTheater()" title="Theater mode (T)"
-                            class="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors">
+                            class="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-white/5 text-[var(--text-mid)] hover:bg-white/10 hover:text-white transition-colors">
                         <i class="fas fa-expand"></i><span class="hidden sm:inline">Theater</span>
                     </button>
                 </div>
@@ -245,8 +247,8 @@
                 <!-- Player -->
                 <div class="player-wrap rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 mb-4">
                     <div id="player-skeleton">
-                        <i class="fas fa-circle-notch fa-spin text-indigo-400 text-xl"></i>
-                        <p class="text-xs text-gray-500">Connecting to server…</p>
+                        <i class="fas fa-circle-notch fa-spin text-[var(--accent)] text-xl"></i>
+                        <p class="text-xs text-[var(--text-mid)]">Connecting to server…</p>
                     </div>
                     <iframe id="player-frame"
                             src="{{ embed_url }}"
@@ -262,12 +264,12 @@
                 <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
                     <div>
                         <h1 class="text-xl font-bold text-white">
-                            <span class="text-indigo-400">S{{ season }}:E{{ episode }}</span>
+                            <span class="text-[var(--accent)]">S{{ season }}:E{{ episode }}</span>
                             <span id="ep-title" class="ml-2">{{ show.name }}</span>
                         </h1>
                         <div class="flex flex-wrap items-center gap-2 mt-2">
                             {% if show.vote_average %}
-                            <span class="meta-chip"><i class="fas fa-star text-yellow-400 text-[10px]"></i>{{ show.vote_average }}<span class="text-gray-500">/10</span></span>
+                            <span class="meta-chip"><i class="fas fa-star text-yellow-400 text-[10px]"></i>{{ show.vote_average }}<span class="text-[var(--text-mid)]">/10</span></span>
                             {% endif %}
                             {% if show.status %}
                             <span class="meta-chip {% if show.status == 'Ended' %}border-red-500/30 text-red-300{% else %}border-green-500/30 text-green-300{% endif %}">
@@ -280,7 +282,7 @@
                     <div class="flex flex-wrap gap-2">
                         {% if current_user.is_authenticated %}
                         <button onclick="markWatched()" id="mark-btn"
-                                class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                                class="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
                             <i class="fas fa-check"></i> Mark Watched
                         </button>
                         <button id="watchlist-btn" onclick="toggleWatchlist()"
@@ -307,7 +309,7 @@
 
                 <!-- Overview -->
                 {% if show.overview %}
-                <p class="text-gray-400 text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
+                <p class="text-[var(--text-mid)] text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
                 {% endif %}
 
                 <!-- Genres -->
@@ -344,7 +346,7 @@
 
             <!-- Episode list -->
             <div class="episodes-list" id="episodes-list">
-                <div class="p-4 text-center text-gray-500 text-sm">
+                <div class="p-4 text-center text-[var(--text-mid)] text-sm">
                     <i class="fas fa-spinner fa-spin mb-2"></i><br>Loading episodes...
                 </div>
             </div>
@@ -356,15 +358,15 @@
 <div id="next-ep-banner">
     <div class="flex items-start justify-between mb-3">
         <div>
-            <p class="text-xs text-gray-400 uppercase tracking-wide">Up Next</p>
+            <p class="text-xs text-[var(--text-mid)] uppercase tracking-wide">Up Next</p>
             <p class="text-white font-semibold text-sm mt-0.5" id="next-ep-label">Next Episode</p>
         </div>
         <button onclick="document.getElementById('next-ep-banner').classList.remove('show')"
-                class="text-gray-500 hover:text-white text-xs">✕</button>
+                class="text-[var(--text-mid)] hover:text-white text-xs">✕</button>
     </div>
     <div class="flex gap-3">
         <button onclick="playNextEpisode()"
-                class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-sm py-2 rounded-lg transition-colors font-medium">
+                class="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-sm py-2 rounded-lg transition-colors font-medium">
             <i class="fas fa-play mr-1"></i> Play Now
         </button>
         <button onclick="document.getElementById('next-ep-banner').classList.remove('show')"
@@ -453,7 +455,7 @@
         if (allEpisodes[season]) { renderEpisodes(season); return; }
 
         const list = document.getElementById('episodes-list');
-        list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin mb-2"></i><br>Loading...</div>';
+        list.innerHTML = '<div class="p-4 text-center text-[var(--text-mid)] text-sm"><i class="fas fa-spinner fa-spin mb-2"></i><br>Loading...</div>';
 
         try {
             const r = await fetch(`/api/tmdb/proxy?path=/tv/${TMDB_ID}/season/${season}`);
@@ -462,7 +464,7 @@
             allEpisodes[season] = data.episodes || [];
             renderEpisodes(season);
         } catch {
-            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">'
+            list.innerHTML = '<div class="p-4 text-center text-[var(--text-mid)] text-sm">'
                 + 'Could not load episodes.<br>'
                 + '<button onclick="loadSeason(' + season + ')" '
                 + 'class="mt-2 text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 transition-colors">'
@@ -479,7 +481,7 @@
         const list = document.getElementById('episodes-list');
 
         if (!eps.length) {
-            list.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">No episodes found.</div>';
+            list.innerHTML = '<div class="p-4 text-center text-[var(--text-mid)] text-sm">No episodes found.</div>';
             return;
         }
 
@@ -488,19 +490,19 @@
             const isSeen   = IS_AUTH && isWatched(season, ep.episode_number);
             const still = ep.still_path
                 ? `<img src="https://image.tmdb.org/t/p/w185${ep.still_path}" class="w-16 h-10 object-cover rounded flex-shrink-0 ${isSeen ? 'opacity-40' : 'opacity-80'}">`
-                : `<div class="w-16 h-10 bg-gray-800 rounded flex-shrink-0 flex items-center justify-center"><i class="fas fa-play text-gray-600 text-xs"></i></div>`;
+                : `<div class="w-16 h-10  rounded flex-shrink-0 flex items-center justify-center"><i class="fas fa-play text-[var(--text-mid)] text-xs"></i></div>`;
             return `
             <div class="ep-item px-3 py-2.5 ${isActive ? 'active' : ''}"
                  onclick="navigateTo(${season}, ${ep.episode_number})">
                 <div class="flex gap-3 items-start pr-6">
                     <div class="relative">${still}
-                        ${isActive ? '<div class="absolute inset-0 flex items-center justify-center"><i class="fas fa-play text-indigo-400 text-xs drop-shadow"></i></div>' : ''}
+                        ${isActive ? '<div class="absolute inset-0 flex items-center justify-center"><i class="fas fa-play text-[var(--accent)] text-xs drop-shadow"></i></div>' : ''}
                     </div>
                     <div class="min-w-0 flex-1">
-                        <p class="text-xs font-semibold truncate ${isSeen ? 'text-gray-500 line-through' : isActive ? 'text-indigo-300' : 'text-gray-300'}">
+                        <p class="text-xs font-semibold truncate ${isSeen ? 'text-[var(--text-mid)] line-through' : isActive ? 'text-[var(--accent)]' : 'text-gray-300'}">
                             ${ep.episode_number}. ${escHtml(ep.name || 'Episode ' + ep.episode_number)}
                         </p>
-                        <p class="text-xs text-gray-600 mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}${isSeen ? ' · watched' : ''}</p>
+                        <p class="text-xs text-[var(--text-mid)] mt-0.5">${ep.runtime ? ep.runtime + ' min' : ''}${isSeen ? ' · watched' : ''}</p>
                     </div>
                 </div>
                 ${isSeen ? '<i class="fas fa-check-circle watched-badge"></i>' : ''}
@@ -611,8 +613,8 @@
         .then(res => {
             if (res.success) {
                 const btn = document.getElementById('mark-btn');
-                btn.classList.replace('bg-indigo-600','bg-green-600');
-                btn.classList.replace('hover:bg-indigo-500','hover:bg-green-500');
+                btn.classList.replace('bg-[var(--accent)]','bg-green-600');
+                btn.classList.replace('hover:bg-[var(--accent-hi)]','hover:bg-green-500');
                 btn.innerHTML = '<i class="fas fa-check-double"></i> Watched';
                 watchedEps.add(`${CUR_SEASON}-${CUR_EP}`);
                 if (allEpisodes[CUR_SEASON]) renderEpisodes(CUR_SEASON);
@@ -681,5 +683,7 @@
     loadSeason(CUR_SEASON);
     loadWatched();
 </script>
+    <!-- Chrome: CineBot slide-over + toasts -->
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

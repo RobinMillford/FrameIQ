@@ -1,16 +1,16 @@
     <div id="diary-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="modal-content bg-gray-900 rounded-lg p-8 w-full max-w-md mx-4">
+        <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4">
             <h2 class="text-2xl font-bold mb-6">Log to Diary</h2>
             
             <div class="space-y-4">
                 <div>
                     <label for="diary-date" class="block text-sm font-semibold mb-2">Watched Date *</label>
-                    <input type="date" id="diary-date" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <input type="date" id="diary-date" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
                 </div>
                 
                 <div>
                     <label for="diary-rating" class="block text-sm font-semibold mb-2">Rating (Optional)</label>
-                    <select id="diary-rating" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <select id="diary-rating" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
                         <option value="">No rating</option>
                         <option value="0.5">★ 0.5</option>
                         <option value="1.0">★ 1.0</option>
@@ -30,7 +30,7 @@
                 <button onclick="submitDiaryEntry()" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                     Log Entry
                 </button>
-                <button onclick="closeDiaryModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors">
+                <button onclick="closeDiaryModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
                     Cancel
                 </button>
             </div>

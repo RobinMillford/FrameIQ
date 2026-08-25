@@ -213,11 +213,11 @@
 <div class="container mx-auto px-4 py-8">
     <!-- Year Selector -->
     <div class="flex justify-between items-center mb-6">
-        <a href="/stats" class="text-gray-400 hover:text-white transition">
+        <a href="/stats" class="text-[var(--text-mid)] hover:text-white transition">
             ← Back to Stats
         </a>
         <div>
-            <label class="text-gray-400 mr-2">Select Year:</label>
+            <label class="text-[var(--text-mid)] mr-2">Select Year:</label>
             <select id="year-selector" class="year-selector">
                 <!-- Populated by JS -->
             </select>
@@ -227,7 +227,7 @@
     <!-- Loading State -->
     <div id="loading-state" class="loading-state">
         <div class="text-6xl mb-4">📊</div>
-        <p class="text-xl text-gray-400">Generating your Year in Review...</p>
+        <p class="text-xl text-[var(--text-mid)]">Generating your Year in Review...</p>
     </div>
     
     <!-- Content -->
@@ -263,7 +263,7 @@
             <h2 class="yir-section-title">📆 Busiest Month</h2>
             <div class="text-center">
                 <div class="text-5xl font-bold gradient-text" id="busiest-month">-</div>
-                <div class="text-xl text-gray-400 mt-2">
+                <div class="text-xl text-[var(--text-mid)] mt-2">
                     You watched <span class="text-orange-400 font-bold" id="busiest-count">0</span> items
                 </div>
             </div>
@@ -344,7 +344,7 @@ class YearInReviewManager {
         const genresHtml = yir.top_genres.map(genre => 
             `<span class="genre-pill">${genre}</span>`
         ).join('');
-        document.getElementById('top-genres').innerHTML = genresHtml || '<p class="text-gray-400">No genre data available</p>';
+        document.getElementById('top-genres').innerHTML = genresHtml || '<p class="text-[var(--text-mid)]">No genre data available</p>';
         
         // Top rated
         const topRatedHtml = yir.top_rated.slice(0, 10).map((item, index) => `
@@ -355,11 +355,11 @@ class YearInReviewManager {
                 </div>
                 <div class="rating-stars">
                     ${'⭐'.repeat(Math.round(item.rating / 2))}
-                    <span class="text-gray-400 ml-2">${item.rating}/10</span>
+                    <span class="text-[var(--text-mid)] ml-2">${item.rating}/10</span>
                 </div>
             </div>
         `).join('');
-        document.getElementById('top-rated-list').innerHTML = topRatedHtml || '<p class="text-gray-400">No ratings yet!</p>';
+        document.getElementById('top-rated-list').innerHTML = topRatedHtml || '<p class="text-[var(--text-mid)]">No ratings yet!</p>';
     }
     
     setupYearSelector() {
@@ -389,7 +389,7 @@ class YearInReviewManager {
     showError() {
         document.getElementById('loading-state').innerHTML = `
             <div class="text-6xl mb-4">😕</div>
-            <p class="text-xl text-gray-400">Couldn't load your Year in Review. Try again later!</p>
+            <p class="text-xl text-[var(--text-mid)]">Couldn't load your Year in Review. Try again later!</p>
         `;
     }
     

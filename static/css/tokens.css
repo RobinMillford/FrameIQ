@@ -1,0 +1,287 @@
+/* ═══════════════════════════════════════════════════════════════════
+   FrameIQ Design Tokens — "MONOCHROME MARQUEE"
+   Black chrome. White type. One accent. Posters provide the color.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* ── Surfaces: true black, HBO-grade ── */
+    --bg-base:      #000000;
+    --bg-surface:   #111111;
+    --bg-elevated:  #1A1A1A;
+    --line:         #232323;
+    --line-hi:      #333333;
+
+    /* ── Accent: marquee amber (projector light). Used SPARINGLY. ── */
+    --accent:       #F6B73C;
+    --accent-hi:    #FFD066;
+    --accent-dim:   rgba(246, 183, 60, 0.14);
+
+    /* ── Text ── */
+    --text-hi:      #FFFFFF;
+    --text-mid:     #B3B3B3;
+    --text-low:     #777777;
+
+    /* ── Semantic ── */
+    --success:      #46D369;
+    --danger:       #E50914;
+    --info:         #4C9BE8;
+
+    /* ── Type ── */
+    --font-display: "Archivo", "Inter", sans-serif;
+    --font-body:    "Inter", sans-serif;
+    --font-mono:    "JetBrains Mono", monospace;
+
+    /* ── Motion ── */
+    --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-fast:     180ms;
+    --dur-panel:    320ms;
+
+    /* ── Radii: sharp, broadcast-grade ── */
+    --r-sm: 4px;
+    --r-md: 6px;
+    --r-lg: 10px;
+
+    /* ── Legacy aliases ── */
+    --frameiq-primary: var(--accent);
+    --frameiq-secondary: var(--accent);
+    --frameiq-accent: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════════════════ */
+
+body {
+    background: var(--bg-base);
+    color: var(--text-hi);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Film grain */
+.grain {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+}
+
+::selection { background: var(--accent); color: #000; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--line-hi) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 0; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Typography
+   ═══════════════════════════════════════════════════════════════════ */
+
+.font-display {
+    font-family: var(--font-display);
+    font-stretch: 110%;
+}
+.font-slate {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    color: var(--text-low);
+}
+
+.h-display {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-stretch: 110%;
+    letter-spacing: -0.01em;
+    color: var(--text-hi);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Legacy class redefinitions — same names, new identity
+   ═══════════════════════════════════════════════════════════════════ */
+
+.glass-effect {
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--line);
+}
+
+.gradient-text {
+    background: none;
+    -webkit-text-fill-color: var(--text-hi);
+    color: var(--text-hi);
+    font-weight: 800;
+}
+
+/* Viewfinder mark + wordmark */
+.frameiq-logo {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-stretch: 118%;
+    font-size: 1.05rem;
+    letter-spacing: 0.18em;
+    color: var(--text-hi);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    background: none;
+    -webkit-text-fill-color: var(--text-hi);
+    animation: none;
+    text-transform: uppercase;
+}
+
+.frameiq-logo-icon {
+    width: 26px;
+    height: 26px;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.frameiq-tagline {
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--text-low);
+    margin-top: 2px;
+}
+
+.nav-link {
+    position: relative;
+    color: var(--text-mid);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: color var(--dur-fast) var(--ease-out);
+}
+
+.nav-link::after {
+    content: "";
+    position: absolute;
+    bottom: -8px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width var(--dur-fast) var(--ease-out);
+}
+
+.nav-link:hover { color: var(--text-hi); }
+.nav-link:hover::after { width: 100%; }
+.nav-link.active { color: var(--text-hi); }
+.nav-link.active::after { width: 100%; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Components
+   ═══════════════════════════════════════════════════════════════════ */
+
+.slate-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.03em;
+    color: var(--text-mid);
+    border: 1px solid var(--line-hi);
+    padding: 4px 10px;
+    border-radius: var(--r-sm);
+    background: transparent;
+}
+
+/* Primary: WHITE — Netflix/HBO confidence. Black text. */
+.btn-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    color: #000;
+    font-weight: 700;
+    font-size: 0.875rem;
+    padding: 10px 20px;
+    border-radius: var(--r-md);
+    border: none;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
+}
+.btn-accent:hover { background: rgba(255, 255, 255, 0.82); transform: translateY(-1px); }
+.btn-accent:active { transform: translateY(0); }
+
+/* Secondary: hairline outline */
+.btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-hi);
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 10px 20px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line-hi);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out),
+                border-color var(--dur-fast) var(--ease-out);
+}
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.1); border-color: #4A4A4A; }
+
+.card-surface {
+    background: var(--bg-surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    transition: border-color var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
+}
+.card-surface:hover {
+    border-color: var(--line-hi);
+    transform: translateY(-3px);
+}
+
+.poster-glow {
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+.poster-glow:hover {
+    transform: translateY(-4px) scale(1.02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Motion
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes rise-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.rise-in { animation: rise-in 0.45s var(--ease-out) both; }
+
+.rise-in-stagger > * { animation: rise-in 0.45s var(--ease-out) both; }
+.rise-in-stagger > *:nth-child(1) { animation-delay: 0.00s; }
+.rise-in-stagger > *:nth-child(2) { animation-delay: 0.04s; }
+.rise-in-stagger > *:nth-child(3) { animation-delay: 0.08s; }
+.rise-in-stagger > *:nth-child(4) { animation-delay: 0.12s; }
+.rise-in-stagger > *:nth-child(5) { animation-delay: 0.16s; }
+.rise-in-stagger > *:nth-child(6) { animation-delay: 0.20s; }
+.rise-in-stagger > *:nth-child(7) { animation-delay: 0.24s; }
+.rise-in-stagger > *:nth-child(8) { animation-delay: 0.28s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .rise-in, .rise-in-stagger > * { animation: none; }
+    * { transition-duration: 0.01ms !important; }
+}

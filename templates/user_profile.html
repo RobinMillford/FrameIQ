@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ user.username }}'s Profile - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
         }
         
@@ -71,7 +73,7 @@
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
+            background: linear-gradient(90deg, #6366f1 0%, #F6B73C 100%);
             transition: width 0.3s ease;
         }
     </style>
@@ -81,7 +83,7 @@
     {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4 py-8">
-        <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+        <div class=" rounded-lg shadow-lg p-6">
             <div class="flex justify-between items-start mb-8">
                 <div class="flex items-center">
                     <div class="relative">
@@ -97,27 +99,27 @@
                     </div>
                     <div class="ml-8">
                         <h1 class="text-4xl font-bold mb-2">{{ user.username }}</h1>
-                        <p class="text-gray-400">Member since {{ user.date_joined.strftime('%B %Y') }}</p>
+                        <p class="text-[var(--text-mid)]">Member since {{ user.date_joined.strftime('%B %Y') }}</p>
                         
                         <div class="flex space-x-6 mt-4">
                             <button class="text-left group cursor-pointer" onclick="openFollowersModal({{ user.id }})">
-                                <span class="block text-2xl font-bold text-indigo-400 group-hover:text-indigo-300" id="follower-count-{{ user.id }}">{{ user.followers_count or 0 }}</span>
-                                <span class="text-sm text-gray-400 uppercase tracking-wider">Followers</span>
+                                <span class="block text-2xl font-bold text-[var(--accent)] group-hover:text-[var(--accent-hi)]" id="follower-count-{{ user.id }}">{{ user.followers_count or 0 }}</span>
+                                <span class="text-sm text-[var(--text-mid)] uppercase tracking-wider">Followers</span>
                             </button>
                             <button class="text-left group cursor-pointer" onclick="openFollowingModal({{ user.id }})">
-                                <span class="block text-2xl font-bold text-indigo-400 group-hover:text-indigo-300">{{ user.following_count or 0 }}</span>
-                                <span class="text-sm text-gray-400 uppercase tracking-wider">Following</span>
+                                <span class="block text-2xl font-bold text-[var(--accent)] group-hover:text-[var(--accent-hi)]">{{ user.following_count or 0 }}</span>
+                                <span class="text-sm text-[var(--text-mid)] uppercase tracking-wider">Following</span>
                             </button>
                             <div class="text-left">
-                                <span class="block text-2xl font-bold text-indigo-400">{{ user.user_reviews.count() }}</span>
-                                <span class="text-sm text-gray-400 uppercase tracking-wider">Reviews</span>
+                                <span class="block text-2xl font-bold text-[var(--accent)]">{{ user.user_reviews.count() }}</span>
+                                <span class="text-sm text-[var(--text-mid)] uppercase tracking-wider">Reviews</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 
                 {% if current_user.is_authenticated and current_user.id != user.id %}
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg transition duration-300 flex items-center gap-2 shadow-lg" 
+                    <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white font-bold py-3 px-8 rounded-lg transition duration-300 flex items-center gap-2 shadow-lg" 
                             data-follow-button 
                             data-user-id="{{ user.id }}" 
                             data-following="{{ 'true' if is_following else 'false' }}"
@@ -139,39 +141,39 @@
                 <!-- Left Column: Bio & Info -->
                 <div class="md:col-span-1">
                     <div class="glass-effect rounded-xl p-6 mb-6">
-                        <h3 class="text-xl font-semibold mb-4 text-indigo-400">About</h3>
+                        <h3 class="text-xl font-semibold mb-4 text-[var(--accent)]">About</h3>
                         <p class="text-gray-300 leading-relaxed">
                             {{ user.bio or 'No bio available yet.' }}
                         </p>
                     </div>
                     
                     <div class="glass-effect rounded-xl p-6 mb-6">
-                        <h3 class="text-xl font-semibold mb-4 text-indigo-400">Statistics</h3>
+                        <h3 class="text-xl font-semibold mb-4 text-[var(--accent)]">Statistics</h3>
                         <div class="space-y-4">
                             <div class="flex justify-between items-center text-sm">
-                                <span class="text-gray-400">Movies Watched</span>
-                                <span class="font-bold text-indigo-300">{{ user.viewed_media|length }}</span>
+                                <span class="text-[var(--text-mid)]">Movies Watched</span>
+                                <span class="font-bold text-[var(--accent-hi)]">{{ user.viewed_media|length }}</span>
                             </div>
                             <div class="flex justify-between items-center text-sm">
-                                <span class="text-gray-400">Reviews Written</span>
-                                <span class="font-bold text-indigo-300">{{ user.user_reviews.count() }}</span>
+                                <span class="text-[var(--text-mid)]">Reviews Written</span>
+                                <span class="font-bold text-[var(--accent-hi)]">{{ user.user_reviews.count() }}</span>
                             </div>
                             <div class="flex justify-between items-center text-sm">
-                                <span class="text-gray-400">Total Likes Received</span>
-                                <span class="font-bold text-indigo-300">{{ user.total_likes_received or 0 }}</span>
+                                <span class="text-[var(--text-mid)]">Total Likes Received</span>
+                                <span class="font-bold text-[var(--accent-hi)]">{{ user.total_likes_received or 0 }}</span>
                             </div>
                         </div>
                     </div>
 
                     <!-- Badges & Achievements Section -->
                     <div class="glass-effect rounded-xl p-6">
-                        <h3 class="text-xl font-semibold mb-4 text-indigo-400 flex items-center justify-between">
+                        <h3 class="text-xl font-semibold mb-4 text-[var(--accent)] flex items-center justify-between">
                             <span>🏆 Badges & Achievements</span>
-                            <span id="badges-count" class="text-sm text-gray-400">Loading...</span>
+                            <span id="badges-count" class="text-sm text-[var(--text-mid)]">Loading...</span>
                         </h3>
                         <div id="badges-container" class="space-y-3">
                             <div class="flex justify-center py-4">
-                                <i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i>
+                                <i class="fas fa-spinner fa-spin text-2xl text-[var(--accent)]"></i>
                             </div>
                         </div>
                     </div>
@@ -180,16 +182,16 @@
                 <!-- Right Column: Recent Activity/Reviews & Insights -->
                 <div class="md:col-span-2">
                     <div class="flex border-b border-gray-700 mb-6">
-                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-indigo-500 text-indigo-400 font-semibold focus:outline-none">
+                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold focus:outline-none">
                             Reviews
                         </button>
-                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-gray-400 hover:text-white font-semibold transition-all focus:outline-none">
+                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-[var(--text-mid)] hover:text-white font-semibold transition-all focus:outline-none">
                             Insights
                         </button>
                     </div>
 
                     <div id="reviews-content">
-                        <h3 class="text-2xl font-bold mb-6 text-indigo-400">Recent Reviews</h3>
+                        <h3 class="text-2xl font-bold mb-6 text-[var(--accent)]">Recent Reviews</h3>
                         <div class="space-y-6" id="user-reviews-container">
                         {% if reviews %}
                             {% for review in reviews %}
@@ -206,7 +208,7 @@
                                                  onerror="this.src='/static/images/no-poster.svg'">
                                             <div>
                                                 <h4 class="text-lg font-bold">
-                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-indigo-400 transition-colors">
+                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-[var(--accent)] transition-colors">
                                                         {{ review.media.title }}
                                                     </a>
                                                 </h4>
@@ -216,7 +218,7 @@
                                                             <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
                                                         {% endfor %}
                                                     </div>
-                                                    <span class="text-gray-400 text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
+                                                    <span class="text-[var(--text-mid)] text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -226,8 +228,8 @@
                             {% endfor %}
                         {% else %}
                             <div class="text-center py-12 glass-effect rounded-xl">
-                                <i class="fas fa-film text-4xl text-gray-600 mb-4"></i>
-                                <p class="text-gray-400">No reviews yet.</p>
+                                <i class="fas fa-film text-4xl text-[var(--text-mid)] mb-4"></i>
+                                <p class="text-[var(--text-mid)]">No reviews yet.</p>
                             </div>
                         {% endif %}
                         </div>
@@ -237,7 +239,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                             <!-- Genre Distribution -->
                             <div class="glass-effect rounded-xl p-6">
-                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Genre Distribution</h4>
+                                <h4 class="text-lg font-semibold mb-4 text-[var(--accent)]">Genre Distribution</h4>
                                 <div class="h-64 relative">
                                     <canvas id="genre-chart"></canvas>
                                 </div>
@@ -245,7 +247,7 @@
                             
                             <!-- Rating Distribution -->
                             <div class="glass-effect rounded-xl p-6">
-                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Rating Distribution</h4>
+                                <h4 class="text-lg font-semibold mb-4 text-[var(--accent)]">Rating Distribution</h4>
                                 <div class="h-64 relative">
                                     <canvas id="rating-dist-chart"></canvas>
                                 </div>
@@ -253,7 +255,7 @@
 
                             <!-- Media Mix -->
                             <div class="glass-effect rounded-xl p-6">
-                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Media Mix</h4>
+                                <h4 class="text-lg font-semibold mb-4 text-[var(--accent)]">Media Mix</h4>
                                 <div class="h-64 relative">
                                     <canvas id="media-mix-chart"></canvas>
                                 </div>
@@ -261,7 +263,7 @@
 
                             <!-- Monthly Activity -->
                             <div class="glass-effect rounded-xl p-6">
-                                <h4 class="text-lg font-semibold mb-4 text-indigo-400">Review Activity</h4>
+                                <h4 class="text-lg font-semibold mb-4 text-[var(--accent)]">Review Activity</h4>
                                 <div class="h-64 relative">
                                     <canvas id="activity-chart"></canvas>
                                 </div>
@@ -271,34 +273,34 @@
                         <!-- Statistics Grid -->
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Total Watched</div>
-                                <div id="stat-total-watched" class="text-2xl font-bold text-indigo-400">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1" id="stat-movie-tv-split">- / -</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Total Watched</div>
+                                <div id="stat-total-watched" class="text-2xl font-bold text-[var(--accent)]">-</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1" id="stat-movie-tv-split">- / -</div>
                             </div>
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Avg Rating</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Avg Rating</div>
                                 <div id="stat-avg-rating" class="text-2xl font-bold text-pink-400">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1">out of 5.0</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1">out of 5.0</div>
                             </div>
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Reviews</div>
-                                <div id="stat-total-reviews" class="text-2xl font-bold text-purple-400">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1">total written</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Reviews</div>
+                                <div id="stat-total-reviews" class="text-2xl font-bold text-[var(--accent-hi)]">-</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1">total written</div>
                             </div>
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Watchlist Progress</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Watchlist Progress</div>
                                 <div id="stat-watchlist-completion" class="text-2xl font-bold text-green-400">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1">completion rate</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1">completion rate</div>
                             </div>
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Top Genre (Rank)</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Top Genre (Rank)</div>
                                 <div id="stat-top-genre" class="text-xl font-bold text-yellow-500">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1">by count</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1">by count</div>
                             </div>
                             <div class="glass-effect rounded-xl p-4 text-center">
-                                <div class="text-gray-400 text-xs mb-1">Highest Rated</div>
+                                <div class="text-[var(--text-mid)] text-xs mb-1">Highest Rated</div>
                                 <div id="stat-best-genre" class="text-xl font-bold text-orange-500">-</div>
-                                <div class="text-[10px] text-gray-500 mt-1">avg performance</div>
+                                <div class="text-[10px] text-[var(--text-mid)] mt-1">avg performance</div>
                             </div>
                         </div>
                     </div>
@@ -309,17 +311,17 @@
 
     <!-- Modals (Placeholder for upcoming followers/following lists) -->
     <div id="social-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden flex items-center justify-center">
-        <div class="bg-gray-800 rounded-xl max-w-lg w-full max-h-[80vh] flex flex-col shadow-2xl border border-gray-700">
+        <div class=" rounded-xl max-w-lg w-full max-h-[80vh] flex flex-col shadow-2xl border border-gray-700">
             <div class="p-6 border-b border-gray-700 flex justify-between items-center">
-                <h3 id="modal-title" class="text-xl font-bold text-indigo-400">Followers</h3>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-white transition-colors">
+                <h3 id="modal-title" class="text-xl font-bold text-[var(--accent)]">Followers</h3>
+                <button onclick="closeModal()" class="text-[var(--text-mid)] hover:text-white transition-colors">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div id="modal-content" class="p-6 overflow-y-auto flex-grow">
                 <!-- Content loaded via JS -->
                 <div class="flex justify-center py-8">
-                    <i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i>
+                    <i class="fas fa-spinner fa-spin text-3xl text-[var(--accent)]"></i>
                 </div>
             </div>
         </div>
@@ -355,7 +357,7 @@
             displayBadges(badges, totalEarned) {
                 if (!badges || badges.length === 0) {
                     this.container.innerHTML = `
-                        <div class="text-center py-6 text-gray-400">
+                        <div class="text-center py-6 text-[var(--text-mid)]">
                             <i class="fas fa-award text-3xl mb-2 opacity-30"></i>
                             <p class="text-sm">No badges earned yet</p>
                         </div>
@@ -372,17 +374,17 @@
                             ${badge.icon}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <div class="font-semibold text-sm ${badge.earned ? 'text-white' : 'text-gray-400'}">
+                            <div class="font-semibold text-sm ${badge.earned ? 'text-white' : 'text-[var(--text-mid)]'}">
                                 ${badge.name}
                             </div>
-                            <div class="text-xs text-gray-400 truncate">
+                            <div class="text-xs text-[var(--text-mid)] truncate">
                                 ${badge.description}
                             </div>
                             ${badge.progress !== undefined ? `
                                 <div class="progress-bar mt-2">
                                     <div class="progress-fill" style="width: ${badge.progress}%"></div>
                                 </div>
-                                <div class="text-xs text-gray-500 mt-1">
+                                <div class="text-xs text-[var(--text-mid)] mt-1">
                                     ${badge.current || 0} / ${badge.target || 0}
                                 </div>
                             ` : ''}
@@ -390,7 +392,7 @@
                         ${badge.earned ? `
                             <i class="fas fa-check-circle text-green-400 text-lg"></i>
                         ` : `
-                            <i class="fas fa-lock text-gray-500 text-sm"></i>
+                            <i class="fas fa-lock text-[var(--text-mid)] text-sm"></i>
                         `}
                     </div>
                 `).join('');
@@ -430,7 +432,7 @@
 
         async function loadSocialList(url) {
             const container = document.getElementById('modal-content');
-            container.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i></div>';
+            container.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-[var(--accent)]"></i></div>';
             
             try {
                 const response = await fetch(url);
@@ -439,7 +441,7 @@
                 const list = data.followers || data.following || [];
                 
                 if (list.length === 0) {
-                    container.innerHTML = `<div class="text-center py-8 text-gray-400">No users found.</div>`;
+                    container.innerHTML = `<div class="text-center py-8 text-[var(--text-mid)]">No users found.</div>`;
                     return;
                 }
                 
@@ -454,14 +456,14 @@
                     html += `
                         <div class="flex items-center justify-between p-2 rounded hover:bg-gray-700 transition-colors">
                             <a href="/user/${item.id}" class="flex items-center gap-3 group">
-                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-indigo-500 object-cover" onerror="this.src='/static/images/default_avatar.svg'">
+                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-[var(--accent)] object-cover" onerror="this.src='/static/images/default_avatar.svg'">
                                 <div>
-                                    <div class="font-bold group-hover:text-indigo-400 transition-colors">${item.username}</div>
-                                    <div class="text-xs text-gray-400">${item.total_reviews} reviews • ${item.followers_count} followers</div>
+                                    <div class="font-bold group-hover:text-[var(--accent)] transition-colors">${item.username}</div>
+                                    <div class="text-xs text-[var(--text-mid)]">${item.total_reviews} reviews • ${item.followers_count} followers</div>
                                 </div>
                             </a>
                             ${data.current_user_id != item.id ? `
-                                <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded transition-all" 
+                                <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-3 py-1.5 rounded transition-all" 
                                         data-follow-button 
                                         data-user-id="${item.id}" 
                                         data-following="${item.is_following}"
@@ -497,19 +499,19 @@
         
         if (tabReviews && tabInsights) {
             tabReviews.addEventListener('click', () => {
-                tabReviews.classList.add('border-indigo-500', 'text-indigo-400');
-                tabReviews.classList.remove('border-transparent', 'text-gray-400');
-                tabInsights.classList.add('border-transparent', 'text-gray-400');
-                tabInsights.classList.remove('border-indigo-500', 'text-indigo-400');
+                tabReviews.classList.add('border-[var(--accent)]', 'text-[var(--accent)]');
+                tabReviews.classList.remove('border-transparent', 'text-[var(--text-mid)]');
+                tabInsights.classList.add('border-transparent', 'text-[var(--text-mid)]');
+                tabInsights.classList.remove('border-[var(--accent)]', 'text-[var(--accent)]');
                 reviewsContent.classList.remove('hidden');
                 insightsContent.classList.add('hidden');
             });
             
             tabInsights.addEventListener('click', () => {
-                tabInsights.classList.add('border-indigo-500', 'text-indigo-400');
-                tabInsights.classList.remove('border-transparent', 'text-gray-400');
-                tabReviews.classList.add('border-transparent', 'text-gray-400');
-                tabReviews.classList.remove('border-indigo-500', 'text-indigo-400');
+                tabInsights.classList.add('border-[var(--accent)]', 'text-[var(--accent)]');
+                tabInsights.classList.remove('border-transparent', 'text-[var(--text-mid)]');
+                tabReviews.classList.add('border-transparent', 'text-[var(--text-mid)]');
+                tabReviews.classList.remove('border-[var(--accent)]', 'text-[var(--accent)]');
                 insightsContent.classList.remove('hidden');
                 reviewsContent.classList.add('hidden');
                 
@@ -520,5 +522,6 @@
             });
         }
     </script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

@@ -1,0 +1,138 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Detail pages (movie/TV) — re-skin existing classes to Cinema OS.
+   Loaded AFTER each page's inline <style> so overrides win.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Hero ── */
+.hero-section {
+    position: relative;
+    padding-top: 72px; /* clear the fixed nav */
+}
+.hero-backdrop {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 15%;
+    animation: kenburns 26s ease-in-out infinite alternate;
+}
+.hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top,
+                var(--bg-base) 2%,
+                rgba(11, 11, 16, 0.72) 50%,
+                rgba(11, 11, 16, 0.45) 100%);
+}
+.hero-section h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-hi);
+}
+
+/* Poster */
+.movie-poster,
+.tv-poster {
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Rating circle — accent ring */
+.rating-circle {
+    color: var(--text-hi);
+    border-color: var(--accent);
+}
+
+/* ── Section headers ── */
+section h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+}
+
+/* Info cards */
+.info-card {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px;
+}
+.info-card h3 { color: var(--text-hi) !important; }
+.info-card p, .info-card span { color: var(--text-mid) !important; }
+
+/* ── Cast rail ── */
+.cast-card {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    transition: transform var(--dur-fast) var(--ease-out),
+                border-color var(--dur-fast) var(--ease-out);
+}
+.cast-card:hover {
+    transform: translateY(-4px);
+    border-color: #34343F !important;
+}
+.cast-image { aspect-ratio: 1 / 1; object-fit: cover; }
+
+/* ── Taste Match badge ── */
+.taste-match {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-radius: var(--r-sm);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line-hi);
+    border-left: 3px solid var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-mid);
+}
+.taste-match strong { color: var(--text-hi); font-size: 0.9375rem; }
+.taste-match .tm-ring {
+    display: none;
+}
+
+/* ── Buttons: normalize legacy gradient buttons — white, confident ── */
+.hero-section a[class*="bg-gradient-to-r"],
+.hero-section button[class*="bg-gradient-to-r"] {
+    background: #fff !important;
+    color: #000 !important;
+    border-radius: var(--r-md) !important;
+    font-weight: 700 !important;
+    transition: background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
+}
+.hero-section a[class*="bg-gradient-to-r"]:hover,
+.hero-section button[class*="bg-gradient-to-r"]:hover {
+    background: rgba(255, 255, 255, 0.85) !important;
+    transform: translateY(-1px);
+}
+
+/* ── Reviews / tabs ── */
+.tab-button { color: var(--text-low); border-color: transparent; }
+.tab-button.active { color: var(--accent-hi) !important; border-color: var(--accent) !important; }
+
+/* ── More Like This cards ── */
+.recommendation-card, #more-like-this .bg-gray-800 {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+}
+
+/* ── Status pills ── */
+.hero-section span[class*="bg-green-600"],
+.hero-section span[class*="bg-pink-600"],
+.hero-section span[class*="bg-indigo-600"],
+.hero-section span[class*="bg-purple-600"],
+.hero-section span[class*="bg-cyan-600"] {
+    border-radius: 999px !important;
+    font-size: 0.75rem !important;
+    padding: 4px 12px !important;
+}
+
+/* ── Body: undo legacy inline-style body rules (Poppins/teal) ── */
+body {
+    background: var(--bg-base) !important;
+    color: var(--text-hi) !important;
+    font-family: var(--font-body) !important;
+}

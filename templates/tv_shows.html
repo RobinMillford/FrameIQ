@@ -1,14 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon2.ico') }}">
-    <title>TV Shows - FrameIQ</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+{% extends "base.html" %}
+
+{% block title %}TV Shows - FrameIQ{% endblock %}
+
+{% block extra_css %}
     <style>
         @keyframes gradient {
             0% { background-position: 0% 50%; }
@@ -109,14 +103,6 @@
             width: 100%;
         }
 
-        #chatbot-button {
-            transition: all 0.3s ease;
-        }
-
-        #chatbot-button:hover {
-            transform: scale(1.1);
-        }
-
         .trailer-card {
             transition: all 0.3s ease;
         }
@@ -202,27 +188,10 @@
             width: 3rem;
         }
     </style>
-</head>
-<body class="min-h-screen bg-gray-900 text-white font-['Poppins']">
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <div class="text-2xl font-bold gradient-text">FrameIQ</div>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="nav-link hover:text-blue-400 transition-colors">Home</a>
-                    <a href="/movies" class="nav-link hover:text-blue-400 transition-colors">Movies</a>
-                    <a href="/news" class="nav-link hover:text-blue-400 transition-colors">News</a>
-                    <a href="/chat" class="nav-link hover:text-blue-400 transition-colors">AI Chat</a>
-                </div>
-                <button class="md:hidden" id="mobile-menu-button">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </nav>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
+{% endblock %}
+
+{% block content %}
 
     <!-- Hero Section -->
     <section class="pt-32 pb-20 animate-gradient">
@@ -253,17 +222,17 @@
     </section>
 
     <!-- Best TV Shows Slideshow Section -->
-    <section class="py-20 bg-gray-800">
+    <section class="py-20">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-12 text-center gradient-text">All-Time Best TV Shows</h2>
             <div class="relative">
                 <!-- Navigation Buttons -->
-                <button id="prevSlide" class="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-gray-900/50 hover:bg-gray-900/80 text-white p-2 rounded-full">
+                <button id="prevSlide" class="absolute left-0 top-1/2 transform -translate-y-1/2 z-10  hover:/80 text-white p-2 rounded-full">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                     </svg>
                 </button>
-                <button id="nextSlide" class="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-gray-900/50 hover:bg-gray-900/80 text-white p-2 rounded-full">
+                <button id="nextSlide" class="absolute right-0 top-1/2 transform -translate-y-1/2 z-10  hover:/80 text-white p-2 rounded-full">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                     </svg>
@@ -300,7 +269,7 @@
     </section>
 
     <!-- Categories Section -->
-    <section class="py-20 bg-gray-800">
+    <section class="py-20">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-12 text-center gradient-text">Browse by Category</h2>
             
@@ -487,12 +456,12 @@
     </section>
 
     <!-- Chat Button -->
-    <button id="chatbot-button" 
-            class="fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600"
-            onclick="openChat()">
-        💬
-    </button>
         
-<script src="{{ url_for('static', filename='js/tv-shows.js') }}"></script>
-</body>
-</html>
+
+    
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{{ url_for('static', filename='js/tv-shows.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+{% endblock %}

@@ -6,7 +6,7 @@
         <span>{{ current_user.username }}</span>
         <i class="fas fa-caret-down"></i>
     </button>
-    <div id="profile-menu" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 hidden z-10">
+    <div id="profile-menu" class="absolute right-0 mt-2 w-48  rounded-md shadow-lg py-1 hidden z-10">
         <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
         <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
         <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>

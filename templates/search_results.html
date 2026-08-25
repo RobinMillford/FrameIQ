@@ -6,8 +6,10 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>Search Results for "{{ query }}" - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @keyframes gradient {
@@ -54,8 +56,8 @@
         }
 
         body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #111827;
+            font-family: Inter, sans-serif;
+            background-color:  var(--bg-base);
             color: white;
             min-height: 100vh;
             margin: 0;
@@ -133,7 +135,7 @@
     </section>
 
     <!-- Movies Section -->
-    <section class="py-16 bg-gray-900">
+    <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 gradient-text">Movies</h2>
             {% if movies %}
@@ -143,8 +145,8 @@
                     <a href="/movie/{{ movie.id }}">
                         <img src="https://image.tmdb.org/t/p/w500{{ movie.poster_path }}" alt="{{ movie.title }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if movie.poster_path else 'none' }}">
                         <div class="p-4">
-                            <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ movie.title }}</h3>
-                            <p class="text-gray-400 text-xs">{{ movie.release_date }}</p>
+                            <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ movie.title }}</h3>
+                            <p class="text-[var(--text-mid)] text-xs">{{ movie.release_date }}</p>
                         </div>
                     </a>
                     {% if current_user.is_authenticated %}
@@ -167,7 +169,7 @@
                         </span>
                         {% endif %}
                         {% if (movie.id, 'movie') in user_watchlist_ids %}
-                        <span class="text-xs bg-indigo-600 text-white px-2 py-1 rounded flex items-center gap-1">
+                        <span class="text-xs bg-[var(--accent)] text-white px-2 py-1 rounded flex items-center gap-1">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
@@ -178,7 +180,7 @@
                         <!-- Action buttons - allow adding to multiple lists -->
                         <div class="flex flex-wrap gap-1 justify-center mt-2">
                             {% if (movie.id, 'movie') not in user_watchlist_ids %}
-                            <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie') }}" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-1 py-1 rounded" title="Add to Watchlist">
+                            <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie') }}" class="text-xs bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-1 py-1 rounded" title="Add to Watchlist">
                                 <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
@@ -206,7 +208,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-400">No movies found for "{{ query }}".</p>
+            <p class="text-[var(--text-mid)]">No movies found for "{{ query }}".</p>
             {% endif %}
         </div>
     </section>
@@ -222,8 +224,8 @@
                     <a href="/tv/{{ show.id }}">
                         <img src="https://image.tmdb.org/t/p/w500{{ show.poster_path }}" alt="{{ show.name }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if show.poster_path else 'none' }}">
                         <div class="p-4">
-                            <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ show.name }}</h3>
-                            <p class="text-gray-400 text-xs">{{ show.first_air_date }}</p>
+                            <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ show.name }}</h3>
+                            <p class="text-[var(--text-mid)] text-xs">{{ show.first_air_date }}</p>
                         </div>
                     </a>
                     {% if current_user.is_authenticated %}
@@ -285,13 +287,13 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-400">No TV shows found for "{{ query }}".</p>
+            <p class="text-[var(--text-mid)]">No TV shows found for "{{ query }}".</p>
             {% endif %}
         </div>
     </section>
 
     <!-- People Section -->
-    <section class="py-16 bg-gray-900 border-b border-gray-800">
+    <section class="py-16  border-b border-gray-800">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 gradient-text">People</h2>
             {% if people %}
@@ -300,14 +302,14 @@
                 <a href="/actor/{{ person.id }}" class="result-card glass-effect rounded-lg overflow-hidden">
                     <img src="https://image.tmdb.org/t/p/w500{{ person.profile_path }}" alt="{{ person.name }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if person.profile_path else 'none' }}">
                     <div class="p-4">
-                        <h3 class="font-semibold text-sm text-white hover:text-indigo-300 transition-colors">{{ person.name }}</h3>
-                        <p class="text-gray-400 text-xs">{{ person.known_for }}</p>
+                        <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ person.name }}</h3>
+                        <p class="text-[var(--text-mid)] text-xs">{{ person.known_for }}</p>
                     </div>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-400">No people found for "{{ query }}".</p>
+            <p class="text-[var(--text-mid)]">No people found for "{{ query }}".</p>
             {% endif %}
         </div>
     </section>
@@ -321,15 +323,15 @@
                 {% for member in community_members %}
                 <div class="glass-effect rounded-xl p-6 flex flex-col items-center text-center animate__animated animate__fadeIn">
                     <a href="/user/{{ member.id }}" class="group mb-4">
-                        <div class="w-24 h-24 rounded-full overflow-hidden border-2 border-indigo-500 group-hover:border-indigo-400 transition-colors mb-3">
+                        <div class="w-24 h-24 rounded-full overflow-hidden border-2 border-[var(--accent)] group-hover:border-[var(--accent)] transition-colors mb-3">
                             <img src="{{ member.profile_picture or url_for('static', filename='images/default_avatar.svg') }}" 
                                  alt="{{ member.username }}" 
                                  class="w-full h-full object-cover">
                         </div>
-                        <h3 class="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">@{{ member.username }}</h3>
+                        <h3 class="text-xl font-bold text-white group-hover:text-[var(--accent)] transition-colors">@{{ member.username }}</h3>
                     </a>
                     
-                    <div class="flex items-center space-x-4 mb-6 text-sm text-gray-400">
+                    <div class="flex items-center space-x-4 mb-6 text-sm text-[var(--text-mid)]">
                         <div class="flex flex-col">
                             <span class="text-white font-semibold">{{ member.total_reviews }}</span>
                             <span>Reviews</span>
@@ -347,7 +349,7 @@
                         data-user-id="{{ member.id }}"
                         data-authenticated="true"
                         data-following="{{ 'true' if member.id in following_ids else 'false' }}"
-                        class="w-full py-2 px-4 rounded-lg font-semibold transition-all duration-300 bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center">
+                        class="w-full py-2 px-4 rounded-lg font-semibold transition-all duration-300 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white flex items-center justify-center">
                         {% if member.id in following_ids %}
                             <i class="fas fa-user-check mr-2"></i> Following
                         {% else %}
@@ -355,7 +357,7 @@
                         {% endif %}
                     </button>
                     {% elif current_user.is_authenticated and current_user.id == member.id %}
-                    <span class="text-gray-500 italic text-sm">(You)</span>
+                    <span class="text-[var(--text-mid)] italic text-sm">(You)</span>
                     {% else %}
                     <a href="/login" class="w-full py-2 px-4 rounded-lg font-semibold bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-center">
                         <i class="fas fa-user-plus mr-2"></i> Follow
@@ -365,7 +367,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-gray-400">No community members matching "{{ query }}" found.</p>
+            <p class="text-[var(--text-mid)]">No community members matching "{{ query }}" found.</p>
             {% endif %}
         </div>
     </section>
@@ -400,15 +402,15 @@
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0 bg-gray-900 glass-effect hidden';
+            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
             mobileMenu.innerHTML = `
                 <div class="container mx-auto px-4 py-4">
                     <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-white hover:text-indigo-400">Home</a>
-                        <a href="/movies" class="text-white hover:text-indigo-400">Movies</a>
-                        <a href="/tv_shows" class="text-white hover:text-indigo-400">TV Shows</a>
-                        <a href="/news" class="text-white hover:text-indigo-400">News</a>
-                        <a href="/chat" class="text-white hover:text-indigo-400">AI Chat</a>
+                        <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
+                        <a href="/movies" class="text-white hover:text-[var(--accent)]">Movies</a>
+                        <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
+                        <a href="/news" class="text-white hover:text-[var(--accent)]">News</a>
+                        <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
                     </div>
                 </div>
             `;
@@ -420,5 +422,6 @@
         });
     </script>
     <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>
