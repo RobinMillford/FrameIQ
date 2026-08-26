@@ -11,6 +11,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
+  pgdata:
+
+networks:
+  frameiq:
+    driver: bridge
       - pgdata:/var/lib/postgresql/data
     ports:
       # Exposed for GitHub Actions episode sync.
@@ -71,3 +76,8 @@ services:
       - frameiq
 
 volumes:
+  pgdata:
+
+networks:
+  frameiq:
+    driver: bridge
