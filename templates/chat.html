@@ -62,10 +62,25 @@
         min-height: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
-        padding: 24px;
+        padding: 12px 12px 12px 12px;
+        padding-right: 20px;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 10px;
+    }
+    @media (min-width: 640px) {
+        .chat-messages {
+            padding: 24px;
+            padding-right: 32px;
+            gap: 16px;
+        }
+    }
+    @media (min-width: 1024px) {
+        .chat-messages {
+            padding: 28px;
+            padding-right: 32px;
+            gap: 20px;
+        }
     }
 
     .chat-msg {
@@ -295,11 +310,15 @@
     </div>
 
     <!-- Input -->
-    <div class="chat-inputbar">
+    <div class="chat-inputbar flex items-center gap-3 p-4 sm:p-4 md:p-6">
         <input type="text" id="user-input" placeholder="Ask about any movie, show, or your taste…"
-               autocomplete="off" aria-label="Message CineBot">
-        <button id="send-button" aria-label="Send message">
-            <i data-lucide="arrow-up" class="w-5 h-5"></i>
+               autocomplete="off" aria-label="Message CineBot"
+               class="flex-1 min-w-0 bg-[var(--bg-surface)] border border-[var(--line-hi)] rounded-[var(--r-lg)] px-4 py-3 text-white placeholder:text-[var(--text-low)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)] text-sm sm:text-base">
+        <button id="send-button" aria-label="Send message"
+                class="flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[var(--accent)] text-white hover:bg-[var(--accent-hi)] active:bg-[var(--accent-hi)] transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]"
+                aria-label="Send message">
+            <i data-lucide="arrow-up" class="w-5 h-5 text-white shrink-0"></i>
+            <span class="sr-only">Send</span>
         </button>
     </div>
 </div>

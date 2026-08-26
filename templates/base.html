@@ -162,33 +162,39 @@
                     </div>
                     {% endif %}
 
-                    <button id="mobile-menu-button" class="lg:hidden text-white p-1" aria-label="Open navigation menu" aria-expanded="false">
-                        <i class="fas fa-bars text-xl" aria-hidden="true"></i>
+                    <button id="mobile-nav-toggle" class="mobile-nav-toggle lg:hidden" aria-label="Open navigation menu" aria-expanded="false">
+                        <i data-lucide="menu" class="w-5 h-5"></i>
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Mobile menu -->
-        <div id="mobile-menu" class="hidden lg:hidden bg-[var(--bg-elevated)] border-t border-[var(--line)] w-full">
-            <div class="px-4 py-3 space-y-1">
+        <!-- Mobile nav drawer -->
+        <div id="mobile-nav-drawer" class="mobile-nav-drawer" aria-hidden="true">
+            <div class="flex items-center justify-between pb-4 border-b border-[var(--line)]">
+                <span class="frameiq-logo">FrameIQ</span>
+                <button id="mobile-nav-close" class="mobile-nav-toggle" aria-label="Close navigation menu">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <nav class="flex-1 overflow-y-auto">
                 {% for href, label in nav_items %}
-                <a href="{{ href }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm transition-colors">{{ label }}</a>
+                <a href="{{ href }}" class="nav-link {{ 'active' if request.path.startswith(href) and href != '/' else '' }}">{{ label }}</a>
                 {% endfor %}
-                <a href="/chat" data-cinebot-open class="block text-[var(--accent-hi)] hover:bg-white/5 rounded-lg px-3 py-2 text-sm font-medium">CineBot</a>
-                <a href="/stats" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">My Stats</a>
+                <a href="/chat" data-cinebot-open class="nav-link text-[var(--accent-hi)]">CineBot</a>
+                <a href="/stats" class="nav-link">My Stats</a>
                 <hr class="border-[var(--line)] my-2">
                 {% if current_user.is_authenticated %}
-                <a href="{{ url_for('auth.profile') }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Profile</a>
-                <a href="{{ url_for('main.watchlist') }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Watchlist</a>
-                <a href="{{ url_for('main.wishlist') }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Wishlist</a>
-                <a href="{{ url_for('main.viewed') }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Viewed</a>
-                <a href="{{ url_for('auth.logout') }}" class="block text-[var(--danger)] hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Log out</a>
+                <a href="{{ url_for('auth.profile') }}" class="nav-link">Profile</a>
+                <a href="{{ url_for('main.watchlist') }}" class="nav-link">Watchlist</a>
+                <a href="{{ url_for('main.wishlist') }}" class="nav-link">Wishlist</a>
+                <a href="{{ url_for('main.viewed') }}" class="nav-link">Viewed</a>
+                <a href="{{ url_for('auth.logout') }}" class="nav-link text-[var(--danger)]">Log out</a>
                 {% else %}
-                <a href="{{ url_for('auth.login') }}" class="block text-[var(--text-mid)] hover:text-white hover:bg-white/5 rounded-lg px-3 py-2 text-sm">Log in</a>
-                <a href="{{ url_for('auth.register') }}" class="block text-[var(--accent-hi)] font-medium rounded-lg px-3 py-2 text-sm">Sign up</a>
+                <a href="{{ url_for('auth.login') }}" class="nav-link">Log in</a>
+                <a href="{{ url_for('auth.register') }}" class="nav-link text-[var(--accent-hi)] font-medium">Sign up</a>
                 {% endif %}
-            </div>
+            </nav>
         </div>
     </nav>
 
@@ -248,12 +254,49 @@
                 });
             }
 
-            // Mobile menu toggle
-            if (mobileMenuButton && mobileMenu) {
-                mobileMenuButton.addEventListener('click', function() {
-                    mobileMenu.classList.toggle('hidden');
-                });
+            // Mobile nav drawer toggle
+            const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+            const mobileNavClose = document.getElementById('mobile-nav-close');
+            const mobileNavDrawer = document.getElementById('mobile-nav-drawer');
+
+            function openMobileNav() {
+                mobileNavDrawer.classList.add('open');
+                mobileNavDrawer.setAttribute('aria-hidden', 'false');
+                mobileNavToggle.setAttribute('aria-expanded', 'true');
+                document.body.style.overflow = 'hidden';
             }
+
+            function closeMobileNav() {
+                mobileNavDrawer.classList.remove('open');
+                mobileNavDrawer.setAttribute('aria-hidden', 'true');
+                mobileNavToggle.setAttribute('aria-expanded', 'false');
+                document.body.style.overflow = '';
+            }
+
+            if (mobileNavToggle && mobileNavDrawer) {
+                mobileNavToggle.addEventListener('click', openMobileNav);
+            }
+            if (mobileNavClose && mobileNavDrawer) {
+                mobileNavClose.addEventListener('click', closeMobileNav);
+            }
+
+            // Close on link click
+            mobileNavDrawer?.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', closeMobileNav);
+            });
+
+            // Close on Escape
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && mobileNavDrawer?.classList.contains('open')) {
+                    closeMobileNav();
+                    mobileNavToggle?.focus();
+                }
+            });
+
+            // Close on overlay click
+            mobileNavDrawer?.addEventListener('click', function(e) {
+                if (e.target === mobileNavDrawer) closeMobileNav();
+            });
 
             // Lucide icons (new chrome)
             if (window.lucide) lucide.createIcons();
