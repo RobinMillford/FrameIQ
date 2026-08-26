@@ -1,241 +1,285 @@
-# FrameIQ
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RobinMillford/FrameIQ/main/static/images/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/RobinMillford/FrameIQ/main/static/images/logo-light.svg">
+    <img alt="FrameIQ" width="180" src="https://raw.githubusercontent.com/RobinMillford/FrameIQ/main/static/images/logo-dark.svg">
+  </picture>
+</p>
 
-**A social movie & TV platform with an AI chat assistant — inspired by Letterboxd, powered by LangGraph.**
+<h1 align="center">FrameIQ</h1>
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Flask](https://img.shields.io/badge/Flask-3.1-black?logo=flask)](https://flask.palletsprojects.com)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-blueviolet)](https://langchain-ai.github.io/langgraph/)
-[![LLM](https://img.shields.io/badge/LLM-compatible-412991)](https://github.com/RobinMillford/FrameIQ)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+<p align="center">
+  <strong>A cinematic social movie & TV platform with a multi-agent AI assistant.</strong><br>
+  Track, discover, and discuss what you watch — powered by LangGraph, Flask, and TMDb.
+</p>
 
-**Live →** [frameiq.studio](https://frameiq.studio)
+<p align="center">
+  <a href="https://frameiq.studio"><img src="https://img.shields.io/badge/Live%20Demo-frameiq.studio-000?style=for-the-badge&logo=vercel&logoColor=F6B73C" alt="Live Demo"></a>
+  <a href="https://github.com/RobinMillford/FrameIQ/actions/workflows/ci-cd.yml"><img src="https://img.shields.io/github/actions/workflow/status/RobinMillford/FrameIQ/ci-cd.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white" alt="CI/CD"></a>
+  <a href="https://github.com/RobinMillford/FrameIQ/blob/main/LICENSE"><img src="https://img.shields.io/github/license/RobinMillford/FrameIQ?style=for-the-badge&color=blue" alt="License"></a>
+  <a href="https://python.org/downloads/release/python-3120/"><img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://flask.palletsprojects.com/"><img src="https://img.shields.io/badge/Flask-3.1-000?style=for-the-badge&logo=flask&logoColor=white" alt="Flask"></a>
+  <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/LangGraph-multi--agent-412991?style=for-the-badge" alt="LangGraph"></a>
+  <a href="https://github.com/RobinMillford/FrameIQ/stargazers"><img src="https://img.shields.io/github/stars/RobinMillford/FrameIQ?style=for-the-badge&logo=github&logoColor=white" alt="Stars"></a>
+</p>
 
 ---
 
-## What is FrameIQ?
+## 🎬 What is FrameIQ?
 
-FrameIQ lets you track, rate, and review everything you watch — movies, TV shows, anime — and share it with a social community. On top of the standard Letterboxd-style features, it ships a multi-agent AI assistant (CineBot) that answers natural-language questions, recommends titles by vibe, and streams its thinking in real time.
+FrameIQ is a **Letterboxd-inspired** social platform for film and TV enthusiasts, elevated with a **production-grade multi-agent AI assistant (CineBot)** that understands natural language, recommends by vibe, and streams its reasoning in real-time.
+
+Built for people who care about what they watch — and want an intelligent companion to help them discover more.
+
+| | | |
+|:---:|:---:|:---:|
+| **Track** everything you watch | **Discover** by mood, genre, era | **Discuss** with friends & community |
+| **Watch** inline with resume | **Analyze** your taste DNA | **Chat** with an AI film expert |
 
 ---
 
-## Features
+## ✨ Features
 
-### Tracking & Library
-- **Watchlist** with High / Medium / Low priority labels
-- **Diary** — chronological log of everything you've watched with dates
-- **Viewed** and **Wishlist** libraries
-- **Star ratings** (0.5 – 5.0 in half-star increments) and written reviews
-- **Custom lists** — public or private, shareable
-- **Tags** with autocomplete and trending suggestions
+### 📚 Library & Tracking
+- **Watchlist** with priority tiers (High / Medium / Low)
+- **Diary** — chronological log with dates, ratings, notes
+- **Viewed** & **Wishlist** libraries with rich filtering
+- **Star ratings** (½–5★) + written reviews with markdown
+- **Custom lists** — public, private, collaborative
+- **Tags** with autocomplete & trending suggestions
 
-### TV Show Tracking
+### 📺 TV Show Tracking (First-Class)
 - Episode-by-episode progress with timestamps
-- Season-level batch marking ("Mark entire season watched")
-- Smart completion: a show only moves to *Completed* when TMDb confirms the series has ended — returning shows stay in *Watching* even when you're caught up
-- Auto-refresh episode counts when new seasons drop
-- **Upcoming Episodes calendar** — 60-day view, grouped by date, synced daily via GitHub Actions
+- **Batch season operations** — mark entire seasons watched
+- **Smart completion** — only marks *Completed* when TMDb confirms series ended
+- **Upcoming Episodes calendar** — 60-day view, auto-synced daily
+- Continue Watching row with resume points
 
-### Social
-- Follow / unfollow users
-- Activity feed — Following, Global, and Personal tabs
-- Friends' activity on individual movie and show pages
-- Popular With Friends ranking
-- Review likes, comments, and helpful votes
-- User discovery with suggested follows
+### 👥 Social Layer
+- Follow / unfollow with activity feeds (Following / Global / Personal)
+- Friends' activity on every title page
+- **Popular With Friends** algorithmic ranking
+- Review likes, comments, helpful votes
+- Suggested follows based on taste overlap
 
-### Watch
-- Stream movies and TV episodes directly in the browser — no redirects
-- Resume playback from where you left off (progress saved per title)
-- Auto-logs a diary entry once you've watched ≥ 85 % of a title
-- Continue Watching row on your dashboard
+### ▶️ Inline Watching
+- Stream movies & episodes directly — no redirects
+- **Resume playback** with per-title progress persistence
+- Auto-logs diary entry at 85% completion
 - Full watch history with timestamps
 
-### Discovery & Search
-- Genre, year, language, and rating filters via TMDb Discover
-- Trending movies and shows
+### 🔍 Discovery & Search
+- TMDb-powered filters: genre, year, language, rating, provider
+- Trending movies & shows (daily/weekly)
 - Entertainment news feed (NewsAPI)
-- Semantic similarity search — "movies that feel like a rainy Sunday"
+- **Semantic similarity** — "movies that feel like a rainy Sunday"
 
-### AI Chat — CineBot
-- Multi-agent LangGraph pipeline: **Supervisor → Retriever / Chat → Enricher**
-- Zero-LLM heuristic supervisor (saves 2–3 API calls per request)
-- **7 tools:** vector DB search, TMDb title lookup, person filmography, movie discover, TV discover, similar movies, trending
-- Streaming responses via SSE — user sees each tool call as it happens
-- Poster and metadata cards injected into replies
-- Conversation memory persisted across turns (LangGraph checkpointing)
-
-### Stats & Analytics
-- Personal dashboard: watch time, genre breakdown, top directors, yearly review
-- Interactive Chart.js visualisations
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Backend** | Flask 3.1, SQLAlchemy 2.0, PostgreSQL |
-| **AI / Agents** | LangGraph, LangChain, OpenAI (gpt-4.1-mini routing/retrieval, gpt-5-mini chat) |
-| **Auth** | Google OAuth 2.0 (Authlib) + Flask-Login |
-| **Frontend** | Jinja2, Tailwind CSS, Vanilla JS, Chart.js |
-| **Media APIs** | TMDb, Cloudinary (avatars), NewsAPI |
-| **Infra** | Docker, Nginx, GitHub Actions, VPS |
-
----
-
-## Architecture
+### 🤖 CineBot — Multi-Agent AI Assistant
+<details>
+<summary><strong>Architecture: LangGraph pipeline</strong></summary>
 
 ```
 User message
      │
      ▼
- Supervisor          ← zero-LLM heuristic router
-  │        │
-  ▼        ▼
-Retriever  Chat      ← Retriever uses 7 TMDb / vector tools
-  │        │           Chat uses a capable LLM for open questions
-  └───┬────┘
-      ▼
-  Enricher           ← concurrent TMDb poster & metadata fetch
-      │
-      ▼
- SSE stream → browser
+┌─────────────┐
+│  Supervisor │ ← zero-LLM heuristic router (saves 2–3 API calls)
+└──────┬──────┘
+       │
+   ┌───┴───┐
+   ▼       ▼
+┌───────┐ ┌─────┐
+│Retriever│ │ Chat│ ← Retriever: 7 TMDb/vector tools
+│        │ │     │    Chat: open-ended film knowledge
+└───┬───┘ └──┬──┘
+    └────┬────┘
+         ▼
+    ┌──────────┐
+    │ Enricher │ ← concurrent TMDb poster & metadata fetch
+    └────┬─────┘
+         ▼
+    SSE stream → browser (markdown + poster cards)
 ```
 
-| Agent | Role | Recommended capability |
-|---|---|---|
-| Retriever | Structured tool calling, TMDb queries | Fast model with reliable function-calling |
-| Chat | Open-ended film knowledge & recommendations | High-quality reasoning model |
-| Enricher | Title extraction from AI reply | Lightweight / cheap model |
+| Agent | Role | Model |
+|-------|------|-------|
+| **Supervisor** | Route + extract entities (titles, people, genres, years) | gpt-4.1-mini (structured) |
+| **Retriever** | ReAct agent with 7 cached tools | gpt-4.1-mini |
+| **Chat** | General film knowledge, recommendations | gpt-5-mini |
+| **Enricher** | Extract titles from reply → fetch posters/meta | gpt-4.1-mini |
 
-> The specific models used in production are not disclosed. Any provider compatible with the OpenAI Chat Completions API (OpenAI, Azure OpenAI, Groq, Together, Ollama, etc.) will work — set your chosen model names and `OPENAI_API_KEY`-equivalent in `.env`.
+</details>
+
+- **Streaming responses** via SSE — see each tool call as it happens
+- **Poster & metadata cards** injected inline in replies
+- **Conversation memory** persisted (SQLite checkpointing, survives restarts)
+- **User personalization** — ratings, favorite genres, TV progress, watchlist injected per request
+- **Command palette** (⌘K) + **Slide-over panel** (⌘J) for keyboard-first UX
+
+### 📊 Personal Analytics
+- Watch time, genre breakdown, top directors/actors
+- Year-in-review with interactive Chart.js visualizations
+- Taste DNA — genre affinity bars with gradient fills
+- Taste Match badges on every title page
 
 ---
 
-## Getting Started
+## 🏗 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Flask 3.1, SQLAlchemy 2.0, PostgreSQL 16 |
+| **AI / Agents** | LangGraph, LangChain, OpenAI (gpt-4.1-mini / gpt-5-mini) |
+| **Auth** | Google OAuth 2.0 (Authlib) + Flask-Login + Flask-WTF CSRF |
+| **Frontend** | Jinja2, Tailwind CSS, Vanilla JS (ESM), Chart.js, Lucide icons |
+| **Media APIs** | TMDb, Cloudinary (avatars), NewsAPI |
+| **Streaming** | Rive, VidKing, Vidy, 1Embed providers |
+| **Infra** | Docker Compose, systemd-nginx (reverse proxy), GitHub Actions |
+| **Observability** | Langfuse-ready, structured logging |
+
+---
+
+## 🎨 Design System
+
+**Monochrome Marquee** — true black (#000), white type, single amber accent (#F6B73C)
+
+- **Display:** Archivo Expanded (variable width)
+- **Body:** Inter
+- **Metadata:** JetBrains Mono
+- **Motion:** cubic-bezier(0.16, 1, 0.3, 1) — 180ms/320ms
+- **Radii:** 4 / 6 / 10px — sharp, broadcast-grade
+- **Film grain** overlay + **projector beam/dust** atmosphere
+
+All 49 templates unified on a single design token system. Zero Poppins, zero indigo/violet, zero unused dependencies.
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
+- Python 3.12+
+- PostgreSQL 16 (local or Docker)
+- API keys (see [Environment Variables](#-environment-variables))
 
-- Python 3.11+
-- PostgreSQL (local or [Neon](https://neon.tech) serverless)
-- API keys — see [Environment Variables](#environment-variables)
-
-### Local setup
+### Local Development
 
 ```bash
+# 1. Clone & enter
 git clone https://github.com/RobinMillford/FrameIQ.git
 cd FrameIQ
 
+# 2. Virtual environment
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 
-cp .env.example .env   # fill in your keys
+# 3. Dependencies (uv recommended)
+uv sync
+# or: pip install -r requirements.txt
+
+# 4. Environment
+cp .env.example .env
+# Edit .env with your keys
+
+# 5. Run
 python app.py          # http://localhost:5000
 ```
 
-### Run tests
+### Run Tests
 
 ```bash
-pytest tests/
+pytest tests/ -v        # 104 tests, ~30s
+uv run flake8 .         # lint (max-line 127, complexity 10)
+```
+
+### Docker (Production Stack)
+
+```bash
+cp .env.example .env    # production values
+make deploy             # clean build + start
+```
+
+Stack: **web** (Gunicorn 4 workers) + **db** (Postgres 16) + **system nginx** (80/443)
+
+```bash
+make logs      # tail web logs
+make restart   # zero-downtime restart
+make ps        # container status
+make clean     # wipe everything including DB ⚠️
 ```
 
 ---
 
-## Environment Variables
+## ⚙️ Environment Variables
 
-Copy `.env.example` to `.env` and fill in every value.
+> Copy `.env.example` → `.env` and fill in.
 
 | Variable | Required | Description |
-|---|---|---|
-| `SECRET_KEY` | ✅ | Flask session secret |
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `TMDB_API_KEY` | ✅ | [themoviedb.org](https://www.themoviedb.org/settings/api) |
-| `OPENAI_API_KEY` | ✅ | OpenAI API key (chat models + embeddings) |
-| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth |
-| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth |
+|----------|:--------:|-------------|
+| `SECRET_KEY` | ✅ | Flask session secret (32+ chars) |
+| `DATABASE_URL` | ✅ | `postgresql://user:pass@host:5432/db` |
+| `TMDB_API_KEY` | ✅ | [TMDb API](https://www.themoviedb.org/settings/api) |
+| `OPENAI_API_KEY` | ✅ | OpenAI API key (chat + embeddings) |
+| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth 2.0 |
+| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth 2.0 |
 | `CLOUDINARY_CLOUD_NAME` | ✅ | Avatar uploads |
 | `CLOUDINARY_API_KEY` | ✅ | Cloudinary |
 | `CLOUDINARY_API_SECRET` | ✅ | Cloudinary |
-| `NEWS_API_KEY` | optional | Entertainment news feed |
-| `MAIL_SERVER` etc. | optional | Password reset emails |
+| `NEWS_API_KEY` | ⭕ | Entertainment news feed |
+| `MAIL_SERVER` / `MAIL_*` | ⭕ | Password reset emails |
+| `RATELIMIT_STORAGE_URI` | ⭕ | Redis for rate limiting (defaults to memory) |
 
 ---
 
-## Docker Deployment (VPS)
-
-```bash
-cp .env.example .env   # fill in production values
-make deploy            # clean build + start (no cache)
-```
-
-Three containers start: **web** (Gunicorn), **db** (Postgres 15), **nginx** (ports 80 / 443).
-
-```bash
-make logs      # tail web container logs
-make restart   # stop + start without rebuild
-make ps        # show running containers
-make clean     # wipe everything including the DB volume ⚠️
-```
-
-### SSL — Let's Encrypt
-
-```bash
-ufw allow 80 && ufw allow 443
-docker compose stop nginx
-certbot certonly --standalone -d frameiq.studio -d www.frameiq.studio
-cp /etc/letsencrypt/live/frameiq.studio/fullchain.pem nginx/ssl/
-cp /etc/letsencrypt/live/frameiq.studio/privkey.pem   nginx/ssl/
-# uncomment the HTTPS server block in nginx/nginx.conf, then:
-docker compose up -d nginx
-```
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 FrameIQ/
 ├── app.py                      # Application factory (create_app)
-├── models.py                   # All SQLAlchemy models
-├── extensions.py               # Flask extensions (limiter, mail)
+├── models.py                   # 39 KB — all SQLAlchemy models
+├── extensions.py               # Flask extensions (limiter, mail, db)
 ├── requirements.txt
 │
-├── routes/                     # Flask blueprints — one per feature domain
+├── routes/                     # 28 Flask blueprints (one per domain)
 │   ├── auth.py                 # Login, register, password reset
-│   ├── main.py                 # Home, search, news
+│   ├── main.py                 # Home, search, news, tonights-pick
 │   ├── details.py              # Movie / TV detail pages
 │   ├── reviews.py              # Reviews & ratings
 │   ├── diary.py                # Watch diary
-│   ├── lists.py / lists_advanced.py
+│   ├── lists.py                # Custom lists (basic + advanced)
 │   ├── tv_tracking.py          # Episode & season tracking
 │   ├── chat.py                 # SSE streaming chat
-│   └── ...                     # social, stats, trending, analytics, etc.
+│   ├── social.py               # Follow, activity feed
+│   ├── stats.py                # Dashboard, year-in-review
+│   └── ...
 │
 ├── src/
 │   ├── agents/                 # LangGraph multi-agent system
 │   │   ├── graph.py            # StateGraph definition
 │   │   ├── nodes.py            # Supervisor, Retriever, Chat, Enricher
-│   │   ├── tools.py            # 7 LangChain tools (cached TMDb + user history)
+│   │   ├── tools.py            # 7 LangChain tools (cached TMDb + history)
 │   │   └── state.py            # GraphState schema
 │   └── api/
-│       ├── agent_service.py
+│       ├── agent_service.py    # User context building, SSE streaming
 │       └── flask_integration.py
 │
 ├── api/                        # Shared utilities
-│   ├── tmdb_client.py          # TMDb API wrapper (compat shim)
+│   ├── tmdb_client.py          # TMDb wrapper (compat shim)
 │   ├── tmdb/                   # TMDb package: cache, movies, tv, people, search
 │   ├── stream_providers.py     # Embed providers (Rive, VidKing, Vidy, 1Embed)
 │   └── chatbot.py              # LLM helpers
 │
-├── templates/                  # Jinja2 templates
-├── static/                     # CSS, JS, images
+├── templates/                  # 49 Jinja2 templates (unified on base.html)
+├── static/
+│   ├── css/                    # tokens.css, chrome.css, detail.css, projector.css
+│   ├── js/                     # chat-page.js, chrome.js, projector-dust.js
+│   └── images/
 │
-├── scripts/                    # Ops scripts (excluded from Docker image)
+├── scripts/                    # Ops (excluded from Docker)
 │   ├── sync_upcoming_episodes.py
 │   └── collect_media.py
 │
-├── .github/workflows/          # CI/CD, episode sync
-├── nginx/nginx.conf            # Reverse proxy config
+├── migrates/                   # Manual schema migrations
+├── .github/workflows/          # ci-cd.yml, deploy.yml, sync-upcoming-episodes.yml
+├── nginx/nginx.conf            # Reverse proxy + SSL
 ├── docker-compose.yml
 ├── Dockerfile
 └── Makefile
@@ -243,38 +287,89 @@ FrameIQ/
 
 ---
 
-## Contributing
+## 🔄 CI/CD Pipeline
 
-Contributions are welcome. Please read [CLA.md](CLA.md) before submitting a pull request — by opening a PR you agree to the terms of the Contributor License Agreement, which lets FrameIQ offer a commercial licence alongside AGPL v3.
+| Workflow | Trigger | Actions |
+|----------|---------|---------|
+| **ci-cd.yml** | Push to `main`/`develop` | pytest (104) + flake8 |
+| **deploy.yml** | Push to `main` (after CI pass) | SSH → VPS → `make deploy` |
+| **sync-upcoming-episodes.yml** | Daily 02:00 UTC | Sync TMDb → PostgreSQL |
 
-**Good first issues:**
-- Add more languages/regions to the TMDb discover tool
-- Write missing unit tests in `tests/`
-- Improve accessibility (ARIA labels, keyboard navigation)
-- Add more chart types to the stats dashboard
+**VPS:** Self-hosted PostgreSQL 16, Docker Compose, system nginx, nightly `pg_dump` backups, certbot SSL.
+
+---
+
+## 🧪 Testing & Quality
 
 ```bash
-# fork → clone → branch
+# Full suite (104 tests)
+pytest tests/
+
+# Smoke only
+pytest tests/test_basic.py
+
+# Models
+pytest tests/test_models.py
+
+# Single test
+pytest -k "test_name"
+```
+
+**Quality gates:** 104 tests passing • flake8 clean • vulture clean • 0 secrets • 0 dead code
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please read [CLA.md](CLA.md) before submitting a PR.
+
+**Good first issues:**
+- 🌍 Add more languages/regions to TMDb discover tools
+- 🧪 Write missing unit tests in `tests/`
+- ♿ Improve accessibility (ARIA, keyboard nav)
+- 📈 Add chart types to stats dashboard
+- 🎨 Extend design token system
+
+```bash
+# 1. Fork & clone
+git clone https://github.com/YOUR-USERNAME/FrameIQ.git
+
+# 2. Branch
 git checkout -b feat/your-feature
 
-# make changes
-pytest tests/ && flake8 .
+# 3. Develop
+# ... make changes ...
 
+# 4. Verify
+pytest tests/ && uv run flake8 .
+
+# 5. Push & PR
 git push origin feat/your-feature
-# open a pull request against main
+# Open PR against main
 ```
 
 ---
 
-## License
+## 📄 License
 
-Licensed under the **GNU Affero General Public License v3.0** — see [LICENSE](LICENSE).
+Licensed under **GNU Affero General Public License v3.0** — see [LICENSE](LICENSE).
 
-> Commercial use, SaaS hosting, or white-labelling requires a separate licence.  
-> Contact: robinmill4d@gmail.com
+> **Commercial use, SaaS hosting, or white-labelling requires a separate licence.**  
+> Contact: `robinmill4d@gmail.com`
 
 ---
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
-[TMDb](https://www.themoviedb.org) · [LangGraph](https://langchain-ai.github.io/langgraph/) · [Letterboxd](https://letterboxd.com) (inspiration)
+- **[TMDb](https://www.themoviedb.org)** — The movie database powering our data
+- **[LangGraph](https://langchain-ai.github.io/langgraph/)** — Multi-agent orchestration
+- **[Letterboxd](https://letterboxd.com)** — Product inspiration
+- **[Archivo](https://github.com/Omnibus-Type/Archivo)** • **[Inter](https://github.com/rsms/inter)** • **[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)** — Typefaces
+- **[Tailwind CSS](https://tailwindcss.com)** • **[Chart.js](https://www.chartjs.org/)** • **[Lucide](https://lucide.dev/)** — Frontend toolkit
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/RobinMillford">Robin Millford</a> and contributors.</sub><br>
+  <sub>Star ⭐ the repo if you find it useful — it helps more people discover FrameIQ.</sub>
+</p>
