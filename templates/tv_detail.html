@@ -36,7 +36,7 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .gradient-text {
+        .h-display {
             background: linear-gradient(to right, #3b82f6, #60a5fa);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -597,7 +597,7 @@
     <section class="py-16">
         <div class="container mx-auto px-4 max-w-4xl">
             <div class="glass-effect rounded-lg p-8">
-                <h2 class="text-3xl font-bold mb-6 gradient-text flex items-center gap-2">
+                <h2 class="text-3xl font-bold mb-6 h-display flex items-center gap-2">
                     <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
                     </svg>
@@ -639,7 +639,7 @@
     <!-- Seasons Section -->
     <section class="py-16  mt-10">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Seasons</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Seasons</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {% for season in show.seasons %}
                 <div class="season-card glass-effect rounded-lg overflow-hidden">
@@ -659,7 +659,7 @@
     <!-- Cast Section -->
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Top Billed Cast</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Top Billed Cast</h2>
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6" id="cast-grid">
                 {% for cast in show.cast[:6] %}
                 <div class="cast-card glass-effect rounded-lg overflow-hidden">
@@ -698,7 +698,7 @@
     <!-- Show Details Section -->
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Show Details</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Show Details</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div class="info-card glass-effect rounded-lg p-6">
                     <h3 class="text-lg font-semibold mb-2">Status</h3>
@@ -732,7 +732,7 @@
     {% if current_user.is_authenticated %}
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Write Your Review</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Write Your Review</h2>
             
             <div class="glass-effect rounded-lg p-8 max-w-3xl mx-auto md:mx-0">
                 <form id="review-form" class="space-y-6">
@@ -816,7 +816,7 @@
         <div class="container mx-auto px-4">
             <div class="review-header-controls mb-12">
                 <div>
-                    <h2 class="text-3xl font-bold gradient-text">Community Reviews</h2>
+                    <h2 class="text-3xl font-bold h-display">Community Reviews</h2>
                     <p class="text-[var(--text-mid)] mt-2">See what other fans are saying</p>
                 </div>
                 <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">

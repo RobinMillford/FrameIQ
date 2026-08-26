@@ -13,7 +13,7 @@
 
 /* Tag Input Container */
 .tag-input-container input:focus {
-    border-color: #4f46e5;
+    border-color: var(--accent);
 }
 
 /* Tag Suggestions Dropdown */
@@ -86,7 +86,7 @@
     display: inline-block;
     width: 12px;
     height: 12px;
-    border: 2px solid #4f46e5;
+    border: 2px solid var(--accent);
     border-radius: 50%;
     border-top-color: transparent;
     animation: spin 0.8s linear infinite;

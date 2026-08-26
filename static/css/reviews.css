@@ -1,3 +1,4 @@
+/* Reviews — uses tokens.css variables */
 /* ================================================
    REVIEW SYSTEM STYLES
    Enhanced reviews with helpful votes & titles
@@ -18,7 +19,7 @@
 .page-header h1 {
     font-size: 2.5rem;
     margin-bottom: 0.5rem;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 .page-header .subtitle {
@@ -53,7 +54,7 @@
 
 .timeframe-selector label {
     font-weight: 600;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 .form-select {
@@ -61,7 +62,7 @@
     border-radius: 8px;
     border: 1px solid var(--border-color, #333);
     background: var(--input-bg, #222);
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     font-size: 0.95rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -121,7 +122,7 @@
 
 .toggle-label {
     font-weight: 600;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 /* View Links */
@@ -143,7 +144,7 @@
 }
 
 .view-link:hover {
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     background: rgba(255, 255, 255, 0.05);
 }
 
@@ -204,7 +205,7 @@
 
 .review-username {
     font-weight: 600;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     text-decoration: none;
     transition: color 0.2s;
 }
@@ -226,14 +227,14 @@
 }
 
 .review-rating i {
-    color: var(--star-color, #ffc107);
+    color: var(--accent);
     font-size: 1rem;
 }
 
 .review-rating .rating-value {
     margin-left: 0.5rem;
     font-weight: 600;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     font-size: 1.1rem;
 }
 
@@ -253,7 +254,7 @@
     align-items: center;
     gap: 1rem;
     text-decoration: none;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     transition: all 0.2s;
 }
 
@@ -278,7 +279,7 @@
 .review-title {
     font-size: 1.3rem;
     font-weight: 700;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     margin-bottom: 0.75rem;
     line-height: 1.4;
 }
@@ -379,7 +380,7 @@
 
 .review-like-btn:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 .review-like-btn.liked {
@@ -436,7 +437,7 @@
 .helpful-btn:hover {
     border-color: var(--primary-color, #e50914);
     background: rgba(229, 9, 20, 0.1);
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 .helpful-btn.active {
@@ -520,7 +521,7 @@
 
 .empty-state h3 {
     font-size: 1.5rem;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     margin-bottom: 0.5rem;
 }
 
@@ -634,7 +635,7 @@
     border-radius: 8px;
     border: 1px solid var(--border-color, #333);
     background: var(--input-bg, #222);
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
     font-size: 0.95rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -662,7 +663,7 @@
 .media-reviews-section h2 {
     font-size: 2rem;
     margin-bottom: 1.5rem;
-    color: var(--text-primary, #fff);
+    color: var(--text-hi);
 }
 
 .review-header-controls {

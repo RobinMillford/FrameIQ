@@ -28,7 +28,7 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .gradient-text {
+        .h-display {
             background: linear-gradient(to right, #4f46e5, #818cf8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -283,7 +283,7 @@
                     </a>
 
                     <!-- Trailer Button -->
-                    <button id="trailer-button" class="trailer-button bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 mb-6">
+                    <button id="trailer-button" class="trailer-button bg-white text-black px-6 py-3 rounded-lg font-semibold flex items-center gap-2 mb-6">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -526,7 +526,7 @@
 <section class="py-16">
     <div class="container mx-auto px-4 max-w-4xl">
         <div class="glass-effect rounded-lg p-8">
-            <h2 class="text-3xl font-bold mb-6 gradient-text flex items-center gap-2">
+            <h2 class="text-3xl font-bold mb-6 h-display flex items-center gap-2">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
                 </svg>
@@ -568,7 +568,7 @@
 <!-- Cast Section -->
 <section class="py-16">
     <div class="container mx-auto px-4">
-        <h2 class="text-3xl font-bold mb-8 gradient-text">Top Billed Cast</h2>
+        <h2 class="text-3xl font-bold mb-8 h-display">Top Billed Cast</h2>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6" id="cast-grid">
             {% for cast in movie.cast[:6] %}
             <a href="/actor/{{ cast.id }}" class="cast-card glass-effect rounded-lg overflow-hidden block">
@@ -600,7 +600,7 @@
     <!-- Movie Details Section -->
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Movie Details</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Movie Details</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div class="info-card glass-effect rounded-lg p-6">
                     <h3 class="text-lg font-semibold mb-2">Status</h3>
@@ -632,7 +632,7 @@
     {% if current_user.is_authenticated %}
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold mb-8 gradient-text">Write Your Review</h2>
+            <h2 class="text-3xl font-bold mb-8 h-display">Write Your Review</h2>
             
             <div class="glass-effect rounded-lg p-8 max-w-3xl">
                 <form id="review-form" class="space-y-6">
@@ -698,7 +698,7 @@
                         <button 
                             type="submit" 
                             id="submit-review-btn"
-                            class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="flex-1 bg-white text-black font-bold hover:bg-white/85 font-semibold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span id="submit-text">Post Review</span>
                             <span id="submit-loading" class="hidden">
@@ -726,7 +726,7 @@
     <section class="py-16 media-reviews-section" data-media-id="{{ movie.id }}" data-media-type="movie">
         <div class="container mx-auto px-4">
             <div class="review-header-controls">
-                <h2 class="text-3xl font-bold gradient-text">Reviews</h2>
+                <h2 class="text-3xl font-bold h-display">Reviews</h2>
                 <div style="display: flex; gap: 1rem; align-items: center;">
                     <select id="review-sort" class="form-select">
                         <option value="all">All Reviews</option>
@@ -968,7 +968,7 @@
                     star.className = 'star cursor-pointer text-4xl transition-colors duration-200';
                     star.dataset.value = i * 0.5;
                     star.innerHTML = i % 2 === 0 ? '★' : '☆';
-                    star.style.color = '#4B5563'; // gray-600
+                    star.style.color = '#555555';
                     
                     // Mouse enter
                     star.addEventListener('mouseenter', () => {
@@ -1000,7 +1000,7 @@
                         if (starValue <= rating) {
                             star.style.color = '#FBBF24'; // yellow-400
                         } else {
-                            star.style.color = '#4B5563'; // gray-600
+                            star.style.color = '#555555';
                         }
                     });
                 }
