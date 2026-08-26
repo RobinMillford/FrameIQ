@@ -36,7 +36,4 @@ jobs:
           SECRET_KEY: "ci-test-secret-key"
           TMDB_API_KEY: "test"
           OPENAI_API_KEY: "test"
-          CHROMA_API_KEY: "test"
-          CHROMA_TENANT: "test"
-          CHROMA_DATABASE: "test"
         run: pytest tests/ -v --tb=short
