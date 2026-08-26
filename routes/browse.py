@@ -118,18 +118,18 @@ def _tonights_picks(current_user, count=5):
             if top_title and top_score:
                 bits.append(f"you rated {top_title} {top_score:.1f}/10")
             bits.append("it's trending this week")
-            picks.append(_make_hero(t, " · ".join(bits), candidates))
+            picks.append(_make_hero(t, " · ".join(bits)))
             candidates = [c for c in candidates if c["id"] != t["id"]]
 
     # Fill remaining slots with top trending
     for t in candidates[:count - len(picks)]:
         rank = trending.index(t) + 1 if t in trending else 1
-        picks.append(_make_hero(t, f"Trending #{rank} this week", candidates))
+        picks.append(_make_hero(t, f"Trending #{rank} this week"))
 
     return picks[:count]
 
 
-def _make_hero(t, reason, all_candidates):
+def _make_hero(t, reason):
     """Format one trending result as a hero slide dict."""
     genre_names = sorted({
         _GENRE_ID_NAMES.get(g, "") for g in (t.get("genre_ids") or [])
@@ -146,6 +146,7 @@ def _make_hero(t, reason, all_candidates):
         "genres": genre_names,
         "reason": reason,
     }
+
 
 _GENRE_ID_NAMES = {
     28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
