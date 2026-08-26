@@ -2,15 +2,41 @@ name: frameiq
 
 services:
 
+  # ── PostgreSQL 16 (Supabase-compatible, self-hosted) ─────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-frameiq}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Exposed for GitHub Actions episode sync.
+      # Firewall this port on the VPS to GitHub runner IPs only.
+      - "${POSTGRES_EXPOSED_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frameiq
+
+  # ── FrameIQ web app (Flask + gunicorn) ───────────────────────────────────
   web:
     build: .
     image: frameiq-app:latest
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:8002:8080"   # internal only — host nginx proxies to this
+      - "127.0.0.1:8002:8080"   # internal only — nginx proxies to this
     environment:
-      # ── Database (Neon — passed from .env) ────────────────────────────────
-      DATABASE_URL: ${DATABASE_URL}
+      # ── Database (Supabase PG on same VPS) ────────────────────────────────
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-frameiq}
 
       # ── App ────────────────────────────────────────────────────────────────
       APP_ENV: "production"
@@ -24,9 +50,6 @@ services:
       # ── External APIs ──────────────────────────────────────────────────────
       TMDB_API_KEY: ${TMDB_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      CHROMA_API_KEY: ${CHROMA_API_KEY}
-      CHROMA_TENANT: ${CHROMA_TENANT}
-      CHROMA_DATABASE: ${CHROMA_DATABASE}
 
       # ── Google OAuth ───────────────────────────────────────────────────────
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -46,6 +69,25 @@ services:
       MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:-noreply@frameiq.studio}
     networks:
       - frameiq
+
+  # ── Nginx (reverse proxy + SSL) ──────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - frameiq
+
+volumes:
+  pgdata:
 
 networks:
   frameiq:

@@ -37,9 +37,6 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
-          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
-          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
         run: python scripts/sync_upcoming_episodes.py
 
       - name: Open issue on failure
