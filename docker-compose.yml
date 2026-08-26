@@ -2,7 +2,6 @@ name: frameiq
 
 services:
 
-  # ── PostgreSQL 16 (Supabase-compatible, self-hosted) ─────────────────────
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -11,15 +10,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-  pgdata:
-
-networks:
-  frameiq:
-    driver: bridge
       - pgdata:/var/lib/postgresql/data
     ports:
-      # Exposed for GitHub Actions episode sync.
-      # Firewall this port on the VPS to GitHub runner IPs only.
       - "${POSTGRES_EXPOSED_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -29,7 +21,6 @@ networks:
     networks:
       - frameiq
 
-  # ── FrameIQ web app (Flask + gunicorn) ───────────────────────────────────
   web:
     build: .
     image: frameiq-app:latest
@@ -38,34 +29,21 @@ networks:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8002:8080"   # internal only — nginx proxies to this
+      - "127.0.0.1:8002:8080"
     environment:
-      # ── Database (Supabase PG on same VPS) ────────────────────────────────
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-frameiq}
-
-      # ── App ────────────────────────────────────────────────────────────────
       APP_ENV: "production"
       SECRET_KEY: ${SECRET_KEY}
       FLASK_DEBUG: "false"
-
-      # ── Gunicorn (override in .env if needed) ──────────────────────────────
       WEB_WORKERS: ${WEB_WORKERS:-2}
       WEB_THREADS: ${WEB_THREADS:-4}
-
-      # ── External APIs ──────────────────────────────────────────────────────
       TMDB_API_KEY: ${TMDB_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-
-      # ── Google OAuth ───────────────────────────────────────────────────────
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-
-      # ── Cloudinary ─────────────────────────────────────────────────────────
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
-
-      # ── Email (optional) ───────────────────────────────────────────────────
       MAIL_SERVER: ${MAIL_SERVER:-}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
