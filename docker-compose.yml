@@ -50,11 +50,14 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:-noreply@frameiq.studio}
+    volumes:
+      - chat_memory:/app/instance
     networks:
       - frameiq
 
 volumes:
   pgdata:
+  chat_memory:
 
 networks:
   frameiq:
