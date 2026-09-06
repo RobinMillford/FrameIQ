@@ -7,6 +7,7 @@ import time
 
 import pytest
 import requests
+from flask import Flask
 
 
 def test_bounded_cache_eviction():
@@ -240,3 +241,56 @@ def test_actor_tmdb_budget_is_passed_to_all_requests(monkeypatch):
 
     assert len(deadlines) == 6
     assert len(set(deadlines)) == 1
+
+
+def test_expensive_page_guard_rejects_without_waiting(monkeypatch):
+    from utils import request_guard
+
+    app = Flask(__name__)
+    entered = threading.Event()
+
+    @request_guard.expensive_page_limit
+    def guarded():
+        entered.set()
+        return "ok"
+
+    with app.test_request_context("/movie/1"):
+        slot = request_guard._EXPENSIVE_PAGE_SLOTS
+        assert slot.acquire(blocking=False)
+        try:
+            response = guarded()
+            assert response.status_code == 429
+            assert response.headers["Retry-After"] == "5"
+            assert not entered.is_set()
+        finally:
+            slot.release()
+
+
+def test_expensive_page_guard_releases_after_success_and_exception():
+    from utils import request_guard
+
+    app = Flask(__name__)
+    calls = []
+
+    @request_guard.expensive_page_limit
+    def guarded(should_fail=False):
+        calls.append(True)
+        if should_fail:
+            raise RuntimeError("boom")
+        return "ok"
+
+    with app.test_request_context("/movie/1"):
+        assert guarded() == "ok"
+        with pytest.raises(RuntimeError):
+            guarded(should_fail=True)
+        assert guarded() == "ok"
+    assert len(calls) == 3
+
+
+def test_health_route_does_not_use_expensive_page_guard():
+    from app import app
+
+    with app.test_client() as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json == {"status": "ok"}

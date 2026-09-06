@@ -3,6 +3,7 @@ from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
 from models import UserListItem, DiaryEntry, WatchProgress, Review
+from utils.request_guard import expensive_page_limit
 
 details = Blueprint('details', __name__)
 
@@ -40,6 +41,7 @@ def _taste_match(user_id, item_genres):
 
 
 @details.route('/movie/<int:movie_id>')
+@expensive_page_limit
 def movie_detail(movie_id):
     try:
         movie = fetch_movie_details(movie_id)
@@ -89,6 +91,7 @@ def movie_detail(movie_id):
 
 
 @details.route('/tv/<int:show_id>')
+@expensive_page_limit
 def tv_detail(show_id):
     try:
         show = fetch_tv_show_details(show_id)
@@ -155,6 +158,7 @@ def tv_detail(show_id):
 
 
 @details.route('/actor/<int:actor_id>')
+@expensive_page_limit
 def actor_detail(actor_id):
     try:
         actor = fetch_actor_details(actor_id)

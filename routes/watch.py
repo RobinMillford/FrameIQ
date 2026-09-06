@@ -14,6 +14,7 @@ from extensions import limiter
 from api.stream_providers import (
     PROVIDERS, DEFAULT_PROVIDER, ALLOWED_ORIGINS, get_sources,
 )
+from utils.request_guard import expensive_page_limit
 
 watch_bp = Blueprint('watch', __name__)
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ def _is_in_watchlist(tmdb_id, media_type):
 
 
 @watch_bp.route('/watch/movie/<int:tmdb_id>')
+@expensive_page_limit
 def watch_movie(tmdb_id):
     from api.tmdb_client import fetch_movie_details
     try:
@@ -76,6 +78,7 @@ def watch_movie(tmdb_id):
 
 
 @watch_bp.route('/watch/tv/<int:tmdb_id>/<int:season>/<int:episode>')
+@expensive_page_limit
 def watch_tv(tmdb_id, season, episode):
     from api.tmdb_client import fetch_tv_show_details
     media_type = request.args.get('type', 'tv')
