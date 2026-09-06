@@ -107,3 +107,51 @@ def test_movie_detail_uses_current_user_list_relationship(monkeypatch, app, db):
     ).delete(synchronize_session=False)
     db.session.delete(media)
     db.session.commit()
+
+
+def test_movie_list_items_eagerly_load_list_relationship(db, app):
+    """movie_detail's UserListItem query uses joinedload(UserListItem.list),
+    so accessing item.list must not emit a per-row lazy SELECT."""
+    import random
+    from sqlalchemy import event
+    from sqlalchemy.orm import joinedload
+    from models import MediaItem, UserList, UserListItem
+
+    # Unique per run so leftover data from failed runs never collides.
+    tmdb_id = random.randint(1_000_000_000, 2_000_000_000)
+    media = MediaItem(tmdb_id=tmdb_id, media_type='movie', title='Eager Load Movie')
+    user_list = UserList(user_id=1, title='Eager Favorites')
+    db.session.add_all([media, user_list])
+    db.session.flush()
+    # Capture IDs before commit: after commit the ORM instances are expired,
+    # and touching media.id would emit an unrelated refresh SELECT.
+    media_id = media.id
+    list_id = user_list.id
+    db.session.add(
+        UserListItem(list_id=list_id, media_id=media_id, media_type='movie')
+    )
+    db.session.commit()
+
+    statements = []
+
+    @event.listens_for(db.engine, 'before_cursor_execute')
+    def _count(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    try:
+        items = (
+            UserListItem.query.options(joinedload(UserListItem.list))
+            .filter_by(media_id=media_id, media_type='movie')
+            .all()
+        )
+        # Accessing .list for every row must not trigger lazy SELECTs.
+        list_titles = [item.list.title for item in items]
+        assert list_titles == ['Eager Favorites']
+        # One SELECT with a LEFT OUTER JOIN — no per-row lazy loads.
+        assert len(statements) == 1
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _count)
+        db.session.query(UserListItem).filter_by(list_id=list_id).delete()
+        db.session.query(UserList).filter_by(id=list_id).delete()
+        db.session.query(MediaItem).filter_by(tmdb_id=tmdb_id).delete()
+        db.session.commit()

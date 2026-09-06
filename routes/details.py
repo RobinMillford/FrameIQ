@@ -60,7 +60,9 @@ def movie_detail(movie_id):
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
             # Find which lists contain this movie
-            list_items = UserListItem.query.filter_by(
+            list_items = UserListItem.query.options(
+                joinedload(UserListItem.list)
+            ).filter_by(
                 media_id=movie_id,
                 media_type='movie'
             ).all()
