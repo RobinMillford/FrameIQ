@@ -23,7 +23,9 @@ def tmdb_proxy():
     params['api_key'] = _TMDB_API_KEY
 
     try:
-        resp = requests.get(f"{_TMDB_BASE_URL}{path}", params=params, timeout=8)
+        resp = requests.get(
+            f"{_TMDB_BASE_URL}{path}", params=params, timeout=(3, 10)
+        )
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.RequestException:
         return jsonify({'error': 'TMDB request failed'}), 502

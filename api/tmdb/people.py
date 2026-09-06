@@ -2,12 +2,11 @@
 import logging
 import time
 
-import requests
-
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
 
 logger = logging.getLogger(__name__)
+_ACTOR_TMDB_BUDGET_SECONDS = 45
 
 
 def fetch_trending_people(time_window='week', max_people=18):
@@ -25,18 +24,15 @@ def fetch_trending_people(time_window='week', max_people=18):
     ]
 
 
-def _fetch_json_with_retry(label, url, max_retries, retry_delay):
-    """GET + parse JSON with retries; raises after final attempt."""
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.warning("%s attempt %s/%s failed: %s", label, attempt + 1, max_retries, e)
-            if attempt + 1 == max_retries:
-                raise Exception(f"Failed to fetch {label} after {max_retries} retries: {e}")
-            time.sleep(retry_delay)
+def _fetch_json_with_retry(label, url, max_retries, retry_delay, deadline):
+    """Fetch JSON through the shared timeout and retry policy."""
+    try:
+        return cached_tmdb_request(
+            url, max_retries=max_retries - 1, deadline=deadline
+        )
+    except Exception as exc:
+        logger.warning("%s failed: %s", label, exc)
+        raise
 
 
 def _today_iso():
@@ -46,36 +42,45 @@ def _today_iso():
 
 
 def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
+    deadline = time.monotonic() + _ACTOR_TMDB_BUDGET_SECONDS
+
     # Fetch actor details
     url = f"https://api.themoviedb.org/3/person/{actor_id}?api_key={TMDB_API_KEY}&language=en-US"
-    actor_data = _fetch_json_with_retry(f"Actor {actor_id}", url, max_retries, retry_delay)
+    actor_data = _fetch_json_with_retry(
+        f"Actor {actor_id}", url, max_retries, retry_delay, deadline
+    )
     if 'success' in actor_data and not actor_data['success']:
         raise Exception(f"TMDb API error: {actor_data.get('status_message', 'Unknown error')}")
 
     # Fetch movie credits
     movie_credits_url = f"https://api.themoviedb.org/3/person/{actor_id}/movie_credits?api_key={TMDB_API_KEY}&language=en-US"
     movie_credits_data = _fetch_json_with_retry(
-        f"Actor {actor_id} movie credits", movie_credits_url, max_retries, retry_delay)
+        f"Actor {actor_id} movie credits", movie_credits_url,
+        max_retries, retry_delay, deadline)
 
     # Fetch TV credits
     tv_credits_url = f"https://api.themoviedb.org/3/person/{actor_id}/tv_credits?api_key={TMDB_API_KEY}&language=en-US"
     tv_credits_data = _fetch_json_with_retry(
-        f"Actor {actor_id} TV credits", tv_credits_url, max_retries, retry_delay)
+        f"Actor {actor_id} TV credits", tv_credits_url,
+        max_retries, retry_delay, deadline)
 
     # Fetch tagged images (deprecated but still functional)
     tagged_images = []
     try:
         tagged_images_url = f"https://api.themoviedb.org/3/person/{actor_id}/tagged_images?api_key={TMDB_API_KEY}"
-        tagged_response = requests.get(tagged_images_url)
-        if tagged_response.status_code == 200 and ('success' not in tagged_response.json() or tagged_response.json()['success']):
-            tagged_data = tagged_response.json()
+        tagged_data = cached_tmdb_request(
+            tagged_images_url, max_age=86400, deadline=deadline
+        )
+        if tagged_data.get('success', True):
             seen_file_paths = set()
             tagged_images = []
             for img in sorted(tagged_data.get('results', []), key=lambda x: x.get('vote_average', 0), reverse=True):
                 if img.get('file_path') and img['file_path'] not in seen_file_paths:
                     seen_file_paths.add(img['file_path'])
-                    img['file_path'] = f"https://image.tmdb.org/t/p/w500{img['file_path']}"
-                    tagged_images.append(img)
+                    tagged_images.append({
+                        **img,
+                        'file_path': f"https://image.tmdb.org/t/p/w500{img['file_path']}"
+                    })
     except Exception as e:
         logger.warning("Actor %s tagged images fetch failed: %s", actor_id, e)
 
@@ -94,9 +99,10 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
     }
     try:
         external_ids_url = f"https://api.themoviedb.org/3/person/{actor_id}/external_ids?api_key={TMDB_API_KEY}"
-        external_response = requests.get(external_ids_url)
-        if external_response.status_code == 200 and ('success' not in external_response.json() or external_response.json()['success']):
-            external_ids_data = external_response.json()
+        external_ids_data = cached_tmdb_request(
+            external_ids_url, max_age=86400, deadline=deadline
+        )
+        if external_ids_data.get('success', True):
             external_ids.update({
                 'facebook_id': external_ids_data.get('facebook_id', None),
                 'instagram_id': external_ids_data.get('instagram_id', None),
@@ -116,16 +122,26 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
     profile_images = []
     try:
         images_url = f"https://api.themoviedb.org/3/person/{actor_id}/images?api_key={TMDB_API_KEY}"
-        images_response = requests.get(images_url)
-        if images_response.status_code == 200 and ('success' not in images_response.json() or images_response.json()['success']):
-            images_data = images_response.json()
+        images_data = cached_tmdb_request(
+            images_url, max_age=86400, deadline=deadline
+        )
+        if images_data.get('success', True):
             profile_images = sorted(
                 images_data.get('profiles', []),
                 key=lambda x: x.get('vote_average', 0),
                 reverse=True
             )
-            for img in profile_images:
-                img['file_path'] = f"https://image.tmdb.org/t/p/w500{img['file_path']}" if img.get('file_path') else "https://via.placeholder.com/500x750?text=No+Image"
+            profile_images = [
+                {
+                    **img,
+                    'file_path': (
+                        f"https://image.tmdb.org/t/p/w500{img['file_path']}"
+                        if img.get('file_path')
+                        else "https://via.placeholder.com/500x750?text=No+Image"
+                    ),
+                }
+                for img in profile_images
+            ]
     except Exception as e:
         logger.warning("Actor %s profile images fetch failed: %s", actor_id, e)
 

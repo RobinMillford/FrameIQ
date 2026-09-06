@@ -1,8 +1,5 @@
 """Search and lightweight media lookup helpers."""
 import logging
-import time
-
-import requests
 
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
@@ -33,18 +30,15 @@ def search_media(query, media_type='movie', include_adult=False):
 def fetch_poster(id, is_movie=True, max_retries=3, retry_delay=2):
     media_type = "movie" if is_movie else "tv"
     url = f"https://api.themoviedb.org/3/{media_type}/{id}?api_key={TMDB_API_KEY}&language=en-US"
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            poster_path = data.get('poster_path')
-            return f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else "https://via.placeholder.com/500x750?text=No+Image"
-        except requests.exceptions.RequestException as e:
-            logger.warning("Poster fetch attempt %s/%s failed: %s", attempt + 1, max_retries, e)
-            time.sleep(retry_delay)
-    logger.error("Poster fetch failed for %s/%s after %s retries", media_type, id, max_retries)
-    return "https://via.placeholder.com/500x750?text=No+Image"
+    try:
+        data = cached_tmdb_request(url, max_retries=max_retries - 1)
+        poster_path = data.get('poster_path')
+        if poster_path:
+            return f"https://image.tmdb.org/t/p/w500{poster_path}"
+        return "https://via.placeholder.com/500x750?text=No+Image"
+    except Exception as exc:
+        logger.warning("Poster fetch failed media_type=%s id=%s reason=%s", media_type, id, exc)
+        return "https://via.placeholder.com/500x750?text=No+Image"
 
 
 def fetch_tmdb_recommendations(id, is_movie=True, max_recommendations=50):

@@ -47,7 +47,7 @@ def season_detail(show_id, season_number):
         response = requests.get(
             f'{TMDB_BASE_URL}/tv/{show_id}',
             params={'api_key': TMDB_API_KEY},
-            timeout=8
+            timeout=(3, 10)
         )
         response.raise_for_status()
         show_name = response.json().get('name', 'Unknown Show')
@@ -71,7 +71,7 @@ def episode_detail(show_id, season_number, episode_number):
         response = requests.get(
             f'{TMDB_BASE_URL}/tv/{show_id}',
             params={'api_key': TMDB_API_KEY},
-            timeout=8
+            timeout=(3, 10)
         )
         response.raise_for_status()
         show_name = response.json().get('name', 'Unknown Show')

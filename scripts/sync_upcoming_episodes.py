@@ -53,7 +53,8 @@ def fetch_show_upcoming_episodes(show_id):
             try:
                 season_response = requests.get(
                     f'{TMDB_BASE_URL}/tv/{show_id}/season/{season_number}',
-                    params={'api_key': TMDB_API_KEY}
+                    params={'api_key': TMDB_API_KEY},
+                    timeout=(3, 10),
                 )
                 
                 if season_response.status_code != 200:

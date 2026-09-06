@@ -1,9 +1,6 @@
 """TV list and detail fetchers."""
 import hashlib
 import logging
-import time
-
-import requests
 
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
@@ -50,19 +47,9 @@ def fetch_shows_by_genre(genre_id, max_shows=50):
 
 def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
     url = f"https://api.themoviedb.org/3/tv/{show_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=credits,videos,recommendations,reviews,seasons"
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            if 'success' in data and not data['success']:
-                raise Exception(f"TMDb API error: {data.get('status_message', 'Unknown error')}")
-            break
-        except Exception as e:
-            logger.warning("Show %s fetch attempt %s/%s failed: %s", show_id, attempt + 1, max_retries, e)
-            if attempt + 1 == max_retries:
-                raise Exception(f"Failed to fetch TV show details after {max_retries} retries: {e}")
-            time.sleep(retry_delay)
+    data = cached_tmdb_request(url, max_retries=max_retries - 1)
+    if data.get('success') is False:
+        raise LookupError(f"TV show {show_id} was not found")
 
     show = {
         'id': data.get('id'),

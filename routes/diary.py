@@ -107,7 +107,7 @@ def log_diary_entry():
         if not media_item:
             # Fetch from TMDB API
             url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}"
-            response = requests.get(url)
+            response = requests.get(url, timeout=(3, 10))
             if response.status_code == 200:
                 tmdb_data = response.json()
                 title = tmdb_data.get('title') if media_type == 'movie' else tmdb_data.get('name')

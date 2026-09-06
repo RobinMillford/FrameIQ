@@ -1,10 +1,7 @@
 """Movie list and detail fetchers."""
 import hashlib
 import logging
-import time
 from datetime import datetime
-
-import requests
 
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
@@ -85,19 +82,9 @@ def fetch_movies_by_genre(genre_id, max_movies=50):
 
 def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=credits,videos,recommendations,reviews"
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            if 'success' in data and not data['success']:
-                raise Exception(f"TMDb API error: {data.get('status_message', 'Unknown error')}")
-            break
-        except Exception as e:
-            logger.warning("Movie %s fetch attempt %s/%s failed: %s", movie_id, attempt + 1, max_retries, e)
-            if attempt + 1 == max_retries:
-                raise Exception(f"Failed to fetch movie details after {max_retries} retries: {e}")
-            time.sleep(retry_delay)
+    data = cached_tmdb_request(url, max_retries=max_retries - 1)
+    if data.get('success') is False:
+        raise LookupError(f"Movie {movie_id} was not found")
 
     logger.debug("Movie %s: %s cast members, returning first 30",
                  movie_id, len(data.get('credits', {}).get('cast', [])))
@@ -124,9 +111,8 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
 
     # Fetch certification
     release_url = f"https://api.themoviedb.org/3/movie/{movie_id}/release_dates?api_key={TMDB_API_KEY}"
-    release_response = requests.get(release_url)
-    if release_response.status_code == 200:
-        release_data = release_response.json()
+    release_data = cached_tmdb_request(release_url, max_age=86400)
+    if release_data.get('success', True):
         for result in release_data.get('results', []):
             if result.get('iso_3166_1') == 'US':
                 for release in result.get('release_dates', []):
