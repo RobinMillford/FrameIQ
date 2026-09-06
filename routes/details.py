@@ -3,6 +3,7 @@ from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
 from models import UserListItem, DiaryEntry, WatchProgress, Review
+from sqlalchemy.orm import joinedload
 from utils.request_guard import expensive_page_limit
 
 details = Blueprint('details', __name__)
@@ -18,7 +19,7 @@ def _taste_match(user_id, item_genres):
         if not item_set:
             return None
         reviews = (
-            Review.query.filter_by(user_id=user_id)
+            Review.query.options(joinedload(Review.media)).filter_by(user_id=user_id)
             .order_by(Review.created_at.desc()).limit(40).all()
         )
         if len(reviews) < 2:

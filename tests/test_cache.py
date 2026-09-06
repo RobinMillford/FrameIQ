@@ -8,6 +8,9 @@ import time
 import pytest
 import requests
 from flask import Flask
+from sqlalchemy import event
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy.orm import joinedload
 
 
 def test_bounded_cache_eviction():
@@ -177,6 +180,61 @@ def test_tmdb_retry_count_is_capped(monkeypatch):
         )
 
     assert len(calls) == 2
+
+
+def test_taste_match_eager_loads_review_media_without_extra_queries(app, db):
+    from models import MediaItem, Review, User
+    from routes.details import _taste_match
+
+    with app.app_context():
+        user = User(username="taste-user", email="taste@example.com",
+                    password_hash="test")
+        media_items = [
+            MediaItem(tmdb_id=101, media_type="movie", title="Action Movie",
+                      genres="Action,Drama"),
+            MediaItem(tmdb_id=102, media_type="movie", title="Comedy Movie",
+                      genres="Comedy"),
+        ]
+        db.session.add_all([user, *media_items])
+        db.session.flush()
+        db.session.add_all([
+            Review(user_id=user.id, media_id=media_items[0].id,
+                   media_type="movie", rating=4),
+            Review(user_id=user.id, media_id=media_items[1].id,
+                   media_type="movie", rating=4),
+        ])
+        db.session.commit()
+        user_id = user.id
+
+        statements = []
+
+        def capture_sql(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        event.listen(db.engine, "before_cursor_execute", capture_sql)
+        try:
+            result = _taste_match(user_id, ["Action"])
+        finally:
+            event.remove(db.engine, "before_cursor_execute", capture_sql)
+
+        assert result == 99
+        assert len(statements) == 1
+
+        loaded_reviews = (
+            Review.query.options(joinedload(Review.media))
+            .filter_by(user_id=user_id)
+            .all()
+        )
+        assert all("media" not in sqlalchemy_inspect(review).unloaded
+                   for review in loaded_reviews)
+
+        for review in list(Review.query.filter_by(user_id=user_id)):
+            db.session.delete(review)
+        for media in media_items:
+            db.session.delete(media)
+        db.session.delete(user)
+        db.session.commit()
 
 
 def test_movie_details_skips_release_dates_and_defaults_certification(monkeypatch):
