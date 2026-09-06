@@ -19,3 +19,11 @@ def test_tv_seasons_manager_uses_embedded_data_without_tmdb_proxy_request():
     assert "tv-seasons-data" in script
     assert "/api/tmdb/proxy" not in script
     assert "JSON.parse(seasonsData.textContent || '[]')" in script
+
+
+def test_tv_seasons_initialization_does_not_request_progress():
+    script = SCRIPT.read_text()
+    initialize = script.split("async initialize()", 1)[1].split("async loadShowDetails()", 1)[0]
+
+    assert "loadWatchedEpisodes()" in initialize
+    assert "loadShowProgress()" not in initialize

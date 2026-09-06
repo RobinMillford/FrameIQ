@@ -21,8 +21,7 @@ class TVSeasonsManager {
 
             await Promise.all([
                 this.loadShowDetails(),
-                this.loadWatchedEpisodes(),
-                this.loadShowProgress()
+                this.loadWatchedEpisodes()
             ]);
 
             this.renderSeasonsList();
