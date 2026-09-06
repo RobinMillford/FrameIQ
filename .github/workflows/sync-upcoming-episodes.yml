@@ -19,25 +19,15 @@ jobs:
   sync-episodes:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
       - name: Run sync
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: python scripts/sync_upcoming_episodes.py
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/deployer/FrameIQ
+            docker compose exec -T web python scripts/sync_upcoming_episodes.py
 
       - name: Open issue on failure
         if: failure()
