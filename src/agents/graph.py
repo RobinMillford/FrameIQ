@@ -6,9 +6,10 @@ and persistent (SQLite) conversation checkpointing.
 """
 
 import os
+import sqlite3
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from .state import GraphState
 from .nodes import (
@@ -28,6 +29,9 @@ _CHECKPOINT_DB = os.getenv(
         os.path.abspath(__file__)))), "instance", "chat_memory.db"
     ),
 )
+os.makedirs(os.path.dirname(_CHECKPOINT_DB), exist_ok=True)
+
+_checkpoint_connection = None
 
 
 def create_agent_graph():
@@ -67,9 +71,15 @@ def create_agent_graph():
     workflow.add_edge("chat", "enricher")
     workflow.add_edge("enricher", END)
 
-    # Compile with in-memory checkpointing (supports async streaming)
-    # TODO: swap to AsyncSqliteSaver for persistence across restarts
-    saver = MemorySaver()
+    # Keep one SQLite connection open for the process so checkpoints survive
+    # application restarts through the mounted instance volume.
+    global _checkpoint_connection
+    if _checkpoint_connection is None:
+        _checkpoint_connection = sqlite3.connect(
+            _CHECKPOINT_DB, check_same_thread=False,
+        )
+    saver = SqliteSaver(_checkpoint_connection)
+    saver.setup()
     graph = workflow.compile(checkpointer=saver)
 
     return graph
