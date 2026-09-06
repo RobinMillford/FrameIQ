@@ -21,7 +21,6 @@ images/
 extra/
 .extra/
 migrates/
-scripts/
 data/
 chroma_db/
 .vscode/
