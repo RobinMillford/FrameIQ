@@ -64,27 +64,10 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
         f"Actor {actor_id} TV credits", tv_credits_url,
         max_retries, retry_delay, deadline)
 
-    # Fetch tagged images (deprecated but still functional)
+    # Optional enrichment is intentionally kept out of the synchronous page path.
     tagged_images = []
-    try:
-        tagged_images_url = f"https://api.themoviedb.org/3/person/{actor_id}/tagged_images?api_key={TMDB_API_KEY}"
-        tagged_data = cached_tmdb_request(
-            tagged_images_url, max_age=86400, deadline=deadline
-        )
-        if tagged_data.get('success', True):
-            seen_file_paths = set()
-            tagged_images = []
-            for img in sorted(tagged_data.get('results', []), key=lambda x: x.get('vote_average', 0), reverse=True):
-                if img.get('file_path') and img['file_path'] not in seen_file_paths:
-                    seen_file_paths.add(img['file_path'])
-                    tagged_images.append({
-                        **img,
-                        'file_path': f"https://image.tmdb.org/t/p/w500{img['file_path']}"
-                    })
-    except Exception as e:
-        logger.warning("Actor %s tagged images fetch failed: %s", actor_id, e)
 
-    # Fetch external IDs (with fallback)
+    # Preserve the template contract without making another TMDB request.
     external_ids = {
         'facebook_id': None,
         'instagram_id': None,
@@ -97,53 +80,9 @@ def fetch_actor_details(actor_id, max_retries=3, retry_delay=2):
         'freebase_id': None,
         'tvrage_id': 0,
     }
-    try:
-        external_ids_url = f"https://api.themoviedb.org/3/person/{actor_id}/external_ids?api_key={TMDB_API_KEY}"
-        external_ids_data = cached_tmdb_request(
-            external_ids_url, max_age=86400, deadline=deadline
-        )
-        if external_ids_data.get('success', True):
-            external_ids.update({
-                'facebook_id': external_ids_data.get('facebook_id', None),
-                'instagram_id': external_ids_data.get('instagram_id', None),
-                'tiktok_id': external_ids_data.get('tiktok_id', None),
-                'twitter_id': external_ids_data.get('twitter_id', None),
-                'youtube_id': external_ids_data.get('youtube_id', None),
-                'imdb_id': external_ids_data.get('imdb_id', None),
-                'wikidata_id': external_ids_data.get('wikidata_id', None),
-                'freebase_mid': external_ids_data.get('freebase_mid', None),
-                'freebase_id': external_ids_data.get('freebase_id', None),
-                'tvrage_id': external_ids_data.get('tvrage_id', 0),
-            })
-    except Exception as e:
-        logger.warning("Actor %s external IDs fetch failed: %s", actor_id, e)
 
-    # Fetch profile images (with fallback)
+    # Profile galleries remain supported by the template but are not fetched here.
     profile_images = []
-    try:
-        images_url = f"https://api.themoviedb.org/3/person/{actor_id}/images?api_key={TMDB_API_KEY}"
-        images_data = cached_tmdb_request(
-            images_url, max_age=86400, deadline=deadline
-        )
-        if images_data.get('success', True):
-            profile_images = sorted(
-                images_data.get('profiles', []),
-                key=lambda x: x.get('vote_average', 0),
-                reverse=True
-            )
-            profile_images = [
-                {
-                    **img,
-                    'file_path': (
-                        f"https://image.tmdb.org/t/p/w500{img['file_path']}"
-                        if img.get('file_path')
-                        else "https://via.placeholder.com/500x750?text=No+Image"
-                    ),
-                }
-                for img in profile_images
-            ]
-    except Exception as e:
-        logger.warning("Actor %s profile images fetch failed: %s", actor_id, e)
 
     # Process movie credits, removing duplicates by id
     movie_acting_credits = []

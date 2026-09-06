@@ -179,44 +179,34 @@ def test_tmdb_retry_count_is_capped(monkeypatch):
     assert len(calls) == 2
 
 
-def test_actor_image_formatting_does_not_mutate_cached_data(monkeypatch):
+def test_actor_page_skips_optional_tmdb_enrichment(monkeypatch):
     from api.tmdb import people
 
-    responses = {
-        "/person/1?": {
-            "name": "Actor",
-            "profile_path": "/profile.jpg",
-            "gender": 0,
-        },
-        "/person/1/movie_credits?": {"cast": [], "crew": []},
-        "/person/1/tv_credits?": {"cast": [], "crew": []},
-        "/person/1/tagged_images?": {
-            "results": [{"file_path": "/tagged.jpg", "vote_average": 1}]
-        },
-        "/person/1/external_ids?": {},
-        "/person/1/images?": {
-            "profiles": [{"file_path": "/profile-image.jpg", "vote_average": 1}]
-        },
-    }
-    original_tagged = responses["/person/1/tagged_images?"]["results"][0].copy()
-    original_profile = responses["/person/1/images?"]["profiles"][0].copy()
+    calls = []
 
     def fake_cached_request(url, **kwargs):
-        return next(value for key, value in responses.items() if key in url)
+        calls.append((url, kwargs))
+        if "movie_credits" in url or "tv_credits" in url:
+            return {"cast": [], "crew": []}
+        return {"name": "Actor", "profile_path": "/profile.jpg", "gender": 0}
 
     monkeypatch.setattr(people, "cached_tmdb_request", fake_cached_request)
 
-    first = people.fetch_actor_details(1)
-    second = people.fetch_actor_details(1)
+    actor = people.fetch_actor_details(1)
 
-    assert responses["/person/1/tagged_images?"]["results"][0] == original_tagged
-    assert responses["/person/1/images?"]["profiles"][0] == original_profile
-    assert first["tagged_images"][0]["file_path"].count(
-        "https://image.tmdb.org/t/p/w500"
-    ) == 1
-    assert second["profile_images"][0]["file_path"].count(
-        "https://image.tmdb.org/t/p/w500"
-    ) == 1
+    urls = [url for url, _ in calls]
+    assert len(urls) == 3
+    assert any("/person/1?" in url for url in urls)
+    assert any("/person/1/movie_credits?" in url for url in urls)
+    assert any("/person/1/tv_credits?" in url for url in urls)
+    assert not any("tagged_images" in url for url in urls)
+    assert not any("external_ids" in url for url in urls)
+    assert not any("/images" in url for url in urls)
+    assert actor["tagged_images"] == []
+    assert actor["profile_images"] == []
+    assert all(value is None for key, value in actor["external_ids"].items()
+               if key != "tvrage_id")
+    assert actor["external_ids"]["tvrage_id"] == 0
 
 
 def test_actor_tmdb_budget_is_passed_to_all_requests(monkeypatch):
@@ -228,18 +218,12 @@ def test_actor_tmdb_budget_is_passed_to_all_requests(monkeypatch):
         deadlines.append(kwargs["deadline"])
         if "movie_credits" in url or "tv_credits" in url:
             return {"cast": [], "crew": []}
-        if "tagged_images" in url:
-            return {"results": []}
-        if "external_ids" in url:
-            return {}
-        if "/images" in url:
-            return {"profiles": []}
         return {"name": "Actor", "gender": 0}
 
     monkeypatch.setattr(people, "cached_tmdb_request", fake_cached_request)
     people.fetch_actor_details(1)
 
-    assert len(deadlines) == 6
+    assert len(deadlines) == 3
     assert len(set(deadlines)) == 1
 
 
