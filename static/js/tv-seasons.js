@@ -43,14 +43,17 @@ class TVSeasonsManager {
     }
 
     async loadShowDetails() {
-        const response = await fetch(`/api/tmdb/proxy?path=${encodeURIComponent('/tv/' + this.showId)}`);
-        
-        if (!response.ok) {
-            throw new Error(`TMDb API error: ${response.status}`);
+        const seasonsData = document.getElementById('tv-seasons-data');
+        if (!seasonsData) {
+            throw new Error('TV season data is unavailable');
         }
-        
-        const data = await response.json();
-        this.seasons = data.seasons.filter(s => s.season_number !== 0);
+
+        const seasons = JSON.parse(seasonsData.textContent || '[]');
+        if (!Array.isArray(seasons)) {
+            throw new Error('TV season data is invalid');
+        }
+
+        this.seasons = seasons.filter(s => s.season_number !== 0);
     }
 
     async loadWatchedEpisodes() {
@@ -98,12 +101,16 @@ class TVSeasonsManager {
             const totalEpisodes = season.episode_count;
             const progress = (watchedCount / totalEpisodes) * 100;
             const isCompleted = watchedCount === totalEpisodes;
+            const posterPath = season.poster_path || '';
+            const posterUrl = posterPath.startsWith('http')
+                ? posterPath
+                : `https://image.tmdb.org/t/p/w200${posterPath}`;
 
             return `
                 <div class="bg-white/5 hover:bg-white/10 rounded-xl p-4 transition-all border border-white/10">
                     <div class="flex gap-4">
                         <div class="flex-shrink-0">
-                            <img src="https://image.tmdb.org/t/p/w200${season.poster_path}" 
+                            <img src="${posterUrl}"
                                  alt="Season ${season.season_number}"
                                  class="w-24 h-36 rounded-lg object-cover cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
                                  onclick="window.location.href='/tv/${this.showId}/season/${season.season_number}'"

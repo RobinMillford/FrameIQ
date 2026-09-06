@@ -472,6 +472,7 @@
                     <!-- TV Episode Tracking Section -->
                     {% if current_user.is_authenticated %}
                     <input type="hidden" id="show-id" value="{{ show.id }}">
+                    <script id="tv-seasons-data" type="application/json">{{ show.seasons | tojson }}</script>
                     <div id="tv-tracking-container" class="mt-6">
                         <!-- Tracking UI will be rendered here by tv-tracker.js -->
                     </div>
