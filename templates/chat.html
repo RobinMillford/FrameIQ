@@ -21,13 +21,37 @@
         flex-direction: column;
         flex: 1;
         min-height: 0;
-        max-width: 860px;
+        max-width: 1180px;
         margin: 0 auto;
         width: 100%;
         padding-top: 72px; /* nav height */
         box-sizing: border-box;
         overflow: hidden;
     }
+    .chat-shell { display: flex; flex: 1; min-height: 0; }
+    .chat-sidebar {
+        width: 250px; flex-shrink: 0; border-right: 1px solid var(--line);
+        padding: 18px 12px; overflow-y: auto;
+    }
+    .chat-sidebar-title {
+        color: var(--text-low); font: 0.65rem var(--font-mono);
+        letter-spacing: .12em; text-transform: uppercase; padding: 0 8px 10px;
+    }
+    .chat-new {
+        width: 100%; border: 1px solid var(--line-hi); border-radius: var(--r-md);
+        background: var(--bg-surface); color: var(--text-hi); padding: 9px 12px;
+        text-align: left; cursor: pointer; margin-bottom: 14px;
+    }
+    .chat-new:hover, .chat-history-item.active { border-color: var(--accent); }
+    .chat-history-item {
+        width: 100%; border: 1px solid transparent; border-radius: var(--r-md);
+        background: transparent; color: var(--text-mid); padding: 9px 10px;
+        text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; margin-bottom: 4px;
+    }
+    .chat-history-item:hover { background: var(--bg-surface); color: var(--text-hi); }
+    .chat-quota { color: var(--text-low); font: .65rem var(--font-mono); padding: 12px 8px 0; }
+    .chat-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 
     .chat-header {
         padding: 20px 24px 16px;
@@ -272,12 +296,32 @@
     @media (prefers-reduced-motion: reduce) {
         .chat-msg, .hero-slide.active .hero-copy > * { animation: none; }
     }
+    @media (max-width: 700px) {
+        .chat-sidebar { display: none; }
+        .chat-header { padding-left: 16px; padding-right: 16px; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 
 <div class="chat-wrap page-enter">
+    <div class="chat-shell">
+    <aside class="chat-sidebar" aria-label="Chat history">
+        <button class="chat-new" id="new-chat-button">+ New chat</button>
+        <div class="chat-sidebar-title">Your conversations</div>
+        <div id="chat-history">
+            {% for conversation in conversations %}
+            <button class="chat-history-item" data-conversation-id="{{ conversation.id }}">
+                {{ conversation.title }}
+            </button>
+            {% endfor %}
+        </div>
+        <div class="chat-quota" id="chat-quota">
+            {{ quota.remaining }} of {{ quota.limit }} questions remaining today
+        </div>
+    </aside>
+    <section class="chat-main">
     <!-- Header -->
     <div class="chat-header">
         <div>
@@ -320,6 +364,8 @@
             <i data-lucide="arrow-up" class="w-5 h-5 text-white shrink-0"></i>
             <span class="sr-only">Send</span>
         </button>
+    </div>
+    </section>
     </div>
 </div>
 

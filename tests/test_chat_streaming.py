@@ -136,6 +136,39 @@ def _parse_sse(body):
 
 
 class TestChatStreaming:
+    def test_chat_history_is_persisted_and_reloaded(self, stream_auth, app):
+        client, _ = stream_auth
+        fake = _make_fake_graph(tokens=["saved reply"])
+        with patch('routes.chat.get_agent_graph', return_value=fake):
+            response = client.post('/chat_api', json={'message': 'remember this'})
+        assert response.status_code == 200
+        response.get_data()
+        conversation_id = int(response.headers['X-Chat-Conversation-ID'])
+
+        history = client.get(f'/chat/conversations/{conversation_id}')
+        assert history.status_code == 200
+        messages = history.get_json()['messages']
+        assert [message['role'] for message in messages] == ['user', 'assistant']
+        assert messages[0]['content'] == 'remember this'
+        assert messages[1]['content'] == 'saved reply'
+
+        conversations = client.get('/chat/conversations')
+        assert conversations.status_code == 200
+        assert conversations.get_json()['conversations'][0]['id'] == conversation_id
+
+    def test_daily_quota_allows_five_questions_only(self, stream_auth, app):
+        client, _ = stream_auth
+        fake = _make_fake_graph(tokens=["reply"])
+        with patch('routes.chat.get_agent_graph', return_value=fake):
+            responses = [
+                client.post('/chat_api', json={'message': f'question {index}'})
+                for index in range(6)
+            ]
+        assert [response.status_code for response in responses] == [
+            200, 200, 200, 200, 200, 429,
+        ]
+        assert responses[-1].get_json()['quota']['remaining'] == 0
+
     def test_sse_event_sequence(self, stream_auth, app):
         client, _ = stream_auth
         fake = _make_fake_graph(

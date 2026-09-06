@@ -9,9 +9,9 @@ Key improvements vs. original:
 """
 
 import logging
-from typing import Dict, Any, Generator, Optional
+from typing import Dict, Any, Generator, Optional, Sequence
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 
 from src.agents.graph import get_agent_graph
 from src.agents.state import GraphState
@@ -47,9 +47,14 @@ def _build_user_context(session_id: str) -> str:
         from collections import Counter
         from models import (
             db, Review, WatchProgress, TVShowProgress, user_watchlist,
+            UserChatMemory,
         )
 
         sections = []
+
+        memory = UserChatMemory.query.filter_by(user_id=user_id).first()
+        if memory and memory.content:
+            sections.append("Long-term preferences remembered from chat:\n" + memory.content)
 
         # ── Recent ratings ──
         reviews = (
@@ -125,7 +130,10 @@ def _build_user_context(session_id: str) -> str:
 
 
 def _build_initial_state(
-    user_message: str, session_id: str, user_context: Optional[str] = None
+    user_message: str,
+    session_id: str,
+    user_context: Optional[str] = None,
+    conversation_messages: Optional[Sequence[BaseMessage]] = None,
 ) -> GraphState:
     """Construct a fresh GraphState for a new invocation."""
     ctx = user_context if user_context is not None else _build_user_context(session_id)
@@ -136,7 +144,10 @@ def _build_initial_state(
         except (IndexError, ValueError):
             user_id = None
     return {
-        "messages": [HumanMessage(content=user_message)],
+        "messages": [
+            *(conversation_messages or []),
+            HumanMessage(content=user_message),
+        ],
         "user_intent": None,
         "next_step": None,
         "entities": {},

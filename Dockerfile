@@ -33,7 +33,8 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code (owned by app user)
 COPY --chown=app:app . .
 
-# Create writable instance directory for SQLite checkpointing
+# Create writable instance directory for local runtime data.
+# PostgreSQL application tables are created by app.py at startup.
 RUN mkdir -p /app/instance && chown app:app /app/instance
 
 USER app

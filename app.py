@@ -214,6 +214,7 @@ def create_app() -> Flask:
             _log.info("Database tables created successfully")
         except Exception as exc:
             _log.error("Error creating database tables: %s", exc)
+            raise
 
     return app
 

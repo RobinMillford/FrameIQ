@@ -57,6 +57,9 @@ python migrates/migrate_<name>.py
 ### Database
 - All models in `models.py` (39 KB, single file)
 - `db.create_all()` runs on every startup — new tables auto-created
+- Chat tables (`chat_conversation`, `chat_message`, `user_chat_daily_usage`,
+  `user_chat_memory`) are imported through `models/__init__.py`, so Docker/VPS
+  startup creates them automatically.
 - Column alterations need a manual migration script in `migrates/`
 - Key models: `User`, `MediaItem`, `Review`, `DiaryEntry`, `TVShowProgress`, `TVSeasonProgress`, `TVEpisodeWatch`, `UpcomingEpisode`, `UserFollow`, `ActivityFeed`, `CustomList`, `Tag`, `Like`
 

@@ -9,6 +9,7 @@
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
     const BOT_NAME = 'CineBot';
+    let currentConversationId = null;
 
     let lastSaved = 0;
 
@@ -43,6 +44,59 @@
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return div;
+    }
+
+    function clearMessages() {
+        chatMessages.innerHTML = '';
+    }
+
+    function showWelcome() {
+        addMessage('bot', "Hey — I'm CineBot. Ask me anything about movies, TV shows, or what to watch next.");
+    }
+
+    function renderStoredMessage(message) {
+        addMessage(message.role === 'user' ? 'user' : 'bot', message.content);
+        if (message.role === 'assistant' && message.metadata) {
+            if (message.metadata.movies?.length) displayMedia(message.metadata.movies, 'Movies');
+            if (message.metadata.tv_shows?.length) displayMedia(message.metadata.tv_shows, 'TV Shows');
+        }
+    }
+
+    function updateQuota(quota) {
+        const el = document.getElementById('chat-quota');
+        if (el && quota) {
+            el.textContent = `${quota.remaining} of ${quota.limit} questions remaining today`;
+        }
+    }
+
+    async function loadConversation(id) {
+        const response = await fetch(`/chat/conversations/${id}`);
+        if (!response.ok) throw new Error('Unable to load conversation');
+        const data = await response.json();
+        currentConversationId = data.id;
+        clearMessages();
+        data.messages.forEach(renderStoredMessage);
+        document.querySelectorAll('.chat-history-item').forEach((item) => {
+            item.classList.toggle('active', item.dataset.conversationId === String(id));
+        });
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function refreshHistory() {
+        const response = await fetch('/chat/conversations');
+        if (!response.ok) return;
+        const data = await response.json();
+        updateQuota(data.quota);
+        const history = document.getElementById('chat-history');
+        history.innerHTML = '';
+        data.conversations.forEach((conversation) => {
+            const button = document.createElement('button');
+            button.className = 'chat-history-item';
+            button.dataset.conversationId = conversation.id;
+            button.textContent = conversation.title;
+            button.addEventListener('click', () => loadConversation(conversation.id));
+            history.appendChild(button);
+        });
     }
 
     function createThinkingPanel() {
@@ -146,10 +200,22 @@
             const response = await fetch('/chat_api', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-                body: JSON.stringify({ message: userMessage }),
+                body: JSON.stringify({
+                    message: userMessage,
+                    conversation_id: currentConversationId,
+                }),
             });
 
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                if (error.quota) updateQuota(error.quota);
+                throw new Error(error.error || `HTTP ${response.status}`);
+            }
+            currentConversationId = response.headers.get('X-Chat-Conversation-ID') || currentConversationId;
+            updateQuota({
+                remaining: Number(response.headers.get('X-Chat-Remaining') || 0),
+                limit: 5,
+            });
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -196,8 +262,9 @@
                 }
             }
         } catch (err) {
-            addMessage('bot', 'Sorry, something went wrong. Please try again.');
+            addMessage('bot', `Sorry, ${err.message || 'something went wrong. Please try again.'}`);
         } finally {
+            refreshHistory();
             sendButton.disabled = false;
             userInput.focus();
         }
@@ -223,6 +290,20 @@
     });
 
     sendButton.addEventListener('click', sendMessage);
+
+    document.getElementById('new-chat-button')?.addEventListener('click', () => {
+        currentConversationId = null;
+        clearMessages();
+        showWelcome();
+        document.querySelectorAll('.chat-history-item').forEach((item) => item.classList.remove('active'));
+        userInput.focus();
+    });
+
+    document.querySelectorAll('.chat-history-item').forEach((item) => {
+        item.addEventListener('click', () => loadConversation(item.dataset.conversationId));
+    });
+
+    refreshHistory();
 
     if (window.lucide) lucide.createIcons();
 })();

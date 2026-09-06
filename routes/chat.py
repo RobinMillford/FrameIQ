@@ -14,12 +14,17 @@ SSE event types:
 import asyncio
 import json
 import logging
+import re
+from datetime import datetime, timezone
 
-from flask import Blueprint, render_template, request, jsonify, Response
+from flask import Blueprint, render_template, request, jsonify, Response, current_app
 from flask_login import login_required, current_user
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 
 from extensions import limiter
+from models import (
+    db, User, ChatConversation, ChatMessage, UserChatDailyUsage, UserChatMemory,
+)
 from src.agents.graph import get_agent_graph
 from src.api.agent_service import _build_initial_state, _build_user_context
 
@@ -45,6 +50,7 @@ _NODE_LABELS = {
 # Only stream tokens produced by the final-response model (tagged in nodes.py),
 # not internal calls (retriever tool decisions, enricher extraction).
 _FINAL_RESPONSE_TAG = "final_response"
+DAILY_CHAT_LIMIT = 5
 
 
 def _sse(data: dict) -> str:
@@ -80,15 +86,26 @@ def _event_to_ui_event(event, seen_tools):
     return None
 
 
-async def _astream_events(user_message, session_id, user_context):
+async def _astream_events(
+    user_message, session_id, user_context, conversation_messages=None,
+):
     """Async generator of normalized UI events from the graph."""
     graph = get_agent_graph()
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 20}
+    # History is loaded from the database for each request. Use an invocation
+    # thread so MemorySaver cannot append the same persisted history twice.
+    config = {
+        "configurable": {
+            "thread_id": f"{session_id}_{datetime.now(timezone.utc).timestamp()}",
+        },
+        "recursion_limit": 20,
+    }
     final_state = None
     seen_tools = set()
 
     async for event in graph.astream_events(
-        _build_initial_state(user_message, session_id, user_context),
+        _build_initial_state(
+            user_message, session_id, user_context, conversation_messages,
+        ),
         config, version="v2"
     ):
         if event["event"] == "on_chain_end" and event.get("name") == "LangGraph":
@@ -104,7 +121,10 @@ async def _astream_events(user_message, session_id, user_context):
     yield {"_final_state": final_state}
 
 
-def _generate(user_message, session_id, user_context):
+def _generate(
+    user_message, session_id, user_context, conversation_id, conversation_messages,
+    app,
+):
     """Sync generator bridging the async event stream to SSE.
 
     Runs outside the request context by design — everything the stream
@@ -112,7 +132,9 @@ def _generate(user_message, session_id, user_context):
     """
     try:
         loop = asyncio.new_event_loop()
-        agen = _astream_events(user_message, session_id, user_context)
+        agen = _astream_events(
+            user_message, session_id, user_context, conversation_messages,
+        )
         try:
             while True:
                 try:
@@ -123,6 +145,8 @@ def _generate(user_message, session_id, user_context):
                 if "_final_state" in evt:
                     final_state = evt["_final_state"]
                     if final_state:
+                        with app.app_context():
+                            _save_assistant_message(conversation_id, final_state)
                         yield _sse(_build_final_event(final_state))
                     else:
                         yield _sse({"type": "error", "error": "No response generated"})
@@ -169,10 +193,137 @@ def _build_final_event(final_state) -> dict:
     return event
 
 
+def _conversation_for_user(conversation_id):
+    if conversation_id is None:
+        conversation = ChatConversation(user_id=current_user.id)
+        db.session.add(conversation)
+        db.session.flush()
+        return conversation
+    return ChatConversation.query.filter_by(
+        id=conversation_id, user_id=current_user.id,
+    ).first()
+
+
+def _history_messages(conversation):
+    messages = []
+    for message in conversation.messages.order_by(ChatMessage.created_at).all():
+        message_type = HumanMessage if message.role == "user" else AIMessage
+        messages.append(message_type(content=message.content))
+    return messages
+
+
+def _save_assistant_message(conversation_id, final_state):
+    messages = final_state.get("messages", [])
+    reply = next(
+        (_message_text(m) for m in reversed(messages)
+         if isinstance(m, AIMessage) and _message_text(m)),
+        "",
+    )
+    if not reply:
+        return
+    conversation = db.session.get(ChatConversation, conversation_id)
+    if not conversation:
+        return
+    metadata = final_state.get("final_response_metadata") or {}
+    db.session.add(ChatMessage(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=reply,
+        metadata_json=json.dumps(metadata),
+    ))
+    conversation.updated_at = datetime.utcnow()
+    db.session.commit()
+
+
+def _remember_user_preference(user_id, message):
+    """Persist explicit preference statements without another paid model call."""
+    if not re.search(r"\b(i like|i love|i prefer|my favorite|i hate|i dislike)\b",
+                     message, re.IGNORECASE):
+        return
+    memory = UserChatMemory.query.filter_by(user_id=user_id).first()
+    if memory is None:
+        memory = UserChatMemory(user_id=user_id, content="")
+        db.session.add(memory)
+    entries = [entry for entry in memory.content.split("\n") if entry]
+    if message not in entries:
+        entries.append(message[:500])
+    memory.content = "\n".join(entries[-20:])
+
+
+def _consume_daily_question(user_id):
+    today = datetime.now(timezone.utc).date()
+    # Lock the existing user row so concurrent requests cannot both pass the
+    # quota check before either transaction commits.
+    db.session.execute(
+        db.select(User.id).where(User.id == user_id).with_for_update()
+    ).scalar_one()
+    usage = UserChatDailyUsage.query.filter_by(
+        user_id=user_id, usage_date=today,
+    ).with_for_update().first()
+    if usage is None:
+        usage = UserChatDailyUsage(
+            user_id=user_id, usage_date=today, question_count=0,
+        )
+        db.session.add(usage)
+        db.session.flush()
+    if usage.question_count >= DAILY_CHAT_LIMIT:
+        db.session.rollback()
+        return None
+    usage.question_count += 1
+    db.session.commit()
+    return DAILY_CHAT_LIMIT - usage.question_count
+
+
+def _quota_status(user_id):
+    today = datetime.now(timezone.utc).date()
+    usage = UserChatDailyUsage.query.filter_by(
+        user_id=user_id, usage_date=today,
+    ).first()
+    used = usage.question_count if usage else 0
+    return {"used": used, "limit": DAILY_CHAT_LIMIT, "remaining": max(0, DAILY_CHAT_LIMIT - used)}
+
+
 @chat.route("/chat")
 @login_required
 def chat_page():
-    return render_template("chat.html")
+    conversations = ChatConversation.query.filter_by(
+        user_id=current_user.id,
+    ).order_by(ChatConversation.updated_at.desc()).limit(50).all()
+    return render_template(
+        "chat.html",
+        conversations=conversations,
+        quota=_quota_status(current_user.id),
+    )
+
+
+@chat.route("/chat/conversations", methods=["GET"])
+@login_required
+def chat_conversations():
+    conversations = ChatConversation.query.filter_by(
+        user_id=current_user.id,
+    ).order_by(ChatConversation.updated_at.desc()).limit(50).all()
+    return jsonify({"conversations": [
+        {"id": item.id, "title": item.title,
+         "updated_at": item.updated_at.isoformat()}
+        for item in conversations
+    ], "quota": _quota_status(current_user.id)})
+
+
+@chat.route("/chat/conversations/<int:conversation_id>", methods=["GET"])
+@login_required
+def chat_conversation(conversation_id):
+    conversation = ChatConversation.query.filter_by(
+        id=conversation_id, user_id=current_user.id,
+    ).first_or_404()
+    return jsonify({
+        "id": conversation.id,
+        "title": conversation.title,
+        "messages": [
+            {"role": message.role, "content": message.content,
+             "metadata": json.loads(message.metadata_json or "{}")}
+            for message in conversation.messages.order_by(ChatMessage.created_at).all()
+        ],
+    })
 
 
 @chat.route("/chat_api", methods=["POST"])
@@ -180,17 +331,44 @@ def chat_page():
 @limiter.limit("20 per minute; 100 per hour")
 def chat_api():
     """SSE streaming chat — yields tool_call / token / final events."""
-    user_message = request.json.get("message")
+    payload = request.get_json(silent=True) or {}
+    user_message = (payload.get("message") or "").strip()
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
 
-    session_id = f"user_{current_user.id}"
+    conversation_id = payload.get("conversation_id")
+    conversation = _conversation_for_user(conversation_id)
+    if conversation is None:
+        return jsonify({"error": "Conversation not found"}), 404
+    remaining = _consume_daily_question(current_user.id)
+    if remaining is None:
+        return jsonify({
+            "error": "Daily chat limit reached. You have 5 questions per UTC day.",
+            "quota": _quota_status(current_user.id),
+        }), 429
+    if conversation.title == "New chat":
+        conversation.title = user_message[:80]
+    db.session.add(ChatMessage(
+        conversation_id=conversation.id, role="user", content=user_message,
+    ))
+    _remember_user_preference(current_user.id, user_message)
+    db.session.commit()
+
+    session_id = f"user_{current_user.id}_conversation_{conversation.id}"
     # Capture personalization inside the request context — the stream
     # generator itself runs without one.
     user_context = _build_user_context(session_id)
+    conversation_messages = _history_messages(conversation)[:-1]
 
     return Response(
-        _generate(user_message, session_id, user_context),
+        _generate(
+            user_message, session_id, user_context, conversation.id,
+            conversation_messages, current_app._get_current_object(),
+        ),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+            "X-Chat-Remaining": str(remaining),
+            "X-Chat-Conversation-ID": str(conversation.id),
+        },
     )
