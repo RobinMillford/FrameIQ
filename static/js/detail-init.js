@@ -1,19 +1,11 @@
 /**
- * Shared detail-page initialization (movie & TV detail).
- * Expects review-manager.js to be loaded first.
+ * Shared detail-page init (movie & TV detail).
+ *
+ * Note: ReviewManager is NOT initialized here — review-manager.js already
+ * auto-initializes itself on DOMContentLoaded using body[data-media-id],
+ * and having both would create two instances (duplicate
+ * /api/media/<id>/reviews requests and duplicate event listeners).
  */
-document.addEventListener('DOMContentLoaded', function() {
-    const reviewSection = document.querySelector('.media-reviews-section');
-    if (reviewSection) {
-        const mediaId = reviewSection.dataset.mediaId;
-        const mediaType = reviewSection.dataset.mediaType;
-
-        window.reviewManager = new ReviewManager({
-            mediaId: mediaId,
-            mediaType: mediaType
-        });
-    }
-});
 
 // Priority dropdown toggle function
 function togglePriorityDropdown(dropdownId) {

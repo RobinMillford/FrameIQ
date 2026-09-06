@@ -4,6 +4,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "templates" / "tv_detail.html"
 SCRIPT = ROOT / "static" / "js" / "tv-seasons.js"
+TRACKER_SCRIPT = ROOT / "static" / "js" / "tv-tracker.js"
+
+
+def test_tv_tracker_posts_to_update_status_route():
+    """The tracker must call the backend's /update-status endpoint,
+    not the nonexistent /status route."""
+    script = TRACKER_SCRIPT.read_text()
+
+    assert "/api/tv/${this.showId}/update-status" in script
+    assert "`/api/tv/${this.showId}/status`" not in script
 
 
 def test_tv_seasons_data_is_embedded_for_the_seasons_manager():

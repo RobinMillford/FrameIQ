@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify
 from flask_login import login_required, current_user
 from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, user_watchlist, user_viewed
 from sqlalchemy import and_
+from sqlalchemy.orm import joinedload
 
 friends_activity = Blueprint('friends_activity', __name__)
 
@@ -16,7 +17,7 @@ def _friend_reviews(media_id, media_type, following_ids):
     return [
         {'user_id': r.user_id, 'username': r.user.username, 'user_avatar': r.user.profile_picture,
          'rating': r.rating, 'content': r.content, 'created_at': r.created_at.isoformat()}
-        for r in Review.query.filter(
+        for r in Review.query.options(joinedload(Review.user)).filter(
             Review.media_id == media_id, Review.media_type == media_type,
             Review.user_id.in_(following_ids), Review.is_deleted == False,
         ).all()
@@ -27,7 +28,7 @@ def _friend_likes(media_id, media_type, following_ids):
     return [
         {'user_id': lk.user_id, 'username': lk.user.username, 'user_avatar': lk.user.profile_picture,
          'created_at': lk.created_at.isoformat()}
-        for lk in MediaLike.query.filter(
+        for lk in MediaLike.query.options(joinedload(MediaLike.user)).filter(
             MediaLike.media_id == media_id, MediaLike.media_type == media_type,
             MediaLike.user_id.in_(following_ids),
         ).all()
@@ -38,7 +39,7 @@ def _friend_comments(media_id, media_type, following_ids):
     return [
         {'user_id': c.user_id, 'username': c.user.username, 'user_avatar': c.user.profile_picture,
          'content': c.content, 'created_at': c.created_at.isoformat()}
-        for c in MediaComment.query.filter(
+        for c in MediaComment.query.options(joinedload(MediaComment.user)).filter(
             MediaComment.media_id == media_id, MediaComment.media_type == media_type,
             MediaComment.user_id.in_(following_ids), MediaComment.is_deleted == False,
         ).all()
@@ -47,7 +48,9 @@ def _friend_comments(media_id, media_type, following_ids):
 
 def _friend_tags(media_id, media_type, following_ids):
     user_tags = {}
-    for tag in UserMediaTag.query.filter(
+    for tag in UserMediaTag.query.options(
+        joinedload(UserMediaTag.user), joinedload(UserMediaTag.tag)
+    ).filter(
         UserMediaTag.media_id == media_id, UserMediaTag.media_type == media_type,
         UserMediaTag.user_id.in_(following_ids),
     ).all():

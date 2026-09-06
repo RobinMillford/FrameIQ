@@ -7,6 +7,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 from api.tmdb_client import TMDB_API_KEY, cached_tmdb_request
+from extensions import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 
 
 @recommendations_bp.route('/api/media/<int:media_id>/recommendations', methods=['GET'])
+@limiter.limit("60 per minute")
 def get_recommendations(media_id):
     """
     Get similar movies/TV shows recommendations

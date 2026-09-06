@@ -49,6 +49,7 @@ from routes.profile_enhancements import profile_enhancements
 from routes.user_discovery import user_discovery
 from routes.popular_with_friends import popular_bp
 from routes.recommendations import recommendations_bp
+from routes.seo import seo_bp
 
 # ── Routes: stats, TV, watch ──────────────────────────────────────────────────
 from routes.stats import stats_bp
@@ -178,6 +179,8 @@ def create_app() -> Flask:
         # Social & discovery
         social, analytics, trending, activity_feed, friends_activity,
         profile_enhancements, user_discovery, popular_bp, recommendations_bp,
+        # SEO
+        seo_bp,
         # Stats, TV, watch
         stats_bp, tv_tracking, watch_bp,
         # AI

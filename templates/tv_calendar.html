@@ -221,5 +221,12 @@ loadCalendar();
 
 // Refresh every 5 minutes
 setInterval(loadCalendar, 5 * 60 * 1000);
+
+// Pause polling while the tab is hidden, resume on return (interval unchanged)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        loadCalendar();
+    }
+});
 </script>
 {% endblock %}

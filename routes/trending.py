@@ -15,17 +15,19 @@ def get_trending_media():
     """Get trending movies and TV shows based on recent activity"""
     days = request.args.get('days', 7, type=int)
     media_type = request.args.get('type', None)  # 'movie', 'tv', or None for both
-    limit = request.args.get('limit', 20, type=int)
-    
+    # Cap the public limit so callers can't request arbitrarily large pages.
+    limit = request.args.get('limit', 20, type=int) or 20
+    limit = max(1, min(limit, 50))
+
     since_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Score based on multiple factors:
     # - Number of likes
     # - Number of comments
     # - Number of reviews
     # - Number of tags added
     # - Recency bonus
-    
+
     # Query to calculate trending scores
     base_query = db.session.query(
         MediaItem.id,
@@ -39,39 +41,62 @@ def get_trending_media():
         MediaLike.media_type == MediaItem.media_type,
         MediaLike.created_at >= since_date
     ))
-    
+
     if media_type:
         base_query = base_query.filter(MediaItem.media_type == media_type)
-    
+
     base_query = base_query.group_by(
-        MediaItem.id, MediaItem.tmdb_id, MediaItem.media_type, 
+        MediaItem.id, MediaItem.tmdb_id, MediaItem.media_type,
         MediaItem.title, MediaItem.poster_path
     )
-    
+
     results = base_query.order_by(desc('like_count')).limit(limit).all()
-    
+
+    # Batch-count comments and reviews for all result items in two grouped
+    # queries instead of one COUNT per item (N+1).
+    item_ids = [item.id for item in results]
+    comment_counts = {}
+    review_counts = {}
+    if item_ids:
+        comment_rows = db.session.query(
+            MediaComment.media_id,
+            MediaComment.media_type,
+            func.count(MediaComment.id).label('cnt'),
+        ).filter(
+            MediaComment.media_id.in_(item_ids),
+            MediaComment.created_at >= since_date,
+            MediaComment.is_deleted == False
+        ).group_by(
+            MediaComment.media_id, MediaComment.media_type
+        ).all()
+        comment_counts = {
+            (row.media_id, row.media_type): row.cnt for row in comment_rows
+        }
+
+        review_rows = db.session.query(
+            Review.media_id,
+            Review.media_type,
+            func.count(Review.id).label('cnt'),
+        ).filter(
+            Review.media_id.in_(item_ids),
+            Review.is_deleted == False,
+            Review.created_at >= since_date
+        ).group_by(
+            Review.media_id, Review.media_type
+        ).all()
+        review_counts = {
+            (row.media_id, row.media_type): row.cnt for row in review_rows
+        }
+
     # Enhance with additional data
     trending_items = []
     for item in results:
-        # Get comment count
-        comment_count = MediaComment.query.filter(
-            MediaComment.media_id == item.id,
-            MediaComment.media_type == item.media_type,
-            MediaComment.created_at >= since_date,
-            MediaComment.is_deleted == False
-        ).count()
-        
-        # Get review count
-        review_count = Review.query.filter(
-            Review.media_id == item.id,
-            Review.media_type == item.media_type,
-            Review.is_deleted == False,
-            Review.created_at >= since_date
-        ).count()
-        
+        comment_count = comment_counts.get((item.id, item.media_type), 0)
+        review_count = review_counts.get((item.id, item.media_type), 0)
+
         # Calculate trending score
         score = (item.like_count * 2) + (comment_count * 3) + (review_count * 5)
-        
+
         trending_items.append({
             'id': item.id,
             'tmdb_id': item.tmdb_id,
@@ -83,10 +108,10 @@ def get_trending_media():
             'comment_count': comment_count,
             'review_count': review_count
         })
-    
+
     # Re-sort by calculated score
     trending_items.sort(key=lambda x: x['score'], reverse=True)
-    
+
     return jsonify({
         'success': True,
         'period_days': days,
@@ -100,9 +125,9 @@ def get_trending_tags():
     """Get trending tags based on recent usage"""
     days = request.args.get('days', 7, type=int)
     limit = request.args.get('limit', 20, type=int)
-    
+
     since_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Count recent tag usage
     trending_tags = db.session.query(
         Tag.id,
@@ -118,7 +143,7 @@ def get_trending_tags():
     ).order_by(
         desc('recent_usage')
     ).limit(limit).all()
-    
+
     return jsonify({
         'success': True,
         'period_days': days,
@@ -136,9 +161,9 @@ def get_trending_users():
     """Get most active users based on recent activity"""
     days = request.args.get('days', 7, type=int)
     limit = request.args.get('limit', 20, type=int)
-    
+
     since_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Count activities: reviews, comments, likes
     user_activity = db.session.query(
         User.id,
@@ -151,7 +176,7 @@ def get_trending_users():
     ).group_by(
         User.id, User.username, User.profile_picture, User.followers_count
     ).all()
-    
+
     # Add comment counts
     users_with_scores = []
     for user in user_activity:
@@ -160,15 +185,15 @@ def get_trending_users():
             MediaComment.created_at >= since_date,
             MediaComment.is_deleted == False
         ).count()
-        
+
         like_count = MediaLike.query.filter(
             MediaLike.user_id == user.id,
             MediaLike.created_at >= since_date
         ).count()
-        
+
         # Calculate activity score
         score = (user.review_count * 5) + (comment_count * 3) + (like_count * 1)
-        
+
         users_with_scores.append({
             'id': user.id,
             'username': user.username,
@@ -179,10 +204,10 @@ def get_trending_users():
             'comment_count': comment_count,
             'like_count': like_count
         })
-    
+
     # Sort by activity score
     users_with_scores.sort(key=lambda x: x['activity_score'], reverse=True)
-    
+
     return jsonify({
         'success': True,
         'period_days': days,
@@ -195,9 +220,9 @@ def get_trending_reviews():
     """Get trending/popular reviews based on likes"""
     days = request.args.get('days', 30, type=int)
     limit = request.args.get('limit', 10, type=int)
-    
+
     since_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Get reviews with like counts
     trending_reviews = db.session.query(
         Review,
@@ -207,7 +232,7 @@ def get_trending_reviews():
     ).filter(
         Review.created_at >= since_date
     ).group_by(Review.id).order_by(desc('like_count')).limit(limit).all()
-    
+
     reviews_data = []
     for review, like_count in trending_reviews:
         reviews_data.append({
@@ -222,7 +247,7 @@ def get_trending_reviews():
             'created_at': review.created_at.isoformat(),
             'like_count': like_count
         })
-    
+
     return jsonify({
         'success': True,
         'period_days': days,
@@ -234,16 +259,16 @@ def get_trending_reviews():
 def get_trending_summary():
     """Get a summary of all trending data"""
     days = request.args.get('days', 7, type=int)
-    
+
     # Get top 5 of each category
     trending_media_resp = get_trending_media()
     trending_tags_resp = get_trending_tags()
     trending_users_resp = get_trending_users()
-    
+
     media_data = trending_media_resp.get_json()
     tags_data = trending_tags_resp.get_json()
     users_data = trending_users_resp.get_json()
-    
+
     return jsonify({
         'success': True,
         'period_days': days,

@@ -123,7 +123,9 @@ async function fetchMovieTrailer(movieId) {
     }
 }
 
-        // Search functionality with modern styling
+        // Search functionality with modern styling (debounced to avoid a
+        // TMDB proxy request per keystroke)
+        let searchDebounce;
         document.getElementById("movie_name").addEventListener("input", function() {
             const input = this.value.toLowerCase();
             const autocompleteContainer = document.getElementById("autocomplete-items");
@@ -134,6 +136,13 @@ async function fetchMovieTrailer(movieId) {
                 return;
             }
 
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+                searchMovies(input, autocompleteContainer);
+            }, 300);
+        });
+
+        function searchMovies(input, autocompleteContainer) {
             fetch(tmdbUrl('/search/movie', {language: 'en-US', query: input, page: 1, include_adult: true}))
             .then(response => response.json())
             .then(data => {
@@ -162,7 +171,7 @@ async function fetchMovieTrailer(movieId) {
 
                 autocompleteContainer.style.display = autocompleteContainer.children.length > 0 ? "block" : "none";
             })
-        });
+        }
 
         document.addEventListener("click", function(e) {
             if (!e.target.matches("#movie_name")) {

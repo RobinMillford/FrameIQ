@@ -2,6 +2,11 @@
 
 {% block title %}{{ movie.title }} - FrameIQ{% endblock %}
 
+{% block extra_head %}
+<!-- Canonical URL so watch/movie URLs with query params consolidate -->
+<link rel="canonical" href="{{ url_for('main.index', _external=True).rstrip('/') }}/movie/{{ movie.id }}">
+{% endblock %}
+
 {% block body_attrs %}data-media-id="{{ movie.id }}" data-media-type="movie" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"{% endblock %}
 
 {% block extra_css %}
@@ -796,7 +801,6 @@
     <script src="{{ url_for('static', filename='js/tag-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/likes-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/media-comments.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/friends-activity.js') }}"></script>
     <script src="{{ url_for('static', filename='js/popular-with-friends.js') }}"></script>
     <script src="{{ url_for('static', filename='js/more-like-this.js') }}"></script>
     <script>

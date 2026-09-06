@@ -22,9 +22,18 @@ def _collection_page(table, template, list_key):
         table.c.user_id == current_user.id
     ).order_by(table.c.date_added.desc())
 
+    rows = db.session.execute(stmt).all()
+
+    # Batch-load all MediaItems in one IN query instead of one SELECT per row.
+    media_by_id = {}
+    if rows:
+        media_ids = [row.media_id for row in rows]
+        media_items = MediaItem.query.filter(MediaItem.id.in_(media_ids)).all()
+        media_by_id = {m.id: m for m in media_items}
+
     items_with_priority = []
-    for row in db.session.execute(stmt).all():
-        media_item = MediaItem.query.filter_by(id=row.media_id).first()
+    for row in rows:
+        media_item = media_by_id.get(row.media_id)
         if media_item:
             items_with_priority.append({
                 'item': media_item,

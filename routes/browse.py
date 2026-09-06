@@ -1,8 +1,11 @@
 """Browse & discovery routes: index, search, trending, news, genres, recommend."""
 import calendar
+import threading
+import time
 from datetime import datetime
 
 import feedparser
+import requests
 from flask import render_template, request, jsonify
 from flask_login import current_user
 
@@ -15,6 +18,7 @@ from api.tmdb_client import (
 )
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
+from extensions import limiter
 from models import User, Review, WatchProgress
 from routes._main_bp import main
 from routes.helpers import get_user_collection_ids
@@ -43,6 +47,16 @@ _NEWS_FEEDS = [
     ("IGN Entertainment",       "https://feeds.feedburner.com/ign/movies-articles"),
     ("Collider",                "https://collider.com/feed/"),
 ]
+
+# Bounded news cache: the parsed article list for /news, refreshed at most
+# every _NEWS_CACHE_TTL seconds. Single-flight: only one thread refetches at
+# a time; others reuse the previous snapshot. Failed refreshes keep serving
+# the stale snapshot (stale-while-error) rather than erroring the page.
+_NEWS_CACHE_TTL = 15 * 60          # seconds — refresh every ~15 minutes
+_NEWS_FETCH_TIMEOUT = (3, 5)       # per-feed connect/read timeout
+_NEWS_MAX_ARTICLES = 60
+_news_cache = {"articles": None, "fetched_at": 0.0}
+_news_lock = threading.Lock()
 
 
 IMG = "https://image.tmdb.org/t/p/"
@@ -367,28 +381,91 @@ def trending_page():
 
 @main.route('/news')
 def news():
+    articles = _get_news_articles()
+    return render_template('news.html', articles=articles)
+
+
+def _get_news_articles():
+    """Return cached news articles, refreshing from RSS feeds when stale.
+
+    - One network round per feed per TTL window, not per page view.
+    - Per-feed connect/read timeouts so a slow feed can't pin a worker.
+    - A single failed feed degrades gracefully (its entries are skipped).
+    - On a failed refresh the previous snapshot keeps serving.
+    """
+    now = time.monotonic()
+    with _news_lock:
+        is_fresh = (
+            _news_cache["articles"] is not None
+            and now - _news_cache["fetched_at"] < _NEWS_CACHE_TTL
+        )
+        if is_fresh:
+            return _news_cache["articles"]
+
+        # Single-flight: hold the lock through the refresh so concurrent
+        # page views don't each re-download the feeds.
+        try:
+            articles = _fetch_all_news_articles()
+        except Exception:
+            articles = []
+
+        if articles:
+            _news_cache["articles"] = articles
+            _news_cache["fetched_at"] = now
+            return articles
+
+        if _news_cache["articles"] is not None:
+            # Refresh failed entirely — serve the stale snapshot instead of
+            # an empty page, and retry after a short backoff.
+            _news_cache["fetched_at"] = now - _NEWS_CACHE_TTL + 60
+            return _news_cache["articles"]
+
+        return []
+
+
+def _fetch_all_news_articles():
+    """Download and parse every configured RSS feed with hard timeouts."""
     articles = []
     for source_name, feed_url in _NEWS_FEEDS:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:10]:
-                title = entry.get('title', '').strip()
-                url = entry.get('link', '')
-                if not (title and url):
-                    continue
-                articles.append({
-                    'title': title,
-                    'description': entry.get('summary', 'No description available')[:300],
-                    'url': url,
-                    **_extract_news_image(entry),
-                    **_extract_news_date(entry),
-                    'source': source_name,
-                })
-        except Exception:
+        feed = _parse_feed_with_timeout(feed_url)
+        if feed is None:
             continue
+        for entry in feed.entries[:10]:
+            title = entry.get('title', '').strip()
+            url = entry.get('link', '')
+            if not (title and url):
+                continue
+            articles.append({
+                'title': title,
+                'description': entry.get('summary', 'No description available')[:300],
+                'url': url,
+                **_extract_news_image(entry),
+                **_extract_news_date(entry),
+                'source': source_name,
+            })
 
     articles.sort(key=lambda a: a['publishedAt'], reverse=True)
-    return render_template('news.html', articles=articles[:60])
+    return articles[:_NEWS_MAX_ARTICLES]
+
+
+def _parse_feed_with_timeout(feed_url):
+    """Fetch one RSS feed with explicit connect/read timeouts.
+
+    feedparser.parse() has no timeout of its own; we download via requests
+    with a hard timeout and hand the bytes to feedparser. Any failure
+    returns None so one bad feed can't break or block the page.
+    """
+    try:
+        resp = requests.get(feed_url, timeout=_NEWS_FETCH_TIMEOUT, headers={
+            'User-Agent': 'FrameIQ/1.0 (+https://frameiq.studio)'
+        })
+        resp.raise_for_status()
+        # Guard against absurdly large payloads before parsing.
+        if len(resp.content) > 2 * 1024 * 1024:
+            return None
+        return feedparser.parse(resp.content)
+    except Exception:
+        return None
 
 
 def _extract_news_image(entry):
@@ -491,6 +568,7 @@ def _recommend_page(form_field, media_type, template, no_results_ctx):
 
 
 @main.route('/recommend', methods=['POST'])
+@limiter.limit("10 per minute")
 def recommend():
     return _recommend_page(
         'movie_name', 'movie', 'recommend.html',
@@ -498,6 +576,7 @@ def recommend():
 
 
 @main.route('/tv_recommend', methods=['POST'])
+@limiter.limit("10 per minute")
 def tv_recommend():
     return _recommend_page(
         'show_name', 'tv', 'tv_recommend.html',

@@ -7,6 +7,8 @@ import logging
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, User, UserList, UserListItem
+from models.lists import prefetch_list_data
+from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import re
@@ -23,11 +25,11 @@ def generate_slug(title, list_id=None):
     slug = re.sub(r'[^\w\s-]', '', title.lower())
     slug = re.sub(r'[-\s]+', '-', slug)
     slug = slug.strip('-')
-    
+
     # Add list ID if provided to ensure uniqueness
     if list_id:
         slug = f"{slug}-{list_id}"
-    
+
     return slug
 
 
@@ -36,13 +38,15 @@ def get_public_lists():
     """Get all public lists"""
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
-    
+
     # Query public lists
     lists_query = UserList.query.filter_by(is_public=True).order_by(UserList.created_at.desc())
-    
+
     # Paginate
     pagination = lists_query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
+    prefetch_list_data(pagination.items)
+
     return jsonify({
         'lists': [user_list.to_dict() for user_list in pagination.items],
         'total': pagination.total,
@@ -57,13 +61,15 @@ def get_public_lists():
 def get_user_lists(user_id):
     """Get lists for a specific user"""
     user = User.query.get_or_404(user_id)
-    
+
     # If viewing own lists, show all. Otherwise, only public
     if current_user.is_authenticated and current_user.id == user_id:
         user_lists = user.lists.order_by(UserList.created_at.desc()).all()
     else:
         user_lists = user.lists.filter_by(is_public=True).order_by(UserList.created_at.desc()).all()
-    
+
+    prefetch_list_data(user_lists)
+
     return jsonify({
         'lists': [user_list.to_dict() for user_list in user_lists],
         'count': len(user_lists)
@@ -74,17 +80,20 @@ def get_user_lists(user_id):
 def get_list_details(list_id):
     """Get details of a specific list including all items"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check permissions
     if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
         return jsonify({'error': 'This list is private'}), 403
-    
-    # Get all items in the list
-    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
-    
+
+    # Get all items in the list with their media details (eager-loaded to
+    # avoid one lazy query per item in the template)
+    items = user_list.items.options(
+        joinedload(UserListItem.media)
+    ).order_by(UserListItem.position, UserListItem.added_at).all()
+
     list_data = user_list.to_dict()
     list_data['items'] = [item.to_dict() for item in items]
-    
+
     return jsonify(list_data), 200
 
 
@@ -93,10 +102,10 @@ def get_list_details(list_id):
 def create_list():
     """Create a new list"""
     data = request.get_json()
-    
+
     if not data or not data.get('title'):
         return jsonify({'error': 'List title is required'}), 400
-    
+
     try:
         new_list = UserList(
             user_id=current_user.id,
@@ -104,20 +113,20 @@ def create_list():
             description=data.get('description', ''),
             is_public=data.get('is_public', True)
         )
-        
+
         db.session.add(new_list)
         db.session.flush()  # Get the ID before committing
-        
+
         # Generate and set slug (Week 2)
         new_list.slug = generate_slug(new_list.title, new_list.id)
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': 'List created successfully',
             'list': new_list.to_dict()
         }), 201
-        
+
     except Exception:
         db.session.rollback()
         logger.error("List creation error", exc_info=True)
@@ -129,11 +138,11 @@ def create_list():
 def update_list(list_id):
     """Update list details"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only edit your own lists'}), 403
-    
+
     data = request.get_json()
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
@@ -145,15 +154,15 @@ def update_list(list_id):
             user_list.description = data['description']
         if 'is_public' in data:
             user_list.is_public = data['is_public']
-        
+
         user_list.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
         return jsonify({
             'message': 'List updated successfully',
             'list': user_list.to_dict()
         }), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to update list", exc_info=True)
@@ -165,17 +174,17 @@ def update_list(list_id):
 def delete_list(list_id):
     """Delete a list"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only delete your own lists'}), 403
-    
+
     try:
         db.session.delete(user_list)
         db.session.commit()
-        
+
         return jsonify({'message': 'List deleted successfully'}), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to delete list", exc_info=True)
@@ -187,28 +196,28 @@ def delete_list(list_id):
 def add_to_list(list_id):
     """Add a media item to a list"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only add items to your own lists'}), 403
-    
+
     data = request.get_json()
     media_id = data.get('media_id')
     media_type = data.get('media_type')
-    
+
     if not media_id or not media_type:
         return jsonify({'error': 'media_id and media_type are required'}), 400
-    
+
     try:
         # Check if media item exists in our database, if not create it
         media_item = get_or_create_media_item(media_id, media_type)
         if not media_item:
             return jsonify({'error': 'Media item not found'}), 404
-        
+
         # Get the next position
         max_position = db.session.query(db.func.max(UserListItem.position)).filter_by(list_id=list_id).scalar()
         next_position = (max_position or 0) + 1
-        
+
         # Add to list
         list_item = UserListItem(
             list_id=list_id,
@@ -217,16 +226,16 @@ def add_to_list(list_id):
             position=next_position,
             note=data.get('note', '')
         )
-        
+
         db.session.add(list_item)
         user_list.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
         return jsonify({
             'message': f'Added {media_item.title} to list',
             'item': list_item.to_dict()
         }), 201
-        
+
     except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'This item is already in the list'}), 400
@@ -241,24 +250,24 @@ def add_to_list(list_id):
 def remove_from_list(list_id, item_id):
     """Remove an item from a list"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only remove items from your own lists'}), 403
-    
+
     list_item = UserListItem.query.get_or_404(item_id)
-    
+
     # Verify item belongs to this list
     if list_item.list_id != list_id:
         return jsonify({'error': 'Item not found in this list'}), 404
-    
+
     try:
         db.session.delete(list_item)
         user_list.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
         return jsonify({'message': 'Item removed from list'}), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to remove item from list", exc_info=True)
@@ -274,27 +283,27 @@ def remove_from_list(list_id, item_id):
 def update_list_cover(list_id):
     """Update list cover image"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only edit your own lists'}), 403
-    
+
     data = request.get_json()
     cover_url = data.get('cover_image')
-    
+
     if not cover_url:
         return jsonify({'error': 'cover_image URL is required'}), 400
-    
+
     try:
         user_list.cover_image = cover_url
         user_list.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Cover image updated successfully',
             'list': user_list.to_dict()
         }), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to update list cover", exc_info=True)
@@ -306,32 +315,32 @@ def update_list_cover(list_id):
 def reorder_list_items(list_id):
     """Reorder items in a list (drag and drop)"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check ownership
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only reorder your own lists'}), 403
-    
+
     data = request.get_json()
     item_order = data.get('item_order')  # Array of item IDs in new order
-    
+
     if not item_order or not isinstance(item_order, list):
         return jsonify({'error': 'item_order must be an array of item IDs'}), 400
-    
+
     try:
         # Update positions
         for index, item_id in enumerate(item_order):
             item = db.session.get(UserListItem, item_id)
             if item and item.list_id == list_id:
                 item.position = index + 1
-        
+
         user_list.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
         return jsonify({
             'message': 'List items reordered successfully',
             'list': user_list.to_dict()
         }), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to reorder list items", exc_info=True)
@@ -342,17 +351,20 @@ def reorder_list_items(list_id):
 def get_list_by_slug(slug):
     """Get list by shareable slug"""
     user_list = UserList.query.filter_by(slug=slug).first_or_404()
-    
+
     # Check permissions
     if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
         return jsonify({'error': 'This list is private'}), 403
-    
-    # Get all items in the list
-    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
-    
+
+    # Get all items in the list with their media details (eager-loaded to
+    # avoid one lazy query per item in the template)
+    items = user_list.items.options(
+        joinedload(UserListItem.media)
+    ).order_by(UserListItem.position, UserListItem.added_at).all()
+
     list_data = user_list.to_dict()
     list_data['items'] = [item.to_dict() for item in items]
-    
+
     return jsonify(list_data), 200
 
 
@@ -362,10 +374,10 @@ def discover_lists():
     sort = request.args.get('sort', 'recent')  # recent, popular, trending
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
-    
+
     # Base query - only public lists
     query = UserList.query.filter_by(is_public=True)
-    
+
     # Apply sorting
     if sort == 'popular':
         # Sort by item count (lists with more items are "popular")
@@ -377,10 +389,12 @@ def discover_lists():
         query = query.order_by(UserList.updated_at.desc())
     else:  # recent
         query = query.order_by(UserList.created_at.desc())
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
+    prefetch_list_data(pagination.items)
+
     return jsonify({
         'lists': [user_list.to_dict() for user_list in pagination.items],
         'total': pagination.total,
@@ -405,14 +419,17 @@ def my_lists():
 def view_list(list_id):
     """View a specific list with all its items"""
     user_list = UserList.query.get_or_404(list_id)
-    
+
     # Check permissions
     if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
         return render_template('error.html', message='This list is private'), 403
-    
-    # Get all items in the list with their media details
-    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
-    
+
+    # Get all items in the list with their media details (eager-loaded to
+    # avoid one lazy query per item in the template)
+    items = user_list.items.options(
+        joinedload(UserListItem.media)
+    ).order_by(UserListItem.position, UserListItem.added_at).all()
+
     return render_template('list_detail.html', user_list=user_list, items=items)
 
 
@@ -420,14 +437,17 @@ def view_list(list_id):
 def view_list_by_slug(slug):
     """View a list by its shareable slug - Week 2 feature"""
     user_list = UserList.query.filter_by(slug=slug).first_or_404()
-    
+
     # Check permissions
     if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
         return render_template('error.html', message='This list is private'), 403
-    
-    # Get all items in the list with their media details
-    items = user_list.items.order_by(UserListItem.position, UserListItem.added_at).all()
-    
+
+    # Get all items in the list with their media details (eager-loaded to
+    # avoid one lazy query per item in the template)
+    items = user_list.items.options(
+        joinedload(UserListItem.media)
+    ).order_by(UserListItem.position, UserListItem.added_at).all()
+
     return render_template('list_detail.html', user_list=user_list, items=items)
 
 

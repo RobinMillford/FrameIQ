@@ -6,6 +6,76 @@ from flask_login import current_user
 from models.base import db
 
 
+def prefetch_list_data(user_lists):
+    """Batch-load related data for a collection of UserList rows.
+
+    Attaches private _prefetched_* attributes that UserList.to_dict() reads,
+    replacing per-list lazy queries (items.count(), collaborators.all(),
+    list_categories.all(), user, analytics) with a fixed number of grouped
+    queries. Safe no-op behavior for empty input.
+    """
+    lists = [user_list for user_list in user_lists if user_list is not None]
+    if not lists:
+        return
+
+    list_ids = [user_list.id for user_list in lists]
+
+    # 1. Item counts (one grouped query).
+    count_rows = db.session.query(
+        UserListItem.list_id,
+        db.func.count(UserListItem.id).label('cnt'),
+    ).filter(
+        UserListItem.list_id.in_(list_ids)
+    ).group_by(UserListItem.list_id).all()
+    counts = {row.list_id: row.cnt for row in count_rows}
+
+    # 2. Collaborators (one query).
+    collab_rows = ListCollaborator.query.filter(
+        ListCollaborator.list_id.in_(list_ids)
+    ).all()
+    collabs_by_list = {}
+    for collab in collab_rows:
+        collabs_by_list.setdefault(collab.list_id, []).append(collab)
+
+    # 3. Categories via the junction table (two queries).
+    lc_rows = UserListCategory.query.filter(
+        UserListCategory.list_id.in_(list_ids)
+    ).all()
+    category_ids = {lc.category_id for lc in lc_rows}
+    categories_by_id = {}
+    if category_ids:
+        for cat in ListCategory.query.filter(ListCategory.id.in_(category_ids)).all():
+            categories_by_id[cat.id] = cat
+    cats_by_list = {}
+    for lc in lc_rows:
+        cat = categories_by_id.get(lc.category_id)
+        if cat is not None:
+            cats_by_list.setdefault(lc.list_id, []).append(lc)
+            # Stash resolved categories under the junction row for to_dict().
+            lc._resolved_category = cat
+
+    # 4. Owners (one query).
+    user_ids = {user_list.user_id for user_list in lists}
+    users_by_id = {}
+    if user_ids:
+        from models.user import User  # local import avoids import cycles
+        for user in User.query.filter(User.id.in_(user_ids)).all():
+            users_by_id[user.id] = user
+
+    # 5. Analytics (one query).
+    analytics_rows = ListAnalytics.query.filter(
+        ListAnalytics.list_id.in_(list_ids)
+    ).all()
+    analytics_by_list = {a.list_id: a for a in analytics_rows}
+
+    for user_list in lists:
+        user_list._item_count = counts.get(user_list.id, 0)
+        user_list._prefetched_collaborators = collabs_by_list.get(user_list.id, [])
+        user_list._prefetched_categories = cats_by_list.get(user_list.id, [])
+        user_list._prefetched_user = users_by_id.get(user_list.user_id)
+        user_list._prefetched_analytics = analytics_by_list.get(user_list.id)
+
+
 class UserList(db.Model):
     """User-created custom lists of movies/TV shows"""
     __tablename__ = 'user_list'
@@ -24,39 +94,63 @@ class UserList(db.Model):
     user = db.relationship('User', backref=db.backref('lists', lazy='dynamic'))
     items = db.relationship('UserListItem', backref='list', cascade='all, delete-orphan', lazy='dynamic')
 
+    def _collaborator_dicts(self):
+        """Collaborator dicts, using batch-prefetched rows when available."""
+        objs = getattr(self, '_prefetched_collaborators', None)
+        if objs is None and hasattr(self, 'collaborators'):
+            objs = self.collaborators.all()
+        return [c.to_dict() for c in (objs or [])]
+
+    def _category_dicts(self):
+        """Category dicts, using batch-prefetched rows when available."""
+        objs = getattr(self, '_prefetched_categories', None)
+        if objs is None and hasattr(self, 'list_categories'):
+            objs = self.list_categories.all()
+        dicts = []
+        for lc in (objs or []):
+            cat = getattr(lc, '_resolved_category', None)
+            if cat is None:
+                cat = lc.category
+            dicts.append(cat.to_dict())
+        return dicts
+
+    def _analytics_dict(self):
+        """Analytics dict, using batch-prefetched row when available."""
+        if not hasattr(self, 'analytics'):
+            return None
+        analytics = getattr(self, '_prefetched_analytics', None)
+        if analytics is None:
+            analytics = self.analytics
+        return analytics.to_dict() if analytics else None
+
     def to_dict(self):
         """Convert list to dictionary for JSON responses"""
-        # Week 2b: Get collaborators and categories
-        collaborators = []
-        if hasattr(self, 'collaborators'):
-            collaborators = [c.to_dict() for c in self.collaborators.all()]
+        user = getattr(self, '_prefetched_user', None)
+        if user is None:
+            user = self.user
 
-        categories = []
-        if hasattr(self, 'list_categories'):
-            categories = [lc.category.to_dict() for lc in self.list_categories.all()]
-
-        analytics_data = None
-        if hasattr(self, 'analytics') and self.analytics:
-            analytics_data = self.analytics.to_dict()
+        item_count = getattr(self, '_item_count', None)
+        if item_count is None:
+            item_count = self.items.count()
 
         return {
             'id': self.id,
             'user': {
-                'id': self.user.id,
-                'username': self.user.username,
-                'profile_picture': self.user.profile_picture
+                'id': user.id,
+                'username': user.username,
+                'profile_picture': user.profile_picture
             },
             'title': self.title,
             'description': self.description,
             'is_public': self.is_public,
             'cover_image': self.cover_image,  # Week 2
             'slug': self.slug,  # Week 2
-            'collaborators': collaborators,  # Week 2b
-            'categories': categories,  # Week 2b
-            'analytics': analytics_data,  # Week 2b
+            'collaborators': self._collaborator_dicts(),  # Week 2b
+            'categories': self._category_dicts(),  # Week 2b
+            'analytics': self._analytics_dict(),  # Week 2b
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'item_count': self.items.count(),
+            'item_count': item_count,
             'is_owner': current_user.is_authenticated and self.user_id == current_user.id
         }
 

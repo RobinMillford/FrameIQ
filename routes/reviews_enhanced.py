@@ -9,6 +9,7 @@ from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewHelpful, ReviewComment, User, UserFollow, MediaItem
 from datetime import datetime
 from sqlalchemy import desc, func
+from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -32,117 +33,11 @@ def review_popular_page():
 
 
 # ============================================================================
-# REVIEW CRUD
+# NOTE: Single-review CRUD (GET/PUT/DELETE /api/reviews/<id>) lives in
+# routes/reviews.py, which is registered first and therefore owns the URL
+# rules. Duplicate definitions here were shadowed (dead code) and have been
+# removed — see audit BATCH 6.
 # ============================================================================
-
-
-@reviews_enhanced_bp.route('/api/reviews/<int:review_id>', methods=['GET'])
-def get_review(review_id):
-    """Get a single review with all details"""
-    review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
-    # Get user's interaction status if authenticated
-    user_liked = False
-    user_helpful_vote = None
-    
-    if current_user.is_authenticated:
-        user_liked = ReviewLike.query.filter_by(
-            user_id=current_user.id,
-            review_id=review_id
-        ).first() is not None
-        
-        helpful_vote = ReviewHelpful.query.filter_by(
-            user_id=current_user.id,
-            review_id=review_id
-        ).first()
-        if helpful_vote:
-            user_helpful_vote = helpful_vote.is_helpful
-    
-    review_data = review.to_dict()
-    review_data['user_liked'] = user_liked
-    review_data['user_helpful_vote'] = user_helpful_vote
-    
-    # Get replies (comments on review)
-    replies = ReviewComment.query.filter_by(review_id=review_id, is_deleted=False, parent_id=None).all()
-    review_data['replies'] = [reply.to_dict() for reply in replies]
-    
-    return jsonify(review_data), 200
-
-
-@reviews_enhanced_bp.route('/api/reviews/<int:review_id>', methods=['PUT'])
-@login_required
-def update_review(review_id):
-    """Update an existing review"""
-    review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
-    # Check ownership
-    if review.user_id != current_user.id:
-        return jsonify({'error': 'You can only edit your own reviews'}), 403
-    
-    data = request.get_json()
-    
-    try:
-        # Update rating if provided
-        if 'rating' in data:
-            rating = float(data['rating'])
-            if rating < 0.5 or rating > 5.0 or (rating * 2) % 1 != 0:
-                return jsonify({'error': 'rating must be between 0.5 and 5.0 in 0.5 increments'}), 400
-            review.rating = rating
-        
-        # Update other fields
-        if 'title' in data:
-            review.title = data['title'].strip() or None
-        if 'content' in data:
-            review.content = data['content'].strip() or None
-        if 'has_spoilers' in data:
-            review.contains_spoilers = data['has_spoilers']
-        if 'rewatch' in data:
-            review.rewatch = data['rewatch']
-        
-        # Update watched_date if provided
-        if 'watched_date' in data:
-            if data['watched_date']:
-                try:
-                    review.watched_date = datetime.strptime(data['watched_date'], '%Y-%m-%d').date()
-                except ValueError:
-                    return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-            else:
-                review.watched_date = None
-        
-        review.updated_at = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Review updated successfully',
-            'review': review.to_dict()
-        }), 200
-        
-    except Exception:
-        db.session.rollback()
-        logger.error("Failed to update review", exc_info=True)
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@reviews_enhanced_bp.route('/api/reviews/<int:review_id>', methods=['DELETE'])
-@login_required
-def delete_review(review_id):
-    """Delete a review (soft delete)"""
-    review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
-    # Check ownership
-    if review.user_id != current_user.id:
-        return jsonify({'error': 'You can only delete your own reviews'}), 403
-    
-    try:
-        review.is_deleted = True
-        db.session.commit()
-        
-        return jsonify({'message': 'Review deleted successfully'}), 200
-        
-    except Exception:
-        db.session.rollback()
-        logger.error("Failed to delete review", exc_info=True)
-        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============================================================================
@@ -156,13 +51,13 @@ def get_media_reviews(media_id):
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 10, type=int), 100)
     sort_by = request.args.get('sort', 'recent')  # recent, popular, rating_high, rating_low, all
-    
+
     if media_type not in ['movie', 'tv']:
         return jsonify({'error': 'media_type must be "movie" or "tv"'}), 400
-    
+
     # Find the MediaItem by TMDB ID
     media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
-    
+
     if not media_item:
         # No reviews yet if media item doesn't exist
         return jsonify({
@@ -172,14 +67,14 @@ def get_media_reviews(media_id):
             'has_next': False,
             'has_prev': False
         }), 200
-    
+
     # Base query using internal media_item.id
     query = Review.query.filter_by(
         media_id=media_item.id,
         media_type=media_type,
         is_deleted=False
     )
-    
+
     # Apply sorting
     if sort_by == 'popular':
         query = query.order_by(desc(Review.likes_count))
@@ -191,17 +86,22 @@ def get_media_reviews(media_id):
         query = query.order_by(desc(Review.created_at))  # Show all, sorted by recent
     else:  # recent (default)
         query = query.order_by(desc(Review.created_at))
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
+    # Eager-load user/media so to_dict() doesn't lazy-load per review (N+1)
+    db.session.query(Review).options(
+        joinedload(Review.user), joinedload(Review.media)
+    ).filter(Review.id.in_([r.id for r in pagination.items])).all()
+
     # Calculate average rating using internal media_item.id
     avg_rating = db.session.query(func.avg(Review.rating)).filter_by(
         media_id=media_item.id,
         media_type=media_type,
         is_deleted=False
     ).scalar()
-    
+
     return jsonify({
         'reviews': [review.to_dict() for review in pagination.items],
         'total': pagination.total,
@@ -223,9 +123,9 @@ def review_feed():
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     friends_only = request.args.get('friends_only', 'false').lower() == 'true'
-    
+
     query = Review.query.filter_by(is_deleted=False)
-    
+
     # Filter by friends if authenticated and requested
     if friends_only and current_user.is_authenticated:
         # Get IDs of users current user follows
@@ -234,7 +134,7 @@ def review_feed():
             is_active=True
         ).all()
         following_ids = [fid[0] for fid in following_ids]
-        
+
         if following_ids:
             query = query.filter(Review.user_id.in_(following_ids))
         else:
@@ -247,13 +147,18 @@ def review_feed():
                 'has_next': False,
                 'has_prev': False
             }), 200
-    
+
     # Order by most recent
     query = query.order_by(desc(Review.created_at))
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
+    # Eager-load user/media so to_dict() doesn't lazy-load per review (N+1)
+    db.session.query(Review).options(
+        joinedload(Review.user), joinedload(Review.media)
+    ).filter(Review.id.in_([r.id for r in pagination.items])).all()
+
     return jsonify({
         'reviews': [review.to_dict() for review in pagination.items],
         'total': pagination.total,
@@ -270,9 +175,9 @@ def popular_reviews():
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     timeframe = request.args.get('timeframe', 'week')  # week, month, year, all
-    
+
     query = Review.query.filter_by(is_deleted=False)
-    
+
     # Filter by timeframe
     if timeframe == 'week':
         from datetime import timedelta
@@ -286,13 +191,18 @@ def popular_reviews():
         from datetime import timedelta
         year_ago = datetime.utcnow() - timedelta(days=365)
         query = query.filter(Review.created_at >= year_ago)
-    
+
     # Order by popularity (likes + helpful votes)
     query = query.order_by(desc(Review.likes_count + Review.helpful_count))
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
+    # Eager-load user/media so to_dict() doesn't lazy-load per review (N+1)
+    db.session.query(Review).options(
+        joinedload(Review.user), joinedload(Review.media)
+    ).filter(Review.id.in_([r.id for r in pagination.items])).all()
+
     return jsonify({
         'reviews': [review.to_dict() for review in pagination.items],
         'total': pagination.total,
@@ -308,18 +218,18 @@ def popular_reviews():
 def user_reviews(user_id):
     """Get all reviews by a specific user"""
     user = User.query.get_or_404(user_id)
-    
+
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
-    
+
     query = Review.query.filter_by(
         user_id=user_id,
         is_deleted=False
     ).order_by(desc(Review.created_at))
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
     return jsonify({
         'user': {
             'id': user.id,
@@ -344,33 +254,33 @@ def user_reviews(user_id):
 def like_review(review_id):
     """Like a review"""
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
+
     # Check if already liked
     existing = ReviewLike.query.filter_by(
         user_id=current_user.id,
         review_id=review_id
     ).first()
-    
+
     if existing:
         return jsonify({'error': 'You already liked this review'}), 400
-    
+
     try:
         like = ReviewLike(
             user_id=current_user.id,
             review_id=review_id
         )
         db.session.add(like)
-        
+
         # Update like count
         review.likes_count += 1
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Review liked',
             'like_count': review.likes_count
         }), 201
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to like review", exc_info=True)
@@ -382,26 +292,26 @@ def like_review(review_id):
 def unlike_review(review_id):
     """Unlike a review"""
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
+
     like = ReviewLike.query.filter_by(
         user_id=current_user.id,
         review_id=review_id
     ).first_or_404()
-    
+
     try:
         db.session.delete(like)
-        
+
         # Update like count
         if review.likes_count > 0:
             review.likes_count -= 1
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Review unliked',
             'like_count': review.likes_count
         }), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to unlike review", exc_info=True)
@@ -413,25 +323,25 @@ def unlike_review(review_id):
 def mark_helpful(review_id):
     """Mark a review as helpful or not helpful"""
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
+
     data = request.get_json()
     is_helpful = data.get('is_helpful')
-    
+
     if is_helpful is None:
         return jsonify({'error': 'is_helpful (true/false) is required'}), 400
-    
+
     # Check if user already voted
     existing = ReviewHelpful.query.filter_by(
         user_id=current_user.id,
         review_id=review_id
     ).first()
-    
+
     try:
         if existing:
             # Update existing vote
             old_vote = existing.is_helpful
             existing.is_helpful = is_helpful
-            
+
             # Update counts
             if old_vote != is_helpful:
                 if old_vote:
@@ -448,21 +358,21 @@ def mark_helpful(review_id):
                 is_helpful=is_helpful
             )
             db.session.add(vote)
-            
+
             # Update counts
             if is_helpful:
                 review.helpful_count += 1
             else:
                 review.not_helpful_count += 1
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Vote recorded',
             'helpful_count': review.helpful_count,
             'not_helpful_count': review.not_helpful_count
         }), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to record helpful vote", exc_info=True)
@@ -473,13 +383,13 @@ def mark_helpful(review_id):
 def get_review_replies(review_id):
     """Get all replies for a review"""
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
+
     replies = ReviewComment.query.filter_by(
         review_id=review_id,
         is_deleted=False,
         parent_id=None
     ).order_by(ReviewComment.created_at.asc()).all()
-    
+
     return jsonify({
         'replies': [reply.to_dict() for reply in replies],
         'count': len(replies)
@@ -491,16 +401,16 @@ def get_review_replies(review_id):
 def create_review_reply(review_id):
     """Reply to a review"""
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
-    
+
     data = request.get_json()
     content = data.get('content', '').strip()
-    
+
     if not content:
         return jsonify({'error': 'content is required'}), 400
-    
+
     if len(content) > 5000:
         return jsonify({'error': 'Reply must be 5000 characters or less'}), 400
-    
+
     try:
         reply = ReviewComment(
             review_id=review_id,
@@ -508,17 +418,17 @@ def create_review_reply(review_id):
             content=content
         )
         db.session.add(reply)
-        
+
         # Update comment count
         review.comments_count += 1
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Reply posted',
             'reply': reply.to_dict()
         }), 201
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to create review reply", exc_info=True)
@@ -530,23 +440,23 @@ def create_review_reply(review_id):
 def delete_review_reply(reply_id):
     """Delete a reply"""
     reply = ReviewComment.query.filter_by(id=reply_id, is_deleted=False).first_or_404()
-    
+
     # Check ownership
     if reply.user_id != current_user.id:
         return jsonify({'error': 'You can only delete your own replies'}), 403
-    
+
     try:
         reply.is_deleted = True
-        
+
         # Update comment count
         review = db.session.get(Review, reply.review_id)
         if review and review.comments_count > 0:
             review.comments_count -= 1
-        
+
         db.session.commit()
-        
+
         return jsonify({'message': 'Reply deleted'}), 200
-        
+
     except Exception:
         db.session.rollback()
         logger.error("Failed to delete review reply", exc_info=True)

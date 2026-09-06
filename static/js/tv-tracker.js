@@ -55,7 +55,7 @@ class TVTracker {
 
     async changeStatus(newStatus) {
         try {
-            const response = await fetch(`/api/tv/${this.showId}/status`, {
+            const response = await fetch(`/api/tv/${this.showId}/update-status`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })

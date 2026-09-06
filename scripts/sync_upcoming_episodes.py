@@ -14,7 +14,9 @@ from models import TVShowProgress, UpcomingEpisode
 from api.tmdb_client import fetch_tv_show_details
 import requests
 
-TMDB_API_KEY = os.getenv('TMDB_API_KEY', '42f58fc8daed3752d51fe70c4281c103')
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+if not TMDB_API_KEY:
+    sys.exit("TMDB_API_KEY environment variable is required")
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 
 

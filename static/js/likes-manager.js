@@ -12,28 +12,21 @@ class LikesManager {
 
     async init() {
         await this.checkIfLiked();
-        await this.loadLikesCount();
         this.renderButton();
         this.setupEventListeners();
     }
 
     async checkIfLiked() {
         try {
+            // Single request returns both liked state and total count,
+            // avoiding a second /likes round trip on page load.
             const response = await fetch(`/api/media/${this.mediaId}/likes/check?media_type=${this.mediaType}`);
             if (response.ok) {
                 const data = await response.json();
                 this.liked = data.liked;
-            }
-        } catch (error) {
-        }
-    }
-
-    async loadLikesCount() {
-        try {
-            const response = await fetch(`/api/media/${this.mediaId}/likes?media_type=${this.mediaType}`);
-            if (response.ok) {
-                const data = await response.json();
-                this.likesCount = data.count;
+                if (typeof data.count === 'number') {
+                    this.likesCount = data.count;
+                }
             }
         } catch (error) {
         }

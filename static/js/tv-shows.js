@@ -160,7 +160,9 @@
             }, 5000);
         }
 
-        // Search functionality with modern styling
+        // Search functionality with modern styling (debounced to avoid a
+        // TMDB proxy request per keystroke)
+        let searchDebounce;
         document.getElementById("show_name").addEventListener("input", function() {
             const input = this.value.toLowerCase();
             const autocompleteContainer = document.getElementById("autocomplete-items");
@@ -171,6 +173,13 @@
                 return;
             }
 
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+                searchShows(input, autocompleteContainer);
+            }, 300);
+        });
+
+        function searchShows(input, autocompleteContainer) {
             fetch(tmdbUrl('/search/tv', {language: 'en-US', query: input, page: 1, include_adult: true}))
             .then(response => response.json())
             .then(data => {
@@ -202,7 +211,7 @@
                 autocompleteContainer.style.display = autocompleteContainer.children.length > 0 ? "block" : "none";
             })
             .catch(() => {});
-        });
+        }
 
         document.addEventListener("click", function(e) {
             if (!e.target.matches("#show_name")) {

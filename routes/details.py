@@ -112,14 +112,16 @@ def tv_detail(show_id):
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
             # Find which lists contain this TV show
-            list_items = UserListItem.query.filter_by(
+            list_items = UserListItem.query.options(
+                joinedload(UserListItem.list)
+            ).filter_by(
                 media_id=show_id,
                 media_type='tv'
             ).all()
             
             for item in list_items:
-                if item.user_list.user_id == current_user.id:
-                    user_lists_with_show.append(item.user_list)
+                if item.list.user_id == current_user.id:
+                    user_lists_with_show.append(item.list)
             
             # Find diary entries for this TV show
             diary_entries = DiaryEntry.query.filter_by(
