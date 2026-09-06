@@ -66,8 +66,8 @@ def movie_detail(movie_id):
             ).all()
             
             for item in list_items:
-                if item.user_list.user_id == current_user.id:
-                    user_lists_with_movie.append(item.user_list)
+                if item.list.user_id == current_user.id:
+                    user_lists_with_movie.append(item.list)
             
             # Find diary entries for this movie
             diary_entries = DiaryEntry.query.filter_by(
