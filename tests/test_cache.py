@@ -179,6 +179,35 @@ def test_tmdb_retry_count_is_capped(monkeypatch):
     assert len(calls) == 2
 
 
+def test_movie_details_skips_release_dates_and_defaults_certification(monkeypatch):
+    from api.tmdb import movies
+
+    calls = []
+
+    def fake_cached_request(url, **kwargs):
+        calls.append((url, kwargs))
+        return {
+            "id": 1,
+            "title": "Test Movie",
+            "credits": {"cast": [], "crew": []},
+            "genres": [],
+            "videos": {"results": []},
+            "recommendations": {"results": []},
+            "reviews": {"results": []},
+        }
+
+    monkeypatch.setattr(movies, "cached_tmdb_request", fake_cached_request)
+
+    movie = movies.fetch_movie_details(1)
+
+    assert len(calls) == 1
+    assert "/movie/1?" in calls[0][0]
+    assert "append_to_response=credits,videos,recommendations,reviews" in calls[0][0]
+    assert "release_dates" not in calls[0][0]
+    assert calls[0][1]["max_retries"] == 2
+    assert movie["certification"] is None
+
+
 def test_actor_page_skips_optional_tmdb_enrichment(monkeypatch):
     from api.tmdb import people
 

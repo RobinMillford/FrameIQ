@@ -109,17 +109,6 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
         'certification': None
     }
 
-    # Fetch certification
-    release_url = f"https://api.themoviedb.org/3/movie/{movie_id}/release_dates?api_key={TMDB_API_KEY}"
-    release_data = cached_tmdb_request(release_url, max_age=86400)
-    if release_data.get('success', True):
-        for result in release_data.get('results', []):
-            if result.get('iso_3166_1') == 'US':
-                for release in result.get('release_dates', []):
-                    movie['certification'] = release.get('certification') or None
-                    break
-                break
-
     credits = data.get('credits', {})
     crew = credits.get('crew', [])
     for person in crew:
