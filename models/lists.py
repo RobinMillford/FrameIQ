@@ -51,8 +51,12 @@ def prefetch_list_data(user_lists):
         cat = categories_by_id.get(lc.category_id)
         if cat is not None:
             cats_by_list.setdefault(lc.list_id, []).append(lc)
-            # Stash resolved categories under the junction row for to_dict().
+            # Stash resolved categories under the junction row for _category_dicts().
             lc._resolved_category = cat
+        else:
+            # If the category row was deleted under us, skip it rather than
+            # crashing in _category_dicts().
+            pass
 
     # 4. Owners (one query).
     user_ids = {user_list.user_id for user_list in lists}
@@ -99,7 +103,25 @@ class UserList(db.Model):
         objs = getattr(self, '_prefetched_collaborators', None)
         if objs is None and hasattr(self, 'collaborators'):
             objs = self.collaborators.all()
-        return [c.to_dict() for c in (objs or [])]
+        out = []
+        for c in (objs or []):
+            if c is None:
+                continue
+            u = getattr(c, 'user', None)
+            if u is None:
+                continue
+            out.append({
+                'id': c.id,
+                'list_id': c.list_id,
+                'user': {
+                    'id': u.id,
+                    'username': u.username,
+                    'profile_picture': getattr(u, 'profile_picture', None)
+                },
+                'role': c.role,
+                'added_at': c.added_at.isoformat()
+            })
+        return out
 
     def _category_dicts(self):
         """Category dicts, using batch-prefetched rows when available."""
@@ -133,13 +155,17 @@ class UserList(db.Model):
         if item_count is None:
             item_count = self.items.count()
 
-        return {
-            'id': self.id,
-            'user': {
+        user_dict = None
+        if user is not None:
+            user_dict = {
                 'id': user.id,
                 'username': user.username,
                 'profile_picture': user.profile_picture
-            },
+            }
+
+        return {
+            'id': self.id,
+            'user': user_dict,
             'title': self.title,
             'description': self.description,
             'is_public': self.is_public,

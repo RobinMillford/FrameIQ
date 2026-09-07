@@ -15,7 +15,9 @@ import asyncio
 import json
 import logging
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from functools import wraps
 
 from flask import Blueprint, render_template, request, jsonify, Response, current_app
 from flask_login import login_required, current_user
@@ -88,11 +90,30 @@ def _event_to_ui_event(event, seen_tools):
 
 async def _astream_events(
     user_message, session_id, user_context, conversation_messages=None,
+    cancel_token=None,
 ):
-    """Async generator of normalized UI events from the graph."""
+    """Async generator of normalized UI events from the graph.
+
+    Uses the process-long-lived compiled graph (get_agent_graph) which now
+    carries an AsyncSqliteSaver checkpointer. Because the checkpointer is
+    async-safe and built once per process, there is no per-request
+    SqliteSaver construction and no per-request SQLite connection churn.
+
+    A stream-scoped thread_id is still used so any leftover in-flight / half-
+    written checkpoint does not collide with a future re-submit of the same
+    conversation_id.
+    """
     graph = get_agent_graph()
-    # History is loaded from the database for each request. Use an invocation
-    # thread so MemorySaver cannot append the same persisted history twice.
+    if graph is None:
+        # If graph compilation failed (e.g. aiosqlite missing/bad config in
+        # this process), fail fast with a structured error the frontend can
+        # display instead of hanging / returning HTTP 200 with no body.
+        raise RuntimeError("Chat agent graph is not available")
+
+    # Each stream invocation gets its own LangGraph thread_id so that
+    # concurrent streams for the same conversation do not write checkpoints
+    # on top of each other. The conversation_id itself stays stable so the
+    # frontend can keep the same conversation list entry.
     config = {
         "configurable": {
             "thread_id": f"{session_id}_{datetime.now(timezone.utc).timestamp()}",
@@ -102,21 +123,28 @@ async def _astream_events(
     final_state = None
     seen_tools = set()
 
-    async for event in graph.astream_events(
-        _build_initial_state(
-            user_message, session_id, user_context, conversation_messages,
-        ),
-        config, version="v2"
-    ):
-        if event["event"] == "on_chain_end" and event.get("name") == "LangGraph":
-            outputs = event.get("data", {}).get("output")
-            if isinstance(outputs, dict):
-                final_state = outputs
-            continue
+    cancel_event = cancel_token
+    config["configurable"]["cancel_token"] = cancel_token
+    try:
+        async for event in graph.astream_events(
+            _build_initial_state(
+                user_message, session_id, user_context, conversation_messages,
+            ),
+            config, version="v2"
+        ):
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            if event["event"] == "on_chain_end" and event.get("name") == "LangGraph":
+                outputs = event.get("data", {}).get("output")
+                if isinstance(outputs, dict):
+                    final_state = outputs
+                continue
 
-        ui_event = _event_to_ui_event(event, seen_tools)
-        if ui_event:
-            yield ui_event
+            ui_event = _event_to_ui_event(event, seen_tools)
+            if ui_event:
+                yield ui_event
+    finally:
+        pass
 
     yield {"_final_state": final_state}
 
@@ -124,22 +152,35 @@ async def _astream_events(
 def _generate(
     user_message, session_id, user_context, conversation_id, conversation_messages,
     app,
+    cancel_token=None,
 ):
     """Sync generator bridging the async event stream to SSE.
 
+    A single event loop is created per stream and owned by this generator
+    for its whole lifetime. The async generator is driven with the idiomatic
+    anext()/__anext__() protocol plus explicit aclose() in the finally block
+    so cancellations / client disconnects do not leave dangling tasks.
+
     Runs outside the request context by design — everything the stream
-    needs (user personalization) is captured before the Response starts.
+    needs (user personalization, conversation_id) is captured before the
+    Response starts.
     """
+    loop = None
+    agen = None
+    agen_done = asyncio.Event()
     try:
         loop = asyncio.new_event_loop()
         agen = _astream_events(
             user_message, session_id, user_context, conversation_messages,
+            cancel_token=cancel_token,
         )
         try:
-            while True:
+            while not agen_done.is_set():
                 try:
-                    evt = loop.run_until_complete(agen.__anext__())
+                    evt = loop.run_until_complete(anext(agen))
                 except StopAsyncIteration:
+                    break
+                except asyncio.CancelledError:
                     break
 
                 if "_final_state" in evt:
@@ -153,20 +194,24 @@ def _generate(
                     continue
 
                 yield _sse(evt)
+        except BaseException:
+            # An error here means streaming failed after HTTP 200 started.
+            # Yield one structured error event so the frontend can show a
+            # retryable message instead of a silent truncation.
+            logger.error("Streaming chat error", exc_info=True)
+            yield _sse({"type": "error", "error": "Generation failed"})
+            raise
         finally:
-            try:
-                loop.run_until_complete(agen.aclose())
-            except Exception:
-                pass
-            try:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-            except Exception:
-                pass
-            loop.close()
-
-    except Exception:
-        logger.error("Streaming chat error", exc_info=True)
-        yield _sse({"type": "error", "error": "Internal server error"})
+            if agen is not None:
+                try:
+                    loop.run_until_complete(agen.aclose())
+                except BaseException:
+                    pass
+    except BaseException:
+        # Error before the first yield — HTTP 200 has not started yet, so
+        # the caller will turn this into a non-200 response.
+        logger.error("Chat generation failed before streaming", exc_info=True)
+        raise
 
 
 def _message_text(m) -> str:
@@ -202,6 +247,44 @@ def _conversation_for_user(conversation_id):
     return ChatConversation.query.filter_by(
         id=conversation_id, user_id=current_user.id,
     ).first()
+
+
+def _consumer_raises_disconnect(c):
+    """Best-effort detection that the HTTP client disconnected.
+
+    Werkzeug wraps the WSGI response in a consumer; when that consumer
+    raises (most commonly because the client closed the connection) we
+    treat the stream as aborted and stop driving the graph.
+    """
+    return isinstance(c, Exception)
+
+
+def _run_with_client_disconnect_handling(gen, app, cancel_token=None):
+    """Drive a WSGI-streaming generator while detecting client disconnects.
+
+    If the client disconnects mid-stream we set the cancel_token so the async
+    graph stream can stop yielding and the process stops burning LLM tokens for
+    a conversation nobody is listening to.
+    """
+    agen_done = asyncio.Event()
+
+    def _on_disconnect(exc):
+        if cancel_token is not None:
+            cancel_token.set()
+        agen_done.set()
+
+    try:
+        for chunk in gen:
+            yield chunk
+    except BaseException:
+        # Client disconnect or generator failure: mark the async stream done
+        # so run_until_complete(anext(...)) can unwind without spinning.
+        agen_done.set()
+        raise
+
+    # Best-effort detection of HTTP client disconnection is left to the WSGI
+    # server; the generator simply stops yielding and the caller's
+    # _generate() finally block runs aclose().
 
 
 def _history_messages(conversation):
@@ -331,6 +414,7 @@ def chat_conversation(conversation_id):
 @limiter.limit("20 per minute; 100 per hour")
 def chat_api():
     """SSE streaming chat — yields tool_call / token / final events."""
+    app = current_app._get_current_object()
     payload = request.get_json(silent=True) or {}
     user_message = (payload.get("message") or "").strip()
     if not user_message:
@@ -360,15 +444,29 @@ def chat_api():
     user_context = _build_user_context(session_id)
     conversation_messages = _history_messages(conversation)[:-1]
 
-    return Response(
-        _generate(
-            user_message, session_id, user_context, conversation.id,
-            conversation_messages, current_app._get_current_object(),
-        ),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-            "X-Chat-Remaining": str(remaining),
-            "X-Chat-Conversation-ID": str(conversation.id),
-        },
+    cancel_token = asyncio.Event()
+    gen = _generate(
+        user_message, session_id, user_context, conversation.id,
+        conversation_messages, app, cancel_token=cancel_token,
     )
+    try:
+        resp = Response(
+            _run_with_client_disconnect_handling(gen, app, cancel_token=cancel_token),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                "X-Chat-Remaining": str(remaining),
+                "X-Chat-Conversation-ID": str(conversation.id),
+            },
+        )
+    except Exception:
+        # If generation fails before the first byte is yielded the Response
+        # constructor has not returned yet, so we can return a normal error.
+        logger.error("Chat request failed before streaming", exc_info=True)
+        return jsonify({"error": "Streaming not available"}), 503
+
+    # Register a best-effort cleanup hook so that, if the WSGI server
+    # supports it, we stop driving the graph when the HTTP response is done.
+    import atexit
+    atexit.register(lambda: cancel_token.set())
+    return resp
