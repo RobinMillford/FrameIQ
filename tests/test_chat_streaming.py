@@ -296,3 +296,58 @@ class TestPersistentMemory:
         from src.agents.graph import _CHECKPOINT_DB
         assert _CHECKPOINT_DB.endswith("chat_memory.db")
         assert os.path.isdir(os.path.dirname(_CHECKPOINT_DB))
+
+    def test_graph_initialization_is_actually_executed(self, app):
+        """Regression: the async graph builder must be run, not just defined.
+
+        A prior production bug left _get_agent_graph_async as an unawaited
+        coroutine, so get_agent_graph() ended up returning None and every
+        chat request raised 'Chat agent graph is not available'.
+        """
+        from src.agents.graph import get_agent_graph
+        graph = get_agent_graph()
+        assert graph is not None, "graph initialization produced None"
+        assert hasattr(graph, "astream_events") or hasattr(
+            graph, "stream"
+        ), "graph does not look compiled"
+
+    def test_graph_initialization_failure_is_logged(self, app, caplog):
+        """If graph construction fails, the real exception must be logged
+        rather than hidden behind a generic 'Chat agent graph is not
+        available' message.
+        """
+        import logging
+        caplog.set_level(logging.ERROR)
+
+        from src.agents import graph as graph_mod
+
+        original_builder = graph_mod._build_graph_once
+        original_instance = graph_mod._graph_instance
+        original_error = graph_mod._graph_error
+        original_tb = graph_mod._graph_traceback
+        original_ready = graph_mod._ready
+        import threading
+        try:
+            async def _broken_build():
+                raise ConnectionError("boom-checkpoint-unreachable")
+
+            graph_mod._build_graph_once = _broken_build
+            graph_mod._graph_instance = None
+            graph_mod._graph_error = None
+            graph_mod._graph_traceback = None
+            graph_mod._ready = threading.Event()
+
+            result = graph_mod.get_agent_graph()
+            assert result is None
+            joined = "\n".join(
+                record.getMessage() for record in caplog.records
+            )
+            assert "boom-checkpoint-unreachable" in joined, (
+                "original build exception was not logged; got: %r" % joined
+            )
+        finally:
+            graph_mod._build_graph_once = original_builder
+            graph_mod._graph_instance = original_instance
+            graph_mod._graph_error = original_error
+            graph_mod._graph_traceback = original_tb
+            graph_mod._ready = original_ready

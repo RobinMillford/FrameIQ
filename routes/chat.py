@@ -11,13 +11,12 @@ SSE event types:
     error     — unrecoverable failure
 """
 
-import asyncio
 import json
 import logging
+import queue
 import re
-from contextlib import asynccontextmanager
+import threading
 from datetime import datetime, timezone
-from functools import wraps
 
 from flask import Blueprint, render_template, request, jsonify, Response, current_app
 from flask_login import login_required, current_user
@@ -27,7 +26,7 @@ from extensions import limiter
 from models import (
     db, User, ChatConversation, ChatMessage, UserChatDailyUsage, UserChatMemory,
 )
-from src.agents.graph import get_agent_graph
+from src.agents.graph import get_agent_graph, submit_to_chat_loop
 from src.api.agent_service import _build_initial_state, _build_user_context
 
 logger = logging.getLogger(__name__)
@@ -88,51 +87,49 @@ def _event_to_ui_event(event, seen_tools):
     return None
 
 
-async def _astream_events(
-    user_message, session_id, user_context, conversation_messages=None,
-    cancel_token=None,
-):
-    """Async generator of normalized UI events from the graph.
+def _preflight_checkpointer(graph, timeout=10):
+    """Verify the checkpointer is alive BEFORE the SSE Response is created.
 
-    Uses the process-long-lived compiled graph (get_agent_graph) which now
-    carries an AsyncSqliteSaver checkpointer. Because the checkpointer is
-    async-safe and built once per process, there is no per-request
-    SqliteSaver construction and no per-request SQLite connection churn.
+    Runs checkpointer.setup() ON the chat loop (the only loop the saver
+    may be used from) and blocks for the result. Graphs without a
+    checkpointer (test doubles) pass trivially.
 
-    A stream-scoped thread_id is still used so any leftover in-flight / half-
-    written checkpoint does not collide with a future re-submit of the same
-    conversation_id.
+    Returns True if streaming may start, False if the caller must return
+    HTTP 503 instead.
     """
-    graph = get_agent_graph()
-    if graph is None:
-        # If graph compilation failed (e.g. aiosqlite missing/bad config in
-        # this process), fail fast with a structured error the frontend can
-        # display instead of hanging / returning HTTP 200 with no body.
-        raise RuntimeError("Chat agent graph is not available")
+    checkpointer = getattr(graph, "checkpointer", None)
+    setup = getattr(checkpointer, "setup", None)
+    if setup is None:
+        return True
 
-    # Each stream invocation gets its own LangGraph thread_id so that
-    # concurrent streams for the same conversation do not write checkpoints
-    # on top of each other. The conversation_id itself stays stable so the
-    # frontend can keep the same conversation list entry.
-    config = {
-        "configurable": {
-            "thread_id": f"{session_id}_{datetime.now(timezone.utc).timestamp()}",
-        },
-        "recursion_limit": 20,
-    }
-    final_state = None
-    seen_tools = set()
+    async def _run_setup():
+        await checkpointer.setup()
 
-    cancel_event = cancel_token
-    config["configurable"]["cancel_token"] = cancel_token
     try:
-        async for event in graph.astream_events(
-            _build_initial_state(
-                user_message, session_id, user_context, conversation_messages,
-            ),
-            config, version="v2"
-        ):
-            if cancel_event is not None and cancel_event.is_set():
+        submit_to_chat_loop(_run_setup()).result(timeout=timeout)
+        return True
+    except Exception:
+        logger.error("Chat checkpointer preflight failed", exc_info=True)
+        return False
+
+
+async def _produce_stream(out, graph, initial_state, config, cancel):
+    """Producer coroutine. Runs EXCLUSIVELY on the chat loop.
+
+    Iterates graph.astream_events() on the same loop the AsyncSqliteSaver
+    was constructed on, normalizes events, and pushes them into a
+    thread-safe queue for the sync SSE consumer. The async generator is
+    always aclosed on this same loop — no cross-loop cleanup exists.
+
+    Queue protocol: ("event", ui_event) | ("final_state", state|None) |
+    ("error", message) | ("done", None). "done" is always last.
+    """
+    seen_tools = set()
+    final_state = None
+    agen = graph.astream_events(initial_state, config, version="v2")
+    try:
+        async for event in agen:
+            if cancel is not None and cancel.is_set():
                 break
             if event["event"] == "on_chain_end" and event.get("name") == "LangGraph":
                 outputs = event.get("data", {}).get("output")
@@ -142,76 +139,80 @@ async def _astream_events(
 
             ui_event = _event_to_ui_event(event, seen_tools)
             if ui_event:
-                yield ui_event
+                out.put(("event", ui_event))
+    except Exception:
+        # Failure after streaming may already have started: the consumer
+        # turns this marker into a structured SSE error event (HTTP status
+        # can no longer change once headers are committed).
+        logger.error("Streaming chat error", exc_info=True)
+        out.put(("error", "Generation failed"))
+    else:
+        out.put(("final_state", final_state))
     finally:
-        pass
-
-    yield {"_final_state": final_state}
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
+        out.put(("done", None))
 
 
 def _generate(
-    user_message, session_id, user_context, conversation_id, conversation_messages,
-    app,
+    initial_state, config, conversation_id,
+    app, graph,
     cancel_token=None,
 ):
-    """Sync generator bridging the async event stream to SSE.
+    """Bridge the chat-loop event stream to SSE.
 
-    A single event loop is created per stream and owned by this generator
-    for its whole lifetime. The async generator is driven with the idiomatic
-    anext()/__anext__() protocol plus explicit aclose() in the finally block
-    so cancellations / client disconnects do not leave dangling tasks.
+    Eagerly submits the producer coroutine to the chat loop (raising
+    BEFORE the Flask Response is created on failure), then returns a
+    sync generator that yields SSE chunks. No per-request event loop is
+    created here: the AsyncSqliteSaver is only ever touched on the chat
+    loop, and the request thread only blocks on a thread-safe queue.
 
     Runs outside the request context by design — everything the stream
-    needs (user personalization, conversation_id) is captured before the
-    Response starts.
+    needs (initial state, config, conversation_id) is captured before
+    the Response starts.
     """
-    loop = None
-    agen = None
-    agen_done = asyncio.Event()
+    out = queue.Queue()
     try:
-        loop = asyncio.new_event_loop()
-        agen = _astream_events(
-            user_message, session_id, user_context, conversation_messages,
-            cancel_token=cancel_token,
+        submit_to_chat_loop(
+            _produce_stream(out, graph, initial_state, config, cancel_token)
         )
-        try:
-            while not agen_done.is_set():
-                try:
-                    evt = loop.run_until_complete(anext(agen))
-                except StopAsyncIteration:
-                    break
-                except asyncio.CancelledError:
-                    break
+    except Exception:
+        logger.error("Chat stream submission failed", exc_info=True)
+        raise
 
-                if "_final_state" in evt:
-                    final_state = evt["_final_state"]
-                    if final_state:
+    def _consume():
+        try:
+            while True:
+                kind, payload = out.get()
+                if kind == "event":
+                    yield _sse(payload)
+                elif kind == "final_state":
+                    if payload:
                         with app.app_context():
-                            _save_assistant_message(conversation_id, final_state)
-                        yield _sse(_build_final_event(final_state))
+                            _save_assistant_message(conversation_id, payload)
+                        yield _sse(_build_final_event(payload))
                     else:
                         yield _sse({"type": "error", "error": "No response generated"})
-                    continue
-
-                yield _sse(evt)
-        except BaseException:
-            # An error here means streaming failed after HTTP 200 started.
-            # Yield one structured error event so the frontend can show a
-            # retryable message instead of a silent truncation.
-            logger.error("Streaming chat error", exc_info=True)
-            yield _sse({"type": "error", "error": "Generation failed"})
+                elif kind == "error":
+                    yield _sse({"type": "error", "error": payload})
+                elif kind == "done":
+                    return
+        except GeneratorExit:
+            # WSGI server stopped iterating (client disconnected): stop
+            # burning LLM tokens for a conversation nobody listens to.
+            if cancel_token is not None:
+                cancel_token.set()
             raise
+        except Exception:
+            logger.error("Chat generation failed during streaming", exc_info=True)
+            yield _sse({"type": "error", "error": "Generation failed"})
         finally:
-            if agen is not None:
-                try:
-                    loop.run_until_complete(agen.aclose())
-                except BaseException:
-                    pass
-    except BaseException:
-        # Error before the first yield — HTTP 200 has not started yet, so
-        # the caller will turn this into a non-200 response.
-        logger.error("Chat generation failed before streaming", exc_info=True)
-        raise
+            if cancel_token is not None:
+                cancel_token.set()
+
+    return _consume()
 
 
 def _message_text(m) -> str:
@@ -248,43 +249,6 @@ def _conversation_for_user(conversation_id):
         id=conversation_id, user_id=current_user.id,
     ).first()
 
-
-def _consumer_raises_disconnect(c):
-    """Best-effort detection that the HTTP client disconnected.
-
-    Werkzeug wraps the WSGI response in a consumer; when that consumer
-    raises (most commonly because the client closed the connection) we
-    treat the stream as aborted and stop driving the graph.
-    """
-    return isinstance(c, Exception)
-
-
-def _run_with_client_disconnect_handling(gen, app, cancel_token=None):
-    """Drive a WSGI-streaming generator while detecting client disconnects.
-
-    If the client disconnects mid-stream we set the cancel_token so the async
-    graph stream can stop yielding and the process stops burning LLM tokens for
-    a conversation nobody is listening to.
-    """
-    agen_done = asyncio.Event()
-
-    def _on_disconnect(exc):
-        if cancel_token is not None:
-            cancel_token.set()
-        agen_done.set()
-
-    try:
-        for chunk in gen:
-            yield chunk
-    except BaseException:
-        # Client disconnect or generator failure: mark the async stream done
-        # so run_until_complete(anext(...)) can unwind without spinning.
-        agen_done.set()
-        raise
-
-    # Best-effort detection of HTTP client disconnection is left to the WSGI
-    # server; the generator simply stops yielding and the caller's
-    # _generate() finally block runs aclose().
 
 
 def _history_messages(conversation):
@@ -420,6 +384,17 @@ def chat_api():
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
 
+    # PREFLIGHT — before any side effect and before the Response exists:
+    # the graph and its checkpointer must be verified ALIVE. Any failure
+    # here returns HTTP 503 with JSON (headers not yet committed).
+    graph = get_agent_graph()
+    if graph is None:
+        logger.error("Chat agent graph is not available; returning 503")
+        return jsonify({"error": "Chat service temporarily unavailable"}), 503
+    if not _preflight_checkpointer(graph):
+        logger.error("Chat checkpointer is not available; returning 503")
+        return jsonify({"error": "Chat service temporarily unavailable"}), 503
+
     conversation_id = payload.get("conversation_id")
     conversation = _conversation_for_user(conversation_id)
     if conversation is None:
@@ -443,30 +418,43 @@ def chat_api():
     # generator itself runs without one.
     user_context = _build_user_context(session_id)
     conversation_messages = _history_messages(conversation)[:-1]
-
-    cancel_token = asyncio.Event()
-    gen = _generate(
-        user_message, session_id, user_context, conversation.id,
-        conversation_messages, app, cancel_token=cancel_token,
+    initial_state = _build_initial_state(
+        user_message, session_id, user_context, conversation_messages,
     )
+    # Each stream invocation gets its own LangGraph thread_id so that
+    # concurrent streams for the same conversation do not write checkpoints
+    # on top of each other. The conversation_id itself stays stable so the
+    # frontend can keep the same conversation list entry. Conversation
+    # continuity comes from the ChatMessage rows passed in as initial
+    # state, not from resuming a shared checkpoint thread.
+    config = {
+        "configurable": {
+            "thread_id": f"{session_id}_{datetime.now(timezone.utc).timestamp()}",
+        },
+        "recursion_limit": 20,
+    }
+
+    # threading.Event (not asyncio.Event): set from the WSGI consumer
+    # thread, polled on the chat loop thread. Only is_set()/set() are
+    # used, so no loop binding is involved on either side.
+    cancel_token = threading.Event()
     try:
-        resp = Response(
-            _run_with_client_disconnect_handling(gen, app, cancel_token=cancel_token),
-            mimetype="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-                "X-Chat-Remaining": str(remaining),
-                "X-Chat-Conversation-ID": str(conversation.id),
-            },
+        gen = _generate(
+            initial_state, config, conversation.id,
+            app, graph, cancel_token=cancel_token,
         )
     except Exception:
-        # If generation fails before the first byte is yielded the Response
-        # constructor has not returned yet, so we can return a normal error.
+        # Submission to the chat loop failed before the Response was
+        # created, so HTTP 503 with JSON is still possible here.
         logger.error("Chat request failed before streaming", exc_info=True)
-        return jsonify({"error": "Streaming not available"}), 503
+        return jsonify({"error": "Chat service temporarily unavailable"}), 503
 
-    # Register a best-effort cleanup hook so that, if the WSGI server
-    # supports it, we stop driving the graph when the HTTP response is done.
-    import atexit
-    atexit.register(lambda: cancel_token.set())
-    return resp
+    return Response(
+        gen,
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+            "X-Chat-Remaining": str(remaining),
+            "X-Chat-Conversation-ID": str(conversation.id),
+        },
+    )
