@@ -115,6 +115,13 @@ User message
 - **Conversation memory** persisted (SQLite checkpointing, survives restarts)
 - **User personalization** — ratings, favorite genres, TV progress, watchlist injected per request
 - **Command palette** (⌘K) + **Slide-over panel** (⌘J) for keyboard-first UX
+- **Production-hardened streaming**: single process event loop owns the
+  `AsyncSqliteSaver` checkpointer (no cross-loop use); graph + checkpoint
+  verified **before** headers commit or the API returns `503 JSON`
+  (mid-stream failures arrive as SSE `error` events, never a status flip);
+  per-stream checkpoint threads so concurrent chats can't collide
+- **Limits**: 5 questions per user per UTC day, 20/min + 100/hour per IP —
+  the UI shows remaining quota live via `X-Chat-Remaining` headers
 
 ### 📊 Personal Analytics
 - Watch time, genre breakdown, top directors/actors
@@ -150,7 +157,7 @@ User message
 - **Radii:** 4 / 6 / 10px — sharp, broadcast-grade
 - **Film grain** overlay + **projector beam/dust** atmosphere
 
-All 49 templates unified on a single design token system. Zero Poppins, zero indigo/violet, zero unused dependencies.
+All 47 templates unified on a single design token system. Zero Poppins, zero indigo/violet, zero unused dependencies.
 
 ---
 
@@ -186,7 +193,7 @@ python app.py          # http://localhost:5000
 ### Run Tests
 
 ```bash
-pytest tests/ -v        # 104 tests, ~30s
+pytest tests/ -v        # 143 tests, ~45s
 uv run flake8 .         # lint (max-line 127, complexity 10)
 ```
 
@@ -194,17 +201,24 @@ uv run flake8 .         # lint (max-line 127, complexity 10)
 
 ```bash
 cp .env.example .env    # production values
-make deploy             # clean build + start
+make deploy             # pull + clean build + start (run from /opt/frameiq on the VPS)
 ```
 
-Stack: **web** (Gunicorn 4 workers) + **db** (Postgres 16) + **system nginx** (80/443)
+Stack: **web** (Gunicorn 2 workers × 4 threads, Python 3.11-slim) + **db** (Postgres 16-alpine).
+TLS terminates at the host nginx (ports 80/443, certbot); Postgres is bound to
+loopback only — never exposed to the internet.
 
 ```bash
-make logs      # tail web logs
-make restart   # zero-downtime restart
-make ps        # container status
-make clean     # wipe everything including DB ⚠️
+make status    # container status + /agent_health check
+make logs      # tail web logs (logs-db for Postgres)
+make restart   # restart web container
+make backup    # pg_dump snapshot via scripts/backup.sh
+make db-shell  # psql into the production DB
+make migrate   # create_all() for new tables
 ```
+
+Chat memory (`instance/chat_memory.db`, WAL mode) persists on the `chat_memory`
+volume across restarts and rebuilds.
 
 ---
 
@@ -215,7 +229,7 @@ make clean     # wipe everything including DB ⚠️
 | Variable | Required | Description |
 |----------|:--------:|-------------|
 | `SECRET_KEY` | ✅ | Flask session secret (32+ chars) |
-| `DATABASE_URL` | ✅ | `postgresql://user:pass@host:5432/db` |
+| `DATABASE_URL` | ✅ (local dev) | `postgresql://user:pass@host:5432/db` — auto-built from `POSTGRES_*` in Docker |
 | `TMDB_API_KEY` | ✅ | [TMDb API](https://www.themoviedb.org/settings/api) |
 | `OPENAI_API_KEY` | ✅ | OpenAI API key (chat + embeddings) |
 | `GOOGLE_CLIENT_ID` | ✅ | Google OAuth 2.0 |
@@ -223,7 +237,13 @@ make clean     # wipe everything including DB ⚠️
 | `CLOUDINARY_CLOUD_NAME` | ✅ | Avatar uploads |
 | `CLOUDINARY_API_KEY` | ✅ | Cloudinary |
 | `CLOUDINARY_API_SECRET` | ✅ | Cloudinary |
-| `NEWS_API_KEY` | ⭕ | Entertainment news feed |
+| `CLOUDINARY_URL` | ⭕ | Cloudinary (alternative single-var config) |
+| `STREAM_PROVIDER` | ⭕ | Default embed source: `rive` \| `vidking` \| `vidy` \| `oneembed` |
+| `RATELIMIT_STORAGE_URI` | ⭕ | Redis URI for multi-worker rate limits (defaults to memory) |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | ✅ (Docker) | Self-hosted DB credentials |
+| `POSTGRES_EXPOSED_PORT` | ⭕ | Loopback-bound host port for the episode-sync workflow |
+| `WEB_WORKERS` / `WEB_THREADS` | ⭕ | Gunicorn sizing (defaults 2 / 4 — do not raise blindly) |
+| `FLASK_DEBUG` | ⭕ | Never `true` in production |
 | `MAIL_SERVER` / `MAIL_*` | ⭕ | Password reset emails |
 | `RATELIMIT_STORAGE_URI` | ⭕ | Redis for rate limiting (defaults to memory) |
 
@@ -234,7 +254,7 @@ make clean     # wipe everything including DB ⚠️
 ```
 FrameIQ/
 ├── app.py                      # Application factory (create_app)
-├── models.py                   # 39 KB — all SQLAlchemy models
+├── models/                     # SQLAlchemy models package (user, media, chat, …)
 ├── extensions.py               # Flask extensions (limiter, mail, db)
 ├── requirements.txt
 │
@@ -267,7 +287,7 @@ FrameIQ/
 │   ├── stream_providers.py     # Embed providers (Rive, VidKing, Vidy, 1Embed)
 │   └── chatbot.py              # LLM helpers
 │
-├── templates/                  # 49 Jinja2 templates (unified on base.html)
+├── templates/                  # 47 Jinja2 templates (unified on base.html)
 ├── static/
 │   ├── css/                    # tokens.css, chrome.css, detail.css, projector.css
 │   ├── js/                     # chat-page.js, chrome.js, projector-dust.js
@@ -291,18 +311,20 @@ FrameIQ/
 
 | Workflow | Trigger | Actions |
 |----------|---------|---------|
-| **ci-cd.yml** | Push to `main`/`develop` | pytest (104) + flake8 |
+| **ci-cd.yml** | Push to `main`/`develop` | pytest (143) + flake8 |
 | **deploy.yml** | Push to `main` (after CI pass) | SSH → VPS → `make deploy` |
 | **sync-upcoming-episodes.yml** | Daily 02:00 UTC | Sync TMDb → PostgreSQL |
 
 **VPS:** Self-hosted PostgreSQL 16, Docker Compose, system nginx, nightly `pg_dump` backups, certbot SSL.
+
+Health: `/health` (app) and `/agent_health` (chat graph loaded?) — `make status` hits the latter.
 
 ---
 
 ## 🧪 Testing & Quality
 
 ```bash
-# Full suite (104 tests)
+# Full suite (143 tests)
 pytest tests/
 
 # Smoke only
@@ -315,7 +337,7 @@ pytest tests/test_models.py
 pytest -k "test_name"
 ```
 
-**Quality gates:** 104 tests passing • flake8 clean • vulture clean • 0 secrets • 0 dead code
+**Quality gates:** 143 tests passing • flake8 clean • vulture clean • 0 secrets • 0 dead code
 
 ---
 
