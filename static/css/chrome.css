@@ -285,19 +285,32 @@
 .cinebot-inputbar input:focus { border-color: #fff; }
 .cinebot-inputbar input::placeholder { color: var(--text-low); }
 .cinebot-inputbar button {
-    background: #fff;
+    background: var(--accent);
     border: none;
-    border-radius: var(--r-md);
-    width: 42px;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
     color: #fff;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background var(--dur-fast) var(--ease-out);
+    transition: background var(--dur-fast) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
 }
-.cinebot-inputbar button:hover { background: #d9d9d9; }
+.cinebot-inputbar button:hover { background: var(--accent-hi); }
+.cinebot-inputbar button:active { transform: scale(0.95); }
 .cinebot-inputbar button:disabled { opacity: 0.5; cursor: default; }
+.cinebot-inputbar button:focus-visible {
+    outline: 2px solid var(--accent-hi);
+    outline-offset: 2px;
+}
+.cinebot-inputbar button svg {
+    width: 18px;
+    height: 18px;
+    color: #fff;
+}
 
 @media (prefers-reduced-motion: reduce) {
     .cinebot-panel { transition: none; }

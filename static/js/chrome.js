@@ -265,7 +265,7 @@
                 <input type="text" placeholder="Ask about any movie, show, or your taste…"
                        aria-label="Message CineBot">
                 <button aria-label="Send">
-                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <i data-lucide="arrow-up" class="w-4 h-4"></i>
                 </button>
             </div>`;
         document.body.appendChild(overlay);
