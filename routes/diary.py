@@ -3,20 +3,187 @@ Diary API Routes
 Handles user diary entries for logging watched movies/shows
 """
 import logging
+import threading
+import time
 
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
-from models import db, User, DiaryEntry, MediaItem
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
-from datetime import datetime
+from datetime import datetime, date
 import requests
 import os
+
+from extensions import limiter
+from models import db, User, DiaryEntry, MediaItem, user_viewed
 
 logger = logging.getLogger(__name__)
 
 diary = Blueprint('diary', __name__)
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+
+
+# ── Quick log (Feature #1) ───────────────────────────────────────────────────
+# Canonical watched state: DiaryEntry is the source of truth for movie watch
+# history (one row per watch event, rewatches included). The user_viewed
+# junction is a derived boolean set ("has watched at least once") kept in
+# sync on every log event; migrates/migrate_canonical_watched.py reconciles
+# pre-existing data once.
+
+# Duplicate-submission window (double-click, rapid taps, browser retry).
+_QUICKLOG_COOLDOWN_SECONDS = 3.0
+_quicklog_guard = {}          # (user_id, tmdb_id, media_type) -> monotonic ts
+_quicklog_guard_lock = threading.Lock()
+
+
+def _quicklog_is_duplicate(user_id, tmdb_id, media_type):
+    """True when the same quick-log action was submitted within the cooldown
+    window; records this submission either way.
+
+    Deliberately time-based rather than a DB unique constraint: two genuine
+    watches on the same day are legitimate history and must both be
+    recordable (the second is a rewatch). Only *rapid duplicate requests of
+    the same action* are collapsed."""
+    now = time.monotonic()
+    key = (user_id, tmdb_id, media_type)
+    with _quicklog_guard_lock:
+        # Keep the guard dict bounded.
+        if len(_quicklog_guard) > 10000:
+            cutoff = now - _QUICKLOG_COOLDOWN_SECONDS * 20
+            for stale in [k for k, ts in _quicklog_guard.items() if ts < cutoff]:
+                _quicklog_guard.pop(stale, None)
+        last = _quicklog_guard.get(key)
+        _quicklog_guard[key] = now
+    return last is not None and (now - last) < _QUICKLOG_COOLDOWN_SECONDS
+
+
+def _get_or_create_movie(media_id, data):
+    """Find the MediaItem for a TMDb movie id, creating it locally when
+    possible.
+
+    Prefers metadata sent from the card (title/poster/release date are
+    already on the page), so a quick log normally performs no external
+    request. Falls back to the shared TMDb-backed lookup only when we know
+    nothing about the title."""
+    media_item = MediaItem.query.filter_by(
+        tmdb_id=media_id, media_type='movie').first()
+    if media_item:
+        return media_item
+
+    title = (data.get('title') or '').strip()
+    if title:
+        release_date = None
+        date_str = data.get('release_date') or ''
+        if date_str:
+            try:
+                release_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+            except ValueError:
+                release_date = None
+        media_item = MediaItem(
+            tmdb_id=media_id,
+            media_type='movie',
+            title=title[:200],
+            release_date=release_date,
+            poster_path=(data.get('poster_path') or None),
+        )
+        db.session.add(media_item)
+        db.session.flush()
+        return media_item
+
+    from utils.collections import get_or_create_media_item
+    return get_or_create_media_item(media_id, 'movie')
+
+
+@diary.route('/api/media/<int:media_id>/log', methods=['POST'])
+@login_required
+@limiter.limit("60 per minute")
+def quick_log_movie(media_id):
+    """One-tap movie logging.
+
+    Creates today's watch event (a rewatch when the movie was already
+    watched) and syncs the derived viewed state. Defaults: watched today,
+    no rating, no review. Duplicate submissions inside the cooldown window
+    return the first submission's outcome instead of duplicating history."""
+    data = request.get_json(silent=True) or {}
+    media_type = data.get('media_type', 'movie')
+    if media_type != 'movie':
+        return jsonify({'error': 'Quick log is for movies; TV tracking is separate'}), 400
+
+    if _quicklog_is_duplicate(current_user.id, media_id, 'movie'):
+        # Same action re-submitted: report the state the first submission
+        # produced instead of creating a second event.
+        return jsonify({
+            'success': True,
+            'watched': True,
+            'logged_today': True,
+            'duplicate': True,
+        }), 200
+
+    rating = data.get('rating')
+    if rating is not None:
+        try:
+            rating = float(rating)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid rating'}), 400
+        if not (0.5 <= rating <= 5.0):
+            return jsonify({'error': 'Rating must be between 0.5 and 5.0'}), 400
+
+    try:
+        media_item = _get_or_create_movie(media_id, data)
+        if not media_item:
+            return jsonify({'error': 'Media item not found'}), 404
+
+        watch_count = DiaryEntry.query.filter_by(
+            user_id=current_user.id,
+            media_id=media_item.id,
+            media_type='movie',
+        ).count()
+        is_rewatch = watch_count > 0
+
+        entry = DiaryEntry(
+            user_id=current_user.id,
+            media_id=media_item.id,
+            media_type='movie',
+            watched_date=date.today(),
+            rating=rating,
+            is_rewatch=is_rewatch,
+        )
+        db.session.add(entry)
+
+        # Mirror the existing /api/diary/log behavior.
+        current_user.total_movies_watched = (
+            current_user.total_movies_watched or 0) + 1
+
+        # Sync the derived viewed set inside a savepoint so a concurrent
+        # log's insert cannot discard our diary entry.
+        try:
+            with db.session.begin_nested():
+                db.session.execute(user_viewed.insert().values(
+                    user_id=current_user.id,
+                    media_id=media_item.id,
+                    media_type='movie',
+                    date_viewed=datetime.utcnow(),
+                ))
+        except IntegrityError:
+            pass  # viewed row already exists (concurrent log) — that's the goal
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'watched': True,
+            'logged_today': True,
+            'is_rewatch': is_rewatch,
+            'watch_count': watch_count + 1,
+            'entry_id': entry.id,
+            'title': media_item.title,
+        }), 201
+
+    except Exception:
+        db.session.rollback()
+        logger.error("Quick log failed", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @diary.route('/diary')
@@ -28,7 +195,7 @@ def diary_page():
 
 @diary.route('/api/diary', methods=['GET'])
 @login_required
-def get_diary_entries():
+def get_diary_entries():  # noqa: F811 — defined below the quick-log helpers
     """Get diary entries for the current user"""
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)

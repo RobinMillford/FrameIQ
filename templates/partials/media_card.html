@@ -131,6 +131,33 @@
         Wish
       </a>
       {% endif %} {% if (item.id, media_type) not in user_viewed_ids %}
+      {% if is_movie %}
+      {# One-tap quick log — creates today's watch event via /api/media/<id>/log #}
+      <button
+        type="button"
+        data-quick-log="{{ item.id }}"
+        data-title="{{ item_title }}"
+        {% if item.poster_path %}data-poster-path="{{ item.poster_path }}"{% endif %}
+        {% if item.release_date %}data-release-date="{{ item.release_date }}"{% endif %}
+        class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1"
+        title="Log watched (today)"
+      >
+        <svg
+          class="w-3 h-3"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        Log Watched
+      </button>
+      {% else %}
       <a
         href="{{ url_for('main.mark_as_viewed', media_id=item.id, media_type=media_type) }}"
         class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1"
@@ -151,6 +178,7 @@
         </svg>
         View
       </a>
+      {% endif %}
       {% endif %}
     </div>
   </div>

@@ -397,12 +397,17 @@
                             </div>
                             {% endif %}
                             {% if (movie.id, 'movie') not in user_viewed_ids %}
-                            <a href="{{ url_for('main.mark_as_viewed', media_id=movie.id, media_type='movie') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
+                            <button type="button"
+                                data-quick-log="{{ movie.id }}"
+                                data-title="{{ movie.title }}"
+                                {% if movie.poster_path %}data-poster-path="{{ movie.poster_path }}"{% endif %}
+                                {% if movie.release_date %}data-release-date="{{ movie.release_date }}"{% endif %}
+                                class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
-                                Mark as Viewed
-                            </a>
+                                <span class="ql-log-label">Log Watched</span>
+                            </button>
                             {% endif %}
                             
                             <!-- NEW: Diary and Lists buttons -->
