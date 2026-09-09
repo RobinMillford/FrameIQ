@@ -144,39 +144,19 @@ def save_progress():
     title = data.get('title', '')
     poster_path = data.get('posterPath', '')
 
-    try:
-        wp = WatchProgress.query.filter_by(
-            user_id=current_user.id,
-            tmdb_id=tmdb_id,
-            media_type=media_type,
-            season=season,
-            episode=episode
-        ).first()
+    # Some providers report position+duration without a progress percentage;
+    # derive it so completion detection and progress_pct stay consistent.
+    if duration > 0 and progress <= 0 and current_time > 0:
+        progress = min(100.0, current_time / duration * 100.0)
 
-        if wp:
-            wp.current_time = current_time
-            wp.duration = duration
-            wp.updated_at = datetime.utcnow()
-            if title:
-                wp.title = title
-            if poster_path:
-                wp.poster_path = poster_path
-        else:
-            wp = WatchProgress(
-                user_id=current_user.id,
-                tmdb_id=tmdb_id,
-                media_type=media_type,
-                season=season,
-                episode=episode,
-                current_time=current_time,
-                duration=duration,
-                title=title,
-                poster_path=poster_path,
-            )
-            db.session.add(wp)
+    try:
+        _upsert_progress_row(
+            current_user.id, tmdb_id, media_type, season, episode,
+            current_time, duration, title, poster_path)
 
         auto_logged = False
-        if progress >= 85 and duration > 60:
+        completed = progress >= 85 and duration > 60
+        if completed:
             try:
                 with db.session.begin_nested():
                     auto_logged = _auto_log(tmdb_id, media_type, title, poster_path)
@@ -184,20 +164,15 @@ def save_progress():
                 logger.warning("Auto-log savepoint failed: %s", ae)
 
         db.session.commit()
-        return jsonify({'success': True, 'auto_logged': auto_logged}), 200
+        return jsonify({'success': True, 'auto_logged': auto_logged,
+                        'completed': completed}), 200
 
     except IntegrityError:
         db.session.rollback()
         # Race condition: another request inserted same row; retry as update
-        wp = WatchProgress.query.filter_by(
-            user_id=current_user.id, tmdb_id=tmdb_id,
-            media_type=media_type, season=season, episode=episode
-        ).first()
-        if wp:
-            wp.current_time = current_time
-            wp.duration = duration
-            wp.updated_at = datetime.utcnow()
-            db.session.commit()
+        _handle_progress_race(
+            current_user.id, tmdb_id, media_type, season, episode,
+            current_time, duration)
         return jsonify({'success': True, 'auto_logged': False}), 200
     except Exception as e:
         db.session.rollback()
@@ -208,18 +183,16 @@ def save_progress():
 @watch_bp.route('/api/watch/continue')
 @login_required
 def continue_watching():
-    items = (
-        WatchProgress.query
-        .filter(
-            WatchProgress.user_id == current_user.id,
-            WatchProgress.duration > 60,
-            WatchProgress.current_time < WatchProgress.duration * 0.9,
-        )
-        .order_by(WatchProgress.updated_at.desc())
-        .limit(20)
-        .all()
-    )
-    return jsonify({'items': [i.to_dict() for i in items]}), 200
+    """Canonical resumable items for the player-page resume rail.
+
+    Uses the same validated aggregation as the home rail (api.continue_watching):
+    canonical metadata, TV episodes validated against TMDb season data, and a
+    completed-state cross-check (diary for movies, TVEpisodeWatch for TV) so
+    stale resume rows never reappear after real completion.
+    """
+    from api.continue_watching import continue_watching_entries
+    items = continue_watching_entries(current_user.id, movie_limit=10, tv_limit=10)
+    return jsonify({'items': items}), 200
 
 
 @watch_bp.route('/api/watch/history')
@@ -242,6 +215,58 @@ def watch_history():
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _upsert_progress_row(user_id, tmdb_id, media_type, season, episode,
+                         current_time, duration, title, poster_path):
+    """Create or update the user's resume row. Zero-valued telemetry is
+    ignored on update: providers that emit partial messages (e.g. progress
+    without duration) must never overwrite a real saved position."""
+    wp = WatchProgress.query.filter_by(
+        user_id=user_id, tmdb_id=tmdb_id, media_type=media_type,
+        season=season, episode=episode
+    ).first()
+    if wp:
+        if duration > 0:
+            wp.duration = duration
+        if current_time > 0:
+            wp.current_time = current_time
+        wp.updated_at = datetime.utcnow()
+        if title:
+            wp.title = title
+        if poster_path:
+            wp.poster_path = poster_path
+    else:
+        wp = WatchProgress(
+            user_id=user_id,
+            tmdb_id=tmdb_id,
+            media_type=media_type,
+            season=season,
+            episode=episode,
+            current_time=current_time,
+            duration=duration,
+            title=title,
+            poster_path=poster_path,
+        )
+        db.session.add(wp)
+    return wp
+
+
+def _handle_progress_race(user_id, tmdb_id, media_type, season, episode,
+                          current_time, duration):
+    """IntegrityError recovery: re-fetch the row another request inserted
+    and update it in place (same zero-telemetry guard)."""
+    wp = WatchProgress.query.filter_by(
+        user_id=user_id, tmdb_id=tmdb_id, media_type=media_type,
+        season=season, episode=episode
+    ).first()
+    if wp:
+        if duration > 0:
+            wp.duration = duration
+        if current_time > 0:
+            wp.current_time = current_time
+        wp.updated_at = datetime.utcnow()
+        db.session.commit()
+
 
 def _auto_log(tmdb_id, media_type, title, poster_path):
     """Log to diary when >= 85 % watched. No-op if already logged today."""

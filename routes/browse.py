@@ -1,5 +1,6 @@
 """Browse & discovery routes: index, search, trending, news, genres, recommend."""
 import calendar
+import logging
 import threading
 import time
 from datetime import datetime
@@ -8,7 +9,6 @@ import feedparser
 import requests
 from flask import render_template, request, jsonify
 from flask_login import current_user
-from sqlalchemy import or_
 
 from api.tmdb_client import (
     fetch_now_playing_movies, fetch_popular_movies, fetch_upcoming_movies,
@@ -20,9 +20,11 @@ from api.tmdb_client import (
 from api.tmdb.cache import cached_tmdb_request
 from api.tmdb.config import TMDB_API_KEY
 from extensions import limiter
-from models import User, Review, WatchProgress, TVShowProgress, TVEpisodeWatch, UpcomingEpisode
+from models import User, Review
 from routes._main_bp import main
 from routes.helpers import get_user_collection_ids
+
+logger = logging.getLogger(__name__)
 
 MOVIE_GENRES = {
     'romance': 10749, 'horror': 27, 'fantasy': 14, 'science_fiction': 878,
@@ -215,27 +217,12 @@ def index():
     # ── Rails (normalized item shape for the rail card partial) ──
     rails = []
 
-    # Continue watching (authed, in-progress streams) + unfinished TV shows
+    # Continue watching (authed, in-progress streams) + unfinished TV shows.
+    # Canonical builder: cached metadata hydration + TMDb-validated episodes.
     if current_user.is_authenticated:
         try:
-            progress = (
-                WatchProgress.query.filter_by(user_id=current_user.id)
-                .filter(WatchProgress.duration > 60,
-                        WatchProgress.current_time < WatchProgress.duration * 0.9)
-                .order_by(WatchProgress.updated_at.desc()).limit(12).all()
-            )
-            entries = [{
-                "id": p.tmdb_id,
-                "title": p.title or "Untitled",
-                "poster": p.poster_path,
-                "progress": p.progress_pct,
-                "watch_url": p.watch_url,
-                "media_type": p.media_type,
-            } for p in progress]
-
-            # Unfinished TV shows (watching/paused, not complete) alongside movies.
-            entries.extend(_unfinished_tv_entries(current_user.id, limit=6))
-
+            from api.continue_watching import continue_watching_entries
+            entries = continue_watching_entries(current_user.id)
             if entries:
                 rails.append({
                     "key": "continue", "title": "Continue Watching",
@@ -244,7 +231,7 @@ def index():
                     "entries": entries,
                 })
         except Exception:
-            pass
+            logger.exception("Continue Watching rail failed to build")
 
     # Because you rated {genre} (authed with history) else Trending
     top_genre = top_title = top_score = None
@@ -316,108 +303,18 @@ def index():
 
 
 def _unfinished_tv_entries(user_id, limit=6):
-    """Unfinished TV shows for the Continue Watching rail.
+    """Unfinished TV entries for the Continue Watching rail.
 
-    watching/paused shows that are not complete, sorted by last watched.
-    Batched: one progress query + one watched-episodes query + one
-    UpcomingEpisode info query. Resume priority: partial playback first,
-    otherwise the next unwatched episode.
+    Delegates to the canonical builder (api/continue_watching.py): TMDb-
+    validated episodes, hydrated titles/posters, no invented episode numbers.
+    Kept as the stable entry point for tests and other callers.
     """
-    from models import db
+    from api.continue_watching import continue_watching_entries
 
-    shows = TVShowProgress.query.filter(
-        TVShowProgress.user_id == user_id,
-        TVShowProgress.status.in_(['watching', 'paused']),
-        or_(TVShowProgress.total_episodes == 0,
-            TVShowProgress.watched_episodes < TVShowProgress.total_episodes),
-    ).order_by(TVShowProgress.last_watched.desc()).limit(limit).all()
-
-    if not shows:
-        return []
-
-    show_ids = [s.show_id for s in shows]
-
-    watched_rows = (
-        db.session.query(
-            TVEpisodeWatch.show_id,
-            TVEpisodeWatch.season_number,
-            TVEpisodeWatch.episode_number,
-        )
-        .filter(
-            TVEpisodeWatch.user_id == user_id,
-            TVEpisodeWatch.show_id.in_(show_ids),
-            TVEpisodeWatch.is_rewatch == False,
-        )
-        .all()
-    )
-    watched_by_show = {}
-    for sid, sn, en in watched_rows:
-        watched_by_show.setdefault(sid, set()).add((sn, en))
-
-    info_rows = (
-        db.session.query(
-            UpcomingEpisode.show_id,
-            UpcomingEpisode.show_name,
-            UpcomingEpisode.poster_path,
-        )
-        .filter(UpcomingEpisode.show_id.in_(show_ids))
-        .all()
-    )
-    info_by_show = {}
-    for sid, name, poster in info_rows:
-        if sid not in info_by_show:
-            info_by_show[sid] = {'name': name, 'poster_path': poster}
-
-    # Partial playback positions per show (resume takes priority).
-    partial = (
-        WatchProgress.query
-        .filter(
-            WatchProgress.user_id == user_id,
-            WatchProgress.tmdb_id.in_(show_ids),
-            WatchProgress.media_type.in_(['tv', 'anime']),
-            WatchProgress.season.isnot(None),
-            WatchProgress.episode.isnot(None),
-            WatchProgress.duration > 60,
-            WatchProgress.current_time < WatchProgress.duration * 0.9,
-        )
-        .order_by(WatchProgress.updated_at.desc())
-        .all()
-    )
-    partial_by_show = {}
-    for wp in partial:
-        if wp.tmdb_id not in partial_by_show:
-            partial_by_show[wp.tmdb_id] = wp
-
-    entries = []
-    for s in shows:
-        info = info_by_show.get(s.show_id, {})
-        watched = watched_by_show.get(s.show_id, set())
-        wp = partial_by_show.get(s.show_id)
-
-        if wp is not None:
-            label = f"S{wp.season}E{wp.episode} · {wp.progress_pct:.0f}%"
-            watch_url = wp.watch_url
-        else:
-            last_ep = max(watched, key=lambda p: (p[0], p[1])) if watched else None
-            if last_ep:
-                nxt_s, nxt_e = last_ep[0], last_ep[1] + 1
-            else:
-                nxt_s, nxt_e = 1, 1
-            label = f"S{nxt_s}E{nxt_e} · {s.calculate_progress_percentage():.0f}%"
-            watch_url = f"/watch/tv/{s.show_id}/{nxt_s}/{nxt_e}"
-
-        entries.append({
-            "id": s.show_id,
-            "title": info.get('name') or f"Show {s.show_id}",
-            "poster": info.get('poster_path'),
-            "progress": s.calculate_progress_percentage(),
-            "watch_url": watch_url,
-            "media_type": "tv",
-            "label": label,
-            "is_paused": s.status == 'paused',
-        })
-
-    return entries
+    return [
+        e for e in continue_watching_entries(user_id, tv_limit=limit)
+        if e.get("media_type") in ("tv", "anime")
+    ]
 
 
 def _format_search_results(results, kind):

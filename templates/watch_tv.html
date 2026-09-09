@@ -560,6 +560,34 @@
         if (nextEp) navigateTo(nextEp.season, nextEp.episode);
     }
 
+    // ── Progress persistence (event-driven, bounded) ─────────────
+    let lastTelemetry = null;   // latest real provider message worth persisting
+
+    function saveProgress(opts) {
+        if (!IS_AUTH || !lastTelemetry) return Promise.resolve();
+        return fetch('/api/watch/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            keepalive: !!(opts && opts.final),
+            body: JSON.stringify({
+                id: TMDB_ID,
+                mediaType: MEDIA_TYPE,
+                currentTime: lastTelemetry.currentTime || 0,
+                duration: lastTelemetry.duration || 0,
+                progress: lastTelemetry.progress || 0,
+                season: CUR_SEASON,
+                episode: CUR_EP,
+                title: {{ show.name | tojson }},
+                posterPath: {{ (show.poster_path or '') | tojson }}
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (!(opts && opts.final) && res.auto_logged) showToast('✓ Episode logged to diary');
+        })
+        .catch(() => {});
+    }
+
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
         if (!ALLOWED_ORIGINS.includes(e.origin)) return;
@@ -568,6 +596,7 @@
         catch { return; }
         if (!data || data.id == null || data.currentTime == null) return;
 
+        lastTelemetry = data;
         currentProgress = data.progress || 0;
 
         const bar = document.getElementById('progress-display');
@@ -580,29 +609,26 @@
             banner.classList.add('show');
         }
 
-        const now = Date.now();
-        if (!IS_AUTH || now - lastSaved < 15000) return;
-        lastSaved = now;
+        // Provider-reported pause / end → final snapshot now (no polling;
+        // completion and diary auto-log are decided server-side)
+        if (data.paused || data.ended) {
+            saveProgress({ final: true });
+            return;
+        }
 
-        fetch('/api/watch/progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({
-                id: TMDB_ID,
-                mediaType: MEDIA_TYPE,
-                currentTime: data.currentTime || 0,
-                duration: data.duration || 0,
-                progress: currentProgress,
-                season: CUR_SEASON,
-                episode: CUR_EP,
-                title: {{ show.name | tojson }},
-                posterPath: {{ (show.poster_path or '') | tojson }}
-            })
-        })
-        .then(r => r.json())
-        .then(res => { if (res.auto_logged) showToast('✓ Episode logged to diary'); })
-        .catch(() => {});
+        // Throttle periodic saves — every 15 s during active playback
+        const now = Date.now();
+        if (now - lastSaved < 15000) return;
+        lastSaved = now;
+        saveProgress();
     });
+
+    // ── Final snapshot when the page is hidden or unloaded ────────
+    function finalSave() { saveProgress({ final: true }); }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') finalSave();
+    });
+    window.addEventListener('pagehide', finalSave);
 
     // ── Mark watched ─────────────────────────────────────────────
     function markWatched() {

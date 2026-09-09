@@ -422,6 +422,32 @@
         if (n >= 1 && n <= SOURCES.length) switchSource(SOURCES[n - 1].key);
     });
 
+    // ── Progress persistence (event-driven, bounded) ─────────────
+    let lastTelemetry = null;   // latest real provider message worth persisting
+
+    function saveProgress(opts) {
+        if (!IS_AUTH || !lastTelemetry) return Promise.resolve();
+        return fetch('/api/watch/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            keepalive: !!(opts && opts.final),
+            body: JSON.stringify({
+                id: TMDB_ID,
+                mediaType: MEDIA_TYPE,
+                currentTime: lastTelemetry.currentTime || 0,
+                duration: lastTelemetry.duration || 0,
+                progress: lastTelemetry.progress || 0,
+                title: {{ movie.title | tojson }},
+                posterPath: {{ (movie.poster_path or '') | tojson }}
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (!(opts && opts.final) && res.auto_logged) showToast('✓ Logged to your diary');
+        })
+        .catch(() => {});
+    }
+
     // ── PostMessage listener ──────────────────────────────────────
     window.addEventListener('message', (e) => {
         if (!ALLOWED_ORIGINS.includes(e.origin)) return;
@@ -431,36 +457,34 @@
 
         if (!data || data.id == null || data.currentTime == null) return;
 
+        lastTelemetry = data;
+
         // Update local progress bar
         if (data.progress != null) {
             const el = document.getElementById('progress-display');
             if (el) el.style.width = data.progress + '%';
         }
 
-        // Throttle saves — every 15 s
-        const now = Date.now();
-        if (!IS_AUTH || now - lastSaved < 15000) return;
-        lastSaved = now;
+        // Provider-reported pause / end → final snapshot now (no polling;
+        // completion and diary auto-log are decided server-side)
+        if (data.paused || data.ended) {
+            saveProgress({ final: true });
+            return;
+        }
 
-        fetch('/api/watch/progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({
-                id: TMDB_ID,
-                mediaType: MEDIA_TYPE,
-                currentTime: data.currentTime || 0,
-                duration: data.duration || 0,
-                progress: data.progress || 0,
-                title: {{ movie.title | tojson }},
-                posterPath: {{ (movie.poster_path or '') | tojson }}
-            })
-        })
-        .then(r => r.json())
-        .then(res => {
-            if (res.auto_logged) showToast('✓ Logged to your diary');
-        })
-        .catch(() => {});
+        // Throttle periodic saves — every 15 s during active playback
+        const now = Date.now();
+        if (now - lastSaved < 15000) return;
+        lastSaved = now;
+        saveProgress();
     });
+
+    // ── Final snapshot when the page is hidden or unloaded ────────
+    function finalSave() { saveProgress({ final: true }); }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') finalSave();
+    });
+    window.addEventListener('pagehide', finalSave);
 
     // ── Watchlist (state-aware) ──────────────────────────────────
     let inWatchlist = {{ 'true' if in_watchlist else 'false' }};

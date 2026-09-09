@@ -36,15 +36,24 @@ SEASONS = [
 
 
 def _mock_show(monkeypatch, seasons=SEASONS, status='Ended'):
+    """Mock TMDb show details at every call site (module bindings AND the
+    call-time imports used by the canonical continue-watching builder)."""
+    payload = {
+        'id': None, 'name': 'Test Show', 'status': status,
+        'number_of_seasons': len(seasons), 'number_of_episodes':
+            sum(s['episode_count'] for s in seasons),
+        'seasons': seasons,
+    }
+
+    def fake_show(show_id, **kw):
+        d = dict(payload)
+        d['id'] = show_id
+        return d
+
     monkeypatch.setattr(
-        'routes.tv_tracking.fetch_tv_show_details',
-        lambda show_id, **kw: {
-            'id': show_id, 'name': 'Test Show', 'status': status,
-            'number_of_seasons': len(seasons), 'number_of_episodes':
-                sum(s['episode_count'] for s in seasons),
-            'seasons': seasons,
-        },
-    )
+        'routes.tv_tracking.fetch_tv_show_details', fake_show)
+    monkeypatch.setattr(
+        'api.tmdb_client.fetch_tv_show_details', fake_show)
 
 
 def _track(user, status='watching', watched=0, total=7):
@@ -177,7 +186,8 @@ def test_untracked_show_next_episode(auth_client, sample_user):
 
 # ── Unfinished shows shelf ────────────────────────────────────────────────────
 
-def test_unfinished_includes_watching_and_paused(auth_client, sample_user):
+def test_unfinished_includes_watching_and_paused(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     _track(sample_user, watched=2)
     p2 = TVShowProgress(user_id=sample_user.id, show_id=999,
                         status='paused', watched_episodes=1, total_episodes=10)
@@ -205,7 +215,8 @@ def test_unfinished_excludes_completed_and_dropped(auth_client, sample_user):
     assert r.get_json()['shows'] == []
 
 
-def test_unfinished_sorted_by_last_watched(auth_client, sample_user):
+def test_unfinished_sorted_by_last_watched(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     old = _track(sample_user, watched=1)
     old.last_watched = datetime(2026, 1, 1)
     new = TVShowProgress(user_id=sample_user.id, show_id=999, status='watching',
@@ -217,7 +228,8 @@ def test_unfinished_sorted_by_last_watched(auth_client, sample_user):
     assert [s['show_id'] for s in shows] == [999, SHOW_ID]
 
 
-def test_unfinished_next_episode_and_watch_url(auth_client, sample_user):
+def test_unfinished_next_episode_and_watch_url(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     _track(sample_user, watched=1)
     _watch(sample_user, 1, 1)
     db.session.add(UpcomingEpisode(show_id=SHOW_ID, show_name='Test Show',
@@ -237,7 +249,8 @@ def _unfinished_entries(user):
     return _unfinished_tv_entries(user.id)
 
 
-def test_continue_watching_next_action(auth_client, sample_user):
+def test_continue_watching_next_action(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     _track(sample_user, watched=1)
     _watch(sample_user, 1, 1)
     entries = _unfinished_entries(sample_user)
@@ -249,7 +262,8 @@ def test_continue_watching_next_action(auth_client, sample_user):
     assert e['is_paused'] is False
 
 
-def test_continue_watching_resume_partial_playback(auth_client, sample_user):
+def test_continue_watching_resume_partial_playback(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     _track(sample_user, watched=2)
     _watch(sample_user, 1, 1)
     _watch(sample_user, 1, 2)
@@ -263,7 +277,8 @@ def test_continue_watching_resume_partial_playback(auth_client, sample_user):
     assert 'S1E2' in e['label'] and '33%' in e['label']
 
 
-def test_continue_watching_paused_flag(auth_client, sample_user):
+def test_continue_watching_paused_flag(auth_client, sample_user, monkeypatch):
+    _mock_show(monkeypatch)
     _track(sample_user, status='paused', watched=1)
     _watch(sample_user, 1, 1)
     e = _unfinished_entries(sample_user)[0]
