@@ -32,8 +32,13 @@ jobs:
         env:
           # conftest sets these via setdefault; providing them here ensures
           # the CI environment doesn't inherit a stale DATABASE_URL.
+          # NOTE: conftest now force-overrides DATABASE_URL to a throwaway
+          # temp-file SQLite, so tests can never touch a real database.
           DATABASE_URL: "sqlite:///:memory:"
           SECRET_KEY: "ci-test-secret-key"
-          TMDB_API_KEY: "test"
+          # Real key when the repo secret is set (push/same-repo PRs);
+          # falls back to 'test' on fork PRs, where GitHub blocks secrets.
+          # The suite is hermetic either way — tests mock all TMDb calls.
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || 'test' }}
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short

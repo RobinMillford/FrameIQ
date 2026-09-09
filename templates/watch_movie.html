@@ -235,14 +235,6 @@
             <img src="{{ movie.poster_path }}" alt="{{ movie.title }}"
                  class="w-full rounded-xl shadow-lg shadow-black/50 ring-1 ring-white/10">
             {% endif %}
-            {% if resume_time > 0 %}
-            <div class="mt-3">
-                <p class="text-[11px] text-[var(--text-mid)] mb-1">Resuming from {{ (resume_time // 60) }}m {{ (resume_time % 60) }}s</p>
-                <div class="h-1 bg-white/10 rounded-full overflow-hidden">
-                    <div id="progress-display" class="h-full w-0 bg-gradient-to-r from-[var(--accent)] to-[#FFD066] rounded-full transition-all duration-300"></div>
-                </div>
-            </div>
-            {% endif %}
         </div>
 
         <!-- Details -->
@@ -294,6 +286,11 @@
                    class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
                     <i class="fas fa-info-circle"></i> Details
                 </a>
+                <button id="finish-btn"
+                        class="flex items-center gap-2 bg-green-600/90 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                        title="Mark as watched — removes from Continue Watching">
+                    <i class="fas fa-check"></i> Finished
+                </button>
             </div>
             {% endif %}
 
@@ -366,19 +363,16 @@
 <!-- ── Toast ── -->
 <div id="toast">
     <i class="fas fa-check-circle text-green-400"></i>
-    <span id="toast-msg">Progress saved</span>
+    <span id="toast-msg">Saved</span>
 </div>
 
 <script>
     const TMDB_ID    = {{ tmdb_id }};
     const MEDIA_TYPE = 'movie';
-    const RESUME_TIME = {{ resume_time }};
     const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
-    const ALLOWED_ORIGINS = {{ allowed_origins | tojson }};
     const SOURCES = {{ sources | tojson }};
 
-    let lastSaved   = 0;
-    let idleTimer   = null;
+    let idleTimer = null;
 
     // ── Player skeleton → hide on iframe load ────────────────────
     const frame = document.getElementById('player-frame');
@@ -422,69 +416,34 @@
         if (n >= 1 && n <= SOURCES.length) switchSource(SOURCES[n - 1].key);
     });
 
-    // ── Progress persistence (event-driven, bounded) ─────────────
-    let lastTelemetry = null;   // latest real provider message worth persisting
-
-    function saveProgress(opts) {
-        if (!IS_AUTH || !lastTelemetry) return Promise.resolve();
-        return fetch('/api/watch/progress', {
+    // ── Continue Watching: explicit ✓ Finished ────────────────────
+    // Intent-based: FrameIQ records WHAT was started (server-side on page
+    // open); the provider owns playback position. Completion is explicit.
+    function markFinished() {
+        if (!IS_AUTH) return;
+        fetch('/api/continue-watching/movie/' + TMDB_ID + '/finish', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            keepalive: !!(opts && opts.final),
             body: JSON.stringify({
-                id: TMDB_ID,
-                mediaType: MEDIA_TYPE,
-                currentTime: lastTelemetry.currentTime || 0,
-                duration: lastTelemetry.duration || 0,
-                progress: lastTelemetry.progress || 0,
                 title: {{ movie.title | tojson }},
-                posterPath: {{ (movie.poster_path or '') | tojson }}
+                poster_path: {{ (movie.poster_path or '') | tojson }}
             })
         })
         .then(r => r.json())
         .then(res => {
-            if (!(opts && opts.final) && res.auto_logged) showToast('✓ Logged to your diary');
+            if (res.success) {
+                const btn = document.getElementById('finish-btn');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-check-double"></i> Watched';
+                }
+                showToast('✓ Marked as watched');
+            }
         })
-        .catch(() => {});
+        .catch(() => showToast('Could not mark as watched'));
     }
-
-    // ── PostMessage listener ──────────────────────────────────────
-    window.addEventListener('message', (e) => {
-        if (!ALLOWED_ORIGINS.includes(e.origin)) return;
-        let data;
-        try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
-        catch { return; }
-
-        if (!data || data.id == null || data.currentTime == null) return;
-
-        lastTelemetry = data;
-
-        // Update local progress bar
-        if (data.progress != null) {
-            const el = document.getElementById('progress-display');
-            if (el) el.style.width = data.progress + '%';
-        }
-
-        // Provider-reported pause / end → final snapshot now (no polling;
-        // completion and diary auto-log are decided server-side)
-        if (data.paused || data.ended) {
-            saveProgress({ final: true });
-            return;
-        }
-
-        // Throttle periodic saves — every 15 s during active playback
-        const now = Date.now();
-        if (now - lastSaved < 15000) return;
-        lastSaved = now;
-        saveProgress();
-    });
-
-    // ── Final snapshot when the page is hidden or unloaded ────────
-    function finalSave() { saveProgress({ final: true }); }
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') finalSave();
-    });
-    window.addEventListener('pagehide', finalSave);
+    document.getElementById('finish-btn')
+        ?.addEventListener('click', markFinished);
 
     // ── Watchlist (state-aware) ──────────────────────────────────
     let inWatchlist = {{ 'true' if in_watchlist else 'false' }};

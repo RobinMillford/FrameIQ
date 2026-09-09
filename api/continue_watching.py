@@ -1,18 +1,18 @@
-"""Canonical Continue Watching entries (home rail).
+"""Continue Watching — intent-based (STARTED → FINISHED / REMOVED).
 
-User progress rows (WatchProgress / TVShowProgress) are USER STATE, not
-authoritative TMDb metadata. This module resolves canonical display data
-(title, poster) and — for TV — validates the season/episode against
-authoritative TMDb season episode counts so a nonexistent episode is never
-emitted.
+FrameIQ is a tracking application, not a playback engine:
 
-Guarantees:
-- No raw TMDb id is ever used as a card title.
-- A TV watch_url is only built for episodes that exist per TMDb season data.
-- Metadata failures degrade gracefully (cards degrade or are safely omitted);
-  a missing TMDb result never 500s the home page.
-- Bounded work: at most ONE cached details fetch per distinct id per TTL
-  window (per-process memo + the existing tmdb_cache/single-flight layer).
+  FRAMEIQ  → remembers WHAT the user started (ContinueWatchingItem rows)
+  PROVIDER → remembers WHERE the user stopped (resume position)
+
+Continue Watching requires ZERO player telemetry — no player messages, no
+positions, no percentages, no timers, no polling. Completion is
+deterministic — the user explicitly presses "✓ Finished".
+
+All display metadata (title/poster) is resolved from the existing cached
+TMDb layer; stored title/poster on the item are only a same-request hint.
+TV episodes are validated against authoritative TMDb season episode counts;
+a nonexistent episode is never emitted. Unaired next episodes are hidden.
 """
 import logging
 import threading
@@ -20,12 +20,12 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# Poster paths may be stored as "/abc.jpg" (TMDb raw) or as full URLs
-# ("https://image.tmdb.org/...", as the watch page saves them). Normalize.
 _POSTER_BASE = "https://image.tmdb.org/t/p/w500"
 _FALLBACK_POSTER = "https://via.placeholder.com/500x750?text=No+Image"
 
 # Per-process memo for details lookups. TTL + bounded size prevent growth.
+# The underlying fetchers already provide bounded TTL cache + single-flight;
+# the memo avoids repeated cache-layer hits across home renders.
 _MEMO_TTL = 30 * 60          # seconds
 _MEMO_MAX = 300
 _memo = {}
@@ -64,29 +64,39 @@ def _memo_put(key, value):
         _memo[key] = (time.monotonic(), value)
 
 
-def _details(tmdb_id, is_movie):
-    """Cached TMDb details dict for one id, or None on any failure.
-
-    Delegates to the project's existing cached fetchers (bounded TTL cache,
-    single-flight, retries). Memoized so repeated home renders do not even
-    hit the TMDb cache layer. None results are memoized too — a dead id
-    should not be retried on every render.
-    """
-    key = ("details", is_movie, tmdb_id)
+def show_details(tmdb_id):
+    """Cached TMDb show details dict, or None on any failure."""
+    key = ("show", tmdb_id)
     hit = _memo_get(key)
     if hit is not None:
         return hit
     try:
-        if is_movie:
-            from api.tmdb_client import fetch_movie_details
-            data = fetch_movie_details(tmdb_id, max_retries=1)
-        else:
-            from api.tmdb_client import fetch_tv_show_details
-            data = fetch_tv_show_details(tmdb_id, max_retries=1)
+        from api.tmdb_client import fetch_tv_show_details
+        data = fetch_tv_show_details(tmdb_id, max_retries=1)
     except Exception:
         data = None
     _memo_put(key, data)
     return data
+
+
+def movie_details(tmdb_id):
+    """Cached TMDb movie details dict, or None on any failure."""
+    key = ("movie", tmdb_id)
+    hit = _memo_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from api.tmdb_client import fetch_movie_details
+        data = fetch_movie_details(tmdb_id, max_retries=1)
+    except Exception:
+        data = None
+    _memo_put(key, data)
+    return data
+
+
+def clear_memo():
+    """Test helper — clears the process-local details memo."""
+    _memo.clear()
 
 
 def season_episode_counts(show_details):
@@ -99,397 +109,311 @@ def season_episode_counts(show_details):
     return counts
 
 
-def next_unwatched_from_counts(watched, counts):
-    """Earliest unwatched (season, episode) per authoritative TMDb counts."""
-    for sn in sorted(counts):
-        for en in range(1, counts[sn] + 1):
-            if (sn, en) not in watched:
-                return (sn, en)
-    return None
+# ── Start (idempotent upsert) ────────────────────────────────────────────────
 
+def start_item(user_id, media_type, tmdb_id, season=None, episode=None,
+               title=None, poster_path=None):
+    """Record that the user started this movie/episode.
 
-def last_valid_episode(counts):
-    """Highest valid (season, episode) per TMDb season counts."""
-    last = None
-    for sn in sorted(counts):
-        if counts[sn] > 0:
-            last = (sn, counts[sn])
-    return last
-
-
-def _canonical_title_poster(details, stored_title, stored_poster, name_key):
-    """Canonical (title, poster) with stored values as fallback.
-
-    When TMDb details resolve, canonical metadata wins (stale stored rows are
-    corrected). Otherwise the stored denormalized values are used as-is.
+    Idempotent: re-opening the same item updates started_at instead of
+    creating a duplicate. One logical item per unfinished movie/episode.
     """
-    title = stored_title or None
-    poster = stored_poster
-    if details:
-        title = details.get(name_key) or title
-        raw = details.get("poster_path")
-        if raw and isinstance(raw, str) and raw.startswith("/"):
-            poster = _POSTER_BASE + raw
-        elif raw and raw != _FALLBACK_POSTER:
-            poster = raw
-    return title or "Untitled", poster_url(poster)
+    from models import ContinueWatchingItem, db
 
-
-def _build_movie_entry(wp, details):
-    """Canonical movie Continue Watching entry. Movies are never omitted —
-    when metadata cannot be resolved they degrade to Untitled/fallback
-    poster instead of showing a raw numeric id."""
-    title, poster = _canonical_title_poster(
-        details, wp.title, wp.poster_path, "title")
-    return {
-        "id": wp.tmdb_id,
-        "tmdb_id": wp.tmdb_id,
-        "title": title,
-        "poster": poster,
-        "progress": wp.progress_pct,
-        "watch_url": f"/watch/movie/{wp.tmdb_id}",
-        "media_type": "movie",
-    }
-
-
-def _build_tv_entry(wp, details):
-    """Canonical TV entry from a partial-playback row, or None.
-
-    The stored/current episode is validated against authoritative TMDb
-    season episode counts. Invalid/stale positions are corrected to the most
-    recent valid episode in the same season (when the stored number was out
-    of range) or to the first valid episode; a card is omitted only when no
-    valid episode data exists at all. Episodes are never invented.
-    """
-    if not details:
-        # Without authoritative season data we cannot validate the episode —
-        # omit rather than risk a broken watch URL.
-        return None
-
-    counts = season_episode_counts(details)
-    if not counts:
-        return None
-
-    season = wp.season if wp.season is not None else 1
-    episode = wp.episode if wp.episode is not None else 1
-
-    if season not in counts or episode < 1 or episode > counts[season]:
-        resolved = None
-        if season in counts and counts[season] > 0 and episode > counts[season]:
-            # Stored episode number is beyond the real season length — the
-            # most recent valid episode in that season is the resumable one.
-            resolved = (season, counts[season])
-        if resolved is None:
-            for sn in sorted(counts):
-                if counts[sn] > 0:
-                    resolved = (sn, 1)
-                    break
-        if resolved is None:
-            return None
-        season, episode = resolved
-
-    type_param = wp.media_type if wp.media_type in ("tv", "anime") else "tv"
-    title, poster = _canonical_title_poster(
-        details, wp.title, wp.poster_path, "name")
-    return {
-        "id": wp.tmdb_id,
-        "tmdb_id": wp.tmdb_id,
-        "title": title,
-        "poster": poster,
-        "media_type": type_param,
-        "season": season,
-        "episode": episode,
-        "progress": wp.progress_pct,
-        "watch_url": f"/watch/tv/{wp.tmdb_id}/{season}/{episode}?type={type_param}",
-        "label": f"S{season}E{episode} · {wp.progress_pct:.0f}%",
-    }
-
-
-def _build_unfinished_show_entry(s, watched, details):
-    """Canonical unfinished-show entry from TVShowProgress, or None.
-
-    Next episode is derived from authoritative TMDb season counts (never by
-    naive E+1 arithmetic); falls back to the last valid episode when
-    everything per TMDb is already watched (stale counts). Returns None when
-    no valid episode exists — the card is omitted, not emitted broken.
-    """
-    if not details:
-        return None
-    counts = season_episode_counts(details)
-    if not counts:
-        return None
-
-    next_ep = next_unwatched_from_counts(watched, counts)
-    if next_ep is None:
-        next_ep = last_valid_episode(counts)
-    if next_ep is None:
-        return None
-
-    season, episode = next_ep
-    title, poster = _canonical_title_poster(details, None, None, "name")
-    pct = s.calculate_progress_percentage()
-    return {
-        "id": s.show_id,
-        "tmdb_id": s.show_id,
-        "title": title,
-        "poster": poster,
-        "media_type": "tv",
-        "season": season,
-        "episode": episode,
-        "progress": pct,
-        "watch_url": f"/watch/tv/{s.show_id}/{season}/{episode}",
-        "label": f"S{season}E{episode} · {pct:.0f}%",
-        "is_paused": s.status == "paused",
-    }
-
-
-def _load_progress_rows(user_id, limit):
-    """Partial-playback rows (movies + TV), most recently updated first."""
-    from models import WatchProgress
-    return (
-        WatchProgress.query.filter_by(user_id=user_id)
-        .filter(
-            WatchProgress.duration > 60,
-            WatchProgress.current_time < WatchProgress.duration * 0.9,
+    item = ContinueWatchingItem.query.filter_by(
+        user_id=user_id, media_type=media_type, tmdb_id=tmdb_id,
+        season=season, episode=episode,
+    ).first()
+    if item:
+        from datetime import datetime
+        item.started_at = datetime.utcnow()
+        if title:
+            item.title = title[:255]
+        if poster_path:
+            item.poster_path = poster_path[:500]
+    else:
+        item = ContinueWatchingItem(
+            user_id=user_id,
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+            season=season,
+            episode=episode,
+            title=(title or None),
+            poster_path=poster_path,
         )
-        .order_by(WatchProgress.updated_at.desc())
-        .limit(limit)
-        .all()
-    )
+        db.session.add(item)
+    db.session.commit()
+    return item
 
 
-def _load_unfinished_shows(user_id, limit):
-    """Unfinished tracked shows (watching/paused, not complete)."""
-    from models import TVShowProgress
-    from sqlalchemy import or_
-    return (
-        TVShowProgress.query.filter(
-            TVShowProgress.user_id == user_id,
-            TVShowProgress.status.in_(["watching", "paused"]),
-            or_(
-                TVShowProgress.total_episodes == 0,
-                TVShowProgress.watched_episodes < TVShowProgress.total_episodes,
-            ),
-        )
-        .order_by(TVShowProgress.last_watched.desc())
-        .limit(limit)
-        .all()
-    )
+def remove_item(user_id, media_type, tmdb_id, season=None, episode=None):
+    """Remove an item from Continue Watching WITHOUT marking it watched."""
+    from models import ContinueWatchingItem, db
+
+    deleted = ContinueWatchingItem.query.filter_by(
+        user_id=user_id, media_type=media_type, tmdb_id=tmdb_id,
+        season=season, episode=episode,
+    ).delete()
+    db.session.commit()
+    return deleted > 0
 
 
-def _completed_ids_for_user(user_id):
-    """Completion cross-check: (movie_dates, episode_times).
+# ── TV finish + next-episode promotion ──────────────────────────────────────
 
-    Real completed state wins over stale resume state:
-      - movies: tmdb_id -> latest DiaryEntry watched_date (canonical history),
-      - TV: (show_id, season, episode) -> latest TVEpisodeWatch.updated_at.
+def watched_episode_keys(user_id, show_id):
+    """Set of watched (season, episode) positions for one show.
 
-    Recency decides: a resume row NEWER than the completed event means a
-    rewatch is genuinely in progress and is kept; a resume row at or older
-    than the event is stale and must not reappear on Continue Watching.
+    Rewatch events are excluded: a rewatch of an episode does not change
+    which episode is 'next' in the canonical progression.
     """
-    from models import DiaryEntry, TVEpisodeWatch, MediaItem, db
-
-    movie_rows = (
-        db.session.query(MediaItem.tmdb_id, DiaryEntry.watched_date)
-        .join(DiaryEntry, DiaryEntry.media_id == MediaItem.id)
-        .filter(DiaryEntry.user_id == user_id,
-                DiaryEntry.media_type == "movie")
-        .all()
-    )
-    movie_dates = {}
-    for tmdb_id, watched_date in movie_rows:
-        prev = movie_dates.get(tmdb_id)
-        if prev is None or (watched_date and watched_date > prev):
-            movie_dates[tmdb_id] = watched_date
-
-    episode_rows = (
+    from models import TVEpisodeWatch, db
+    rows = (
         db.session.query(
-            TVEpisodeWatch.show_id,
-            TVEpisodeWatch.season_number,
-            TVEpisodeWatch.episode_number,
-            TVEpisodeWatch.updated_at,
-        )
-        .filter(TVEpisodeWatch.user_id == user_id)
-        .all()
-    )
-    ep_times = {}
-    for sid, sn, en, ts in episode_rows:
-        key = (sid, sn, en)
-        prev = ep_times.get(key)
-        if prev is None or (ts and ts > prev):
-            ep_times[key] = ts
-    return movie_dates, ep_times
-
-
-def _load_show_state(user_id, show_ids):
-    """Batched per-show state for unfinished shows.
-
-    Returns (watched_by_show, info_by_show): watched episode positions and
-    UpcomingEpisode display info — two queries total, no N+1.
-    """
-    from models import TVEpisodeWatch, UpcomingEpisode, db
-    watched_by_show = {}
-    info_by_show = {}
-    if not show_ids:
-        return watched_by_show, info_by_show
-
-    watched_rows = (
-        db.session.query(
-            TVEpisodeWatch.show_id,
-            TVEpisodeWatch.season_number,
-            TVEpisodeWatch.episode_number,
-        )
+            TVEpisodeWatch.season_number, TVEpisodeWatch.episode_number)
         .filter(
             TVEpisodeWatch.user_id == user_id,
-            TVEpisodeWatch.show_id.in_(show_ids),
+            TVEpisodeWatch.show_id == show_id,
             TVEpisodeWatch.is_rewatch == False,  # noqa: E712
         )
         .all()
     )
-    for sid, sn, en in watched_rows:
-        watched_by_show.setdefault(sid, set()).add((sn, en))
-
-    info_rows = (
-        db.session.query(
-            UpcomingEpisode.show_id,
-            UpcomingEpisode.show_name,
-            UpcomingEpisode.poster_path,
-        )
-        .filter(UpcomingEpisode.show_id.in_(show_ids))
-        .all()
-    )
-    for sid, name, poster in info_rows:
-        info_by_show.setdefault(sid, {"name": name, "poster_path": poster})
-    return watched_by_show, info_by_show
+    return {(sn, en) for sn, en in rows}
 
 
-def _details_resolver():
-    """Details fetcher with per-render deduplication (one call max per id)."""
-    cache = {}
+def find_next_episode(user_id, show_id, after=None, counts=None):
+    """Next valid, unwatched, aired episode for a show, or None.
 
-    def resolve(tmdb_id, is_movie):
-        if tmdb_id not in cache:
-            cache[tmdb_id] = _details(tmdb_id, is_movie)
-        return cache[tmdb_id]
+    With `after` (the just-finished position) the search starts at the first
+    position AFTER that episode — finishing S2E4 promotes S2E5, and a show
+    whose earlier episodes are unwatched still advances forward instead of
+    jumping back. Without `after`, the earliest unwatched episode overall is
+    returned (first-open behavior).
 
-    return resolve
-
-
-def _apply_show_fallback(entry, info_by_show, tmdb_id):
-    """Last-resort display data from the tracked-show cache."""
-    if entry is None:
-        return None
-    info = info_by_show.get(tmdb_id)
-    if info:
-        if entry.get("title") == "Untitled" and info.get("name"):
-            entry["title"] = info["name"]
-        if info.get("poster_path") and entry.get("poster") == _FALLBACK_POSTER:
-            entry["poster"] = poster_url(info["poster_path"])
-    return entry
-
-
-def _partial_playback_entries(
-        progress, resolve, info_by_show, completed_movies, completed_ep_times):
-    """Canonical entries from partial-playback rows (movies + TV).
-
-    Rows whose resolved position is genuinely completed (per the completion
-    cross-check) are skipped — stale resume data must not resurface after
-    real completion. A resume row NEWER than its completed event is a rewatch
-    in progress and is kept.
+    Validation uses authoritative TMDb season episode counts (cached) —
+    episodes are never invented (no S1E11 of a 10-episode season) and
+    specials (season 0) are skipped per the application's existing policy.
+    Aired state comes from the synced UpcomingEpisode table; an episode
+    with no synced row and no known air date is treated as aired so shows
+    outside the 60-day sync window still continue.
     """
-    entries = []
-    for wp in progress:
-        try:
-            if wp.media_type == "movie":
-                if not _movie_stale(
-                        wp, completed_movies.get(wp.tmdb_id)):
-                    needs_meta = (
-                        not wp.title or wp.title == "Unknown"
-                        or not wp.poster_path
-                    )
-                    details = resolve(wp.tmdb_id, True) if needs_meta else None
-                    entries.append(_build_movie_entry(wp, details))
+    from datetime import datetime
+    from models import UpcomingEpisode
+
+    details = show_details(show_id)
+    counts = counts if counts is not None else season_episode_counts(details)
+    if not counts:
+        return None
+
+    watched = watched_episode_keys(user_id, show_id)
+    today = datetime.utcnow().date()
+    upcoming = {
+        (u.season_number, u.episode_number): u
+        for u in UpcomingEpisode.query.filter_by(show_id=show_id).all()
+    }
+
+    for sn in sorted(counts):
+        if after is not None and sn < after[0]:
+            continue
+        start_en = 1
+        if after is not None and sn == after[0]:
+            start_en = after[1] + 1
+        for en in range(start_en, counts[sn] + 1):
+            if (sn, en) in watched:
+                continue
+            u = upcoming.get((sn, en))
+            air_date = u.air_date if u else None
+            aired = air_date is None or air_date <= today
+            result = {"season": sn, "episode": en, "aired": aired}
+            if air_date:
+                result["air_date"] = air_date.isoformat()
+            if u and u.episode_name:
+                result["title"] = u.episode_name
+            return result
+    return None
+
+
+def finish_tv_episode(user_id, show_id, season, episode):
+    """Mark the exact episode watched via the canonical TV tracking path and
+    promote the next valid unwatched episode into Continue Watching.
+
+    Returns dict describing the outcome; never invents episodes.
+    """
+    from routes.tv_tracking import mark_episode_watched_core
+
+    # Canonical watched state first (creates/maintains TVShowProgress,
+    # TVEpisodeWatch, season progress, show completion gating).
+    mark_episode_watched_core(user_id, show_id, season, episode)
+
+    # The finished episode leaves Continue Watching.
+    remove_item(user_id, "tv", show_id, season=season, episode=episode)
+
+    # Promote the next valid unwatched episode, if any.
+    next_ep = find_next_episode(user_id, show_id, after=(season, episode))
+    if next_ep and next_ep.get("aired"):
+        start_item(
+            user_id, "tv", show_id,
+            season=next_ep["season"], episode=next_ep["episode"],
+            title=next_ep.get("title"),
+        )
+        # Prefer canonical show metadata for the hint fields.
+        details = show_details(show_id)
+        if details:
+            from models import ContinueWatchingItem, db
+            item = ContinueWatchingItem.query.filter_by(
+                user_id=user_id, media_type="tv", tmdb_id=show_id,
+                season=next_ep["season"], episode=next_ep["episode"],
+            ).first()
+            if item:
+                item.title = (details.get("name") or item.title)
+                if details.get("poster_path"):
+                    item.poster_path = details["poster_path"][:500]
+                db.session.commit()
+        return {"finished": True, "next": {
+            "season": next_ep["season"], "episode": next_ep["episode"]}}
+
+    return {"finished": True, "next": None}
+
+
+def mark_movie_finished(user_id, tmdb_id, title=None, poster_path=None):
+    """Record canonical movie watched state and remove from Continue Watching.
+
+    Uses the existing canonical watched-state path (Feature 01): a DiaryEntry
+    watch event plus the derived viewed-state sync. No playback math.
+    """
+    from routes.diary import quick_log_movie_core
+
+    result = quick_log_movie_core(user_id, tmdb_id, title=title,
+                                  poster_path=poster_path)
+    remove_item(user_id, "movie", tmdb_id)
+    return result
+
+
+# ── Canonical builder ────────────────────────────────────────────────────────
+
+def _display_metadata_movie(item, resolve):
+    """(title, poster) for a movie item; None details → stored hint or skip."""
+    details = resolve(item.tmdb_id, True)
+    if details:
+        title = details.get("title") or item.title
+        raw = details.get("poster_path")
+        poster = (_POSTER_BASE + raw) if (
+            raw and isinstance(raw, str) and raw.startswith("/")) else (
+            raw or item.poster_path)
+    else:
+        title, poster = item.title, item.poster_path
+    if not title:
+        return None  # no canonical metadata and no hint → never render "Movie 603"
+    return title, poster_url(poster)
+
+
+def _display_metadata_tv(item, resolve):
+    """(title, poster, season, episode, watch_url) for a TV item, or None.
+
+    The stored episode is validated against TMDb season counts. A stale
+    (correctable) position is repaired; an unvalidatable one is omitted.
+    """
+    details = resolve(item.tmdb_id, False)
+    counts = season_episode_counts(details)
+    season, episode = item.season, item.episode
+
+    if counts and season is not None and episode is not None:
+        in_range = (season in counts and 1 <= episode <= counts[season])
+        if not in_range:
+            if season in counts and counts[season] > 0 and episode > counts[season]:
+                # Stored episode beyond the real season length: the user was
+                # progressing — correct to the most recent valid episode.
+                season, episode = season, counts[season]
             else:
-                # TV/anime partial playback: episode must be validated, which
-                # requires authoritative TMDb season data.
-                entry = _build_tv_entry(wp, resolve(wp.tmdb_id, False))
-                if entry is not None and not _episode_stale(
-                        wp, completed_ep_times.get(
-                            (wp.tmdb_id, entry["season"], entry["episode"]))):
-                    entry = _apply_show_fallback(entry, info_by_show, wp.tmdb_id)
-                    entries.append(entry)
-        except Exception:
-            logger.exception(
-                "Continue Watching: failed to build entry for %s", wp)
-            continue
-    return entries
+                next_ep = find_next_episode(item.user_id, item.tmdb_id,
+                                            counts=counts)
+                if not next_ep:
+                    return None
+                season, episode = next_ep["season"], next_ep["episode"]
+    elif not counts:
+        # No authoritative season data → cannot validate → omit (no broken
+        # URLs, no invented episodes).
+        return None
 
-
-def _movie_stale(wp, completed_date):
-    """True when the resume row predates the movie's completed (diary) event."""
-    if completed_date is None:
-        return False
-    row_ts = wp.updated_at
-    row_date = row_ts.date() if row_ts else None
-    return row_date is None or row_date <= completed_date
-
-
-def _episode_stale(wp, completed_ts):
-    """True when the resume row predates the episode's completed event."""
-    if completed_ts is None:
-        return False
-    return wp.updated_at is None or wp.updated_at <= completed_ts
-
-
-def _unfinished_show_entries(
-        shows, watched_by_show, info_by_show, covered_ids, resolve):
-    """Canonical entries for unfinished shows without a partial card."""
-    entries = []
-    for s in shows:
-        if s.show_id in covered_ids:
-            continue
-        try:
-            details = resolve(s.show_id, False)
-            entry = _build_unfinished_show_entry(
-                s, watched_by_show.get(s.show_id, set()), details)
-            entry = _apply_show_fallback(entry, info_by_show, s.show_id)
-            if entry is not None:
-                entries.append(entry)
-        except Exception:
-            logger.exception(
-                "Continue Watching: failed to build unfinished show %s",
-                s.show_id)
-            continue
-    return entries
+    if details:
+        title = details.get("name") or item.title
+        raw = details.get("poster_path")
+        poster = (_POSTER_BASE + raw) if (
+            raw and isinstance(raw, str) and raw.startswith("/")) else (
+            raw or item.poster_path)
+    else:
+        title, poster = item.title, item.poster_path
+    if not title:
+        return None
+    return title, poster_url(poster), season, episode, f"/watch/tv/{item.tmdb_id}/{season}/{episode}"
 
 
 def continue_watching_entries(user_id, movie_limit=12, tv_limit=6):
-    """Canonical home Continue Watching entries: partial playback + unfinished
-    shows, most-recently-watched first.
+    """Canonical Continue Watching entries: started-but-not-finished items,
+    most recently started first.
 
     Metadata resolution per card:
-      1. canonical cached TMDb details when they resolve (stale stored
-         title/poster rows are corrected),
-      2. denormalized WatchProgress title/poster as fallback,
-      3. tracked-show display data (UpcomingEpisode cache) as last resort.
-    TV episodes are always validated against TMDb season episode counts;
-    invalid/stale rows are corrected or omitted, never emitted broken.
+      1. canonical cached TMDb details when they resolve,
+      2. the item's stored title/poster hint (captured at start),
+      3. omitted entirely when neither exists — a raw TMDb id is never
+         rendered as a title.
+
+    TV positions are validated against authoritative TMDb season data.
+    No playback state, no percentages, no telemetry of any kind.
     """
-    progress = _load_progress_rows(user_id, movie_limit + tv_limit)
-    shows = _load_unfinished_shows(user_id, tv_limit)
-    watched_by_show, info_by_show = _load_show_state(
-        user_id, [s.show_id for s in shows])
+    from models import ContinueWatchingItem
 
-    completed_movies, completed_ep_times = _completed_ids_for_user(user_id)
+    rows = (
+        ContinueWatchingItem.query.filter_by(user_id=user_id)
+        .order_by(ContinueWatchingItem.started_at.desc())
+        .limit(movie_limit + tv_limit)
+        .all()
+    )
+    if not rows:
+        return []
 
-    resolve = _details_resolver()
-    entries = _partial_playback_entries(
-        progress, resolve, info_by_show, completed_movies, completed_ep_times)
+    cache = {}
 
-    covered = {
-        e["id"] for e in entries if e["media_type"] in ("tv", "anime")
-    }
-    entries.extend(_unfinished_show_entries(
-        shows, watched_by_show, info_by_show, covered, resolve))
+    def resolve(tmdb_id, is_movie):
+        key = (tmdb_id, is_movie)
+        if key not in cache:
+            cache[key] = (movie_details if is_movie else show_details)(tmdb_id)
+        return cache[key]
+
+    entries = []
+    for item in rows:
+        try:
+            if item.media_type == "movie":
+                meta = _display_metadata_movie(item, resolve)
+                if meta is None:
+                    continue
+                title, poster = meta
+                entries.append({
+                    "media_type": "movie",
+                    "tmdb_id": item.tmdb_id,
+                    "title": title,
+                    "poster": poster,
+                    "started_at": item.started_at.isoformat(),
+                    "watch_url": f"/watch/movie/{item.tmdb_id}",
+                    "label": "Continue Watching",
+                })
+            else:
+                meta = _display_metadata_tv(item, resolve)
+                if meta is None:
+                    continue
+                title, poster, season, episode, watch_url = meta
+                entries.append({
+                    "media_type": "tv",
+                    "tmdb_id": item.tmdb_id,
+                    "title": title,
+                    "poster": poster,
+                    "season": season,
+                    "episode": episode,
+                    "started_at": item.started_at.isoformat(),
+                    "watch_url": watch_url,
+                    "label": f"S{season}E{episode} · Continue Watching",
+                })
+        except Exception:
+            logger.exception(
+                "Continue Watching: failed to build entry for item %s", item.id)
+            continue
     return entries

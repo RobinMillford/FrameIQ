@@ -1,9 +1,25 @@
 import os
+import tempfile
+
 import pytest
 
-# Must be set before any app import
+# Must be set before any app import.
+#
+# NOTE: tests deliberately use a TEMP-FILE SQLite, not `sqlite:///:memory:`.
+# With :memory:, every pooled connection is a SEPARATE empty database — an
+# exception path that opens a fresh connection (e.g. external-API error
+# storms under a fake CI TMDb key) then fails with "no such table: user".
+# A temp file gives all connections the same database, keeping the suite
+# hermetic regardless of key validity. Nothing is persisted: the file is
+# removed at session teardown.
+_test_db_fd, _test_db_path = tempfile.mkstemp(prefix="frameiq_test_", suffix=".db")
+os.close(_test_db_fd)
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-tests-only")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+# Forced override (not setdefault): tests must NEVER inherit another
+# DATABASE_URL — not from CI env, not from a local .env with a production
+# Postgres URI. All test data lives in this throwaway file, removed at
+# session teardown.
+os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
 os.environ.setdefault("TMDB_API_KEY", "test-tmdb-key")
 os.environ.setdefault("WTF_CSRF_ENABLED", "False")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
@@ -21,7 +37,6 @@ def app():
     flask_app.config.update(
         TESTING=True,
         WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
         SERVER_NAME="localhost",
         MAIL_SERVER="",
         RATELIMIT_ENABLED=False,
@@ -38,6 +53,11 @@ def app():
 
     with flask_app.app_context():
         _db.drop_all()
+
+    try:
+        os.remove(_test_db_path)
+    except OSError:
+        pass
 
 
 @pytest.fixture

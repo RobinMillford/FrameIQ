@@ -304,11 +304,6 @@
                     </div>
                 </div>
 
-                <!-- Progress bar -->
-                <div class="progress-bar rounded-full mb-4">
-                    <div class="progress-fill rounded-full" id="progress-display" style="width:0%"></div>
-                </div>
-
                 <!-- Overview -->
                 {% if show.overview %}
                 <p class="text-[var(--text-mid)] text-sm leading-relaxed max-w-3xl mb-4">{{ show.overview }}</p>
@@ -390,7 +385,6 @@
     const CUR_SEASON = {{ season }};
     const CUR_EP     = {{ episode }};
     const IS_AUTH    = {{ 'true' if current_user.is_authenticated else 'false' }};
-    const ALLOWED_ORIGINS = {{ allowed_origins | tojson }};
     const SOURCES = {{ sources | tojson }};
 
     let allEpisodes     = {};   // season → [episode]
@@ -560,82 +554,16 @@
         if (nextEp) navigateTo(nextEp.season, nextEp.episode);
     }
 
-    // ── Progress persistence (event-driven, bounded) ─────────────
-    let lastTelemetry = null;   // latest real provider message worth persisting
-
-    function saveProgress(opts) {
-        if (!IS_AUTH || !lastTelemetry) return Promise.resolve();
-        return fetch('/api/watch/progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            keepalive: !!(opts && opts.final),
-            body: JSON.stringify({
-                id: TMDB_ID,
-                mediaType: MEDIA_TYPE,
-                currentTime: lastTelemetry.currentTime || 0,
-                duration: lastTelemetry.duration || 0,
-                progress: lastTelemetry.progress || 0,
-                season: CUR_SEASON,
-                episode: CUR_EP,
-                title: {{ show.name | tojson }},
-                posterPath: {{ (show.poster_path or '') | tojson }}
-            })
-        })
-        .then(r => r.json())
-        .then(res => {
-            if (!(opts && opts.final) && res.auto_logged) showToast('✓ Episode logged to diary');
-        })
-        .catch(() => {});
-    }
-
-    // ── PostMessage listener ──────────────────────────────────────
-    window.addEventListener('message', (e) => {
-        if (!ALLOWED_ORIGINS.includes(e.origin)) return;
-        let data;
-        try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
-        catch { return; }
-        if (!data || data.id == null || data.currentTime == null) return;
-
-        lastTelemetry = data;
-        currentProgress = data.progress || 0;
-
-        const bar = document.getElementById('progress-display');
-        if (bar) bar.style.width = currentProgress + '%';
-
-        if (currentProgress >= 85 && nextEp) {
-            const banner = document.getElementById('next-ep-banner');
-            document.getElementById('next-ep-label').textContent =
-                `S${nextEp.season} E${nextEp.episode}${nextEp.name ? ': ' + escHtml(nextEp.name) : ''}`;
-            banner.classList.add('show');
-        }
-
-        // Provider-reported pause / end → final snapshot now (no polling;
-        // completion and diary auto-log are decided server-side)
-        if (data.paused || data.ended) {
-            saveProgress({ final: true });
-            return;
-        }
-
-        // Throttle periodic saves — every 15 s during active playback
-        const now = Date.now();
-        if (now - lastSaved < 15000) return;
-        lastSaved = now;
-        saveProgress();
-    });
-
-    // ── Final snapshot when the page is hidden or unloaded ────────
-    function finalSave() { saveProgress({ final: true }); }
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') finalSave();
-    });
-    window.addEventListener('pagehide', finalSave);
-
-    // ── Mark watched ─────────────────────────────────────────────
+    // ── Continue Watching: explicit ✓ Finished ────────────────────
+    // Intent-based: FrameIQ records WHICH episode was started (server-side
+    // on page open); the provider owns playback position. Finishing marks
+    // the episode watched via canonical TV tracking, removes it from
+    // Continue Watching, and promotes the next valid unwatched episode.
     function markWatched() {
-        fetch(`/api/tv/${TMDB_ID}/episode/${CUR_SEASON}/${CUR_EP}/mark-watched`, {
+        fetch(`/api/continue-watching/tv/${TMDB_ID}/${CUR_SEASON}/${CUR_EP}/finish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-            body: JSON.stringify({ watched_date: new Date().toISOString().split('T')[0] })
+            body: JSON.stringify({})
         })
         .then(r => r.json())
         .then(res => {
@@ -646,7 +574,9 @@
                 btn.innerHTML = '<i class="fas fa-check-double"></i> Watched';
                 watchedEps.add(`${CUR_SEASON}-${CUR_EP}`);
                 if (allEpisodes[CUR_SEASON]) renderEpisodes(CUR_SEASON);
-                showToast('Episode marked as watched!');
+                showToast(res.next
+                    ? `✓ Watched — next: S${res.next.season}E${res.next.episode}`
+                    : '✓ Marked as watched');
             }
         })
         .catch(() => showToast('Could not mark as watched'));
