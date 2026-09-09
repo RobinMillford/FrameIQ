@@ -267,7 +267,11 @@
                     <div class="continue-progress"><div style="width: {{ p.progress }}%"></div></div>
                 </div>
                 <p class="mt-2 text-[13px] font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent)] transition-colors">{{ p.title }}</p>
+                {% if p.label %}
+                <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.label }}{% if p.is_paused %} · ⏸ Paused{% endif %}</p>
+                {% else %}
                 <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.progress }}% watched</p>
+                {% endif %}
             </a>
             {% endfor %}
         </div>
