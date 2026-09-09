@@ -311,6 +311,11 @@
     <!-- Quick Log: one-tap movie logging from any card surface -->
     <script src="{{ url_for('static', filename='js/quick-log.js') }}"></script>
 
+    <!-- Continue Watching: finish/remove actions on home rail cards -->
+    {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='js/continue-watching.js') }}"></script>
+    {% endif %}
+
     <!-- Page-specific JavaScript -->
     {% block extra_js %}{% endblock %}
 

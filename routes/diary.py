@@ -95,6 +95,65 @@ def _get_or_create_movie(media_id, data):
     return get_or_create_media_item(media_id, 'movie')
 
 
+def quick_log_movie_core(user_id, tmdb_id, title=None, poster_path=None,
+                         rating=None):
+    """Canonical movie-watched recording (shared with Continue Watching finish).
+
+    Creates today's watch event (a rewatch when the movie was already watched)
+    and syncs the derived viewed state. No playback math, no telemetry.
+    """
+    media_item = _get_or_create_movie(tmdb_id, {
+        'title': title or '',
+        'poster_path': poster_path or '',
+    })
+    if not media_item:
+        return {'success': False, 'error': 'Media item not found'}
+
+    watch_count = DiaryEntry.query.filter_by(
+        user_id=user_id,
+        media_id=media_item.id,
+        media_type='movie',
+    ).count()
+    is_rewatch = watch_count > 0
+
+    entry = DiaryEntry(
+        user_id=user_id,
+        media_id=media_item.id,
+        media_type='movie',
+        watched_date=date.today(),
+        rating=rating,
+        is_rewatch=is_rewatch,
+    )
+    db.session.add(entry)
+
+    user = db.session.get(User, user_id)
+    user.total_movies_watched = (user.total_movies_watched or 0) + 1
+
+    # Sync the derived viewed set inside a savepoint so a concurrent log's
+    # insert cannot discard our diary entry.
+    try:
+        with db.session.begin_nested():
+            db.session.execute(user_viewed.insert().values(
+                user_id=user_id,
+                media_id=media_item.id,
+                media_type='movie',
+                date_viewed=datetime.utcnow(),
+            ))
+    except IntegrityError:
+        pass  # viewed row already exists (concurrent log) — that's the goal
+
+    db.session.commit()
+    return {
+        'success': True,
+        'watched': True,
+        'logged_today': True,
+        'is_rewatch': is_rewatch,
+        'watch_count': watch_count + 1,
+        'entry_id': entry.id,
+        'title': media_item.title,
+    }
+
+
 @diary.route('/api/media/<int:media_id>/log', methods=['POST'])
 @login_required
 @limiter.limit("60 per minute")

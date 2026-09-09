@@ -2,7 +2,7 @@ from flask import Blueprint, render_template
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
-from models import UserListItem, DiaryEntry, WatchProgress, Review
+from models import UserListItem, DiaryEntry, Review
 from sqlalchemy.orm import joinedload
 from utils.request_guard import expensive_page_limit
 
@@ -130,21 +130,20 @@ def tv_detail(show_id):
                 media_type='tv'
             ).order_by(DiaryEntry.watched_date.desc()).all()
 
-        # Last-watched episode for Watch Now button (resume logic)
+        # Last-watched episode for Watch Now button (Continue Watching intent)
         watch_resume = None
         if current_user.is_authenticated:
-            last_wp = (WatchProgress.query
+            from models import ContinueWatchingItem
+            cw_item = (ContinueWatchingItem.query
                        .filter(
-                           WatchProgress.user_id == current_user.id,
-                           WatchProgress.tmdb_id == show_id,
-                           WatchProgress.media_type.in_(['tv', 'anime']),
-                           WatchProgress.season.isnot(None),
-                           WatchProgress.episode.isnot(None),
+                           ContinueWatchingItem.user_id == current_user.id,
+                           ContinueWatchingItem.tmdb_id == show_id,
+                           ContinueWatchingItem.media_type == 'tv',
                        )
-                       .order_by(WatchProgress.updated_at.desc())
+                       .order_by(ContinueWatchingItem.started_at.desc())
                        .first())
-            if last_wp and last_wp.progress_pct < 90:
-                watch_resume = last_wp
+            if cw_item and cw_item.season is not None and cw_item.episode is not None:
+                watch_resume = cw_item
 
         taste_match = _taste_match(current_user.id, show.get('genres')) if current_user.is_authenticated else None
 

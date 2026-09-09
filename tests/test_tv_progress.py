@@ -11,20 +11,25 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from models import (
-    TVEpisodeWatch, TVShowProgress, UpcomingEpisode, WatchProgress, db,
+    ContinueWatchingItem, TVEpisodeWatch, TVShowProgress, UpcomingEpisode,
+    WatchProgress, db,
 )
+import api.continue_watching as cw
 from routes.tv_tracking import _compute_next_episode_cached
 
 
 @pytest.fixture(autouse=True)
 def _clean_tv_rows(db, sample_user):
     """Clean TV rows before sample_user teardown (depends on it for ordering)."""
+    cw._memo.clear()
     yield
     TVEpisodeWatch.query.delete()
     TVShowProgress.query.delete()
     UpcomingEpisode.query.delete()
     WatchProgress.query.delete()
+    ContinueWatchingItem.query.delete()
     db.session.commit()
+    cw._memo.clear()
 
 
 SHOW_ID = 1399  # arbitrary TMDB show id
@@ -250,39 +255,71 @@ def _unfinished_entries(user):
 
 
 def test_continue_watching_next_action(auth_client, sample_user, monkeypatch):
+    """Intent-based: the show appears on the rail at the exact started
+    episode; finishing it promotes the next valid episode."""
     _mock_show(monkeypatch)
     _track(sample_user, watched=1)
     _watch(sample_user, 1, 1)
+    cw.start_item(sample_user.id, 'tv', SHOW_ID, season=1, episode=2)
     entries = _unfinished_entries(sample_user)
     assert len(entries) == 1
     e = entries[0]
     assert e['media_type'] == 'tv'
     assert e['watch_url'] == f'/watch/tv/{SHOW_ID}/1/2'
     assert 'S1E2' in e['label']
-    assert e['is_paused'] is False
 
 
-def test_continue_watching_resume_partial_playback(auth_client, sample_user, monkeypatch):
+def test_continue_watching_finish_promotes_next(auth_client, sample_user,
+                                                monkeypatch):
+    _mock_show(monkeypatch)
+    _track(sample_user, watched=1)
+    _watch(sample_user, 1, 1)
+    cw.start_item(sample_user.id, 'tv', SHOW_ID, season=1, episode=2)
+
+    cw.finish_tv_episode(sample_user.id, SHOW_ID, 1, 2)
+
+    entries = _unfinished_entries(sample_user)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e['watch_url'] == f'/watch/tv/{SHOW_ID}/1/3'
+    assert 'S1E3' in e['label']
+
+
+def test_continue_watching_exact_episode_preserved(auth_client, sample_user,
+                                                   monkeypatch):
+    """The exact started season/episode is preserved — never S1E1, never a
+    substituted episode, no playback percentage in the label."""
     _mock_show(monkeypatch)
     _track(sample_user, watched=2)
     _watch(sample_user, 1, 1)
     _watch(sample_user, 1, 2)
-    db.session.add(WatchProgress(
-        user_id=sample_user.id, tmdb_id=SHOW_ID, media_type='tv',
-        season=1, episode=2, current_time=600, duration=1800,
-        title='Test Show'))
-    db.session.commit()
+    cw.start_item(sample_user.id, 'tv', SHOW_ID, season=1, episode=2)
     e = _unfinished_entries(sample_user)[0]
-    assert e['watch_url'] == f'/watch/tv/{SHOW_ID}/1/2?type=tv'
-    assert 'S1E2' in e['label'] and '33%' in e['label']
+    assert e['watch_url'] == f'/watch/tv/{SHOW_ID}/1/2'
+    assert 'S1E2' in e['label']
+    assert '%' not in e['label']
 
 
-def test_continue_watching_paused_flag(auth_client, sample_user, monkeypatch):
+def test_continue_watching_requires_start(auth_client, sample_user,
+                                          monkeypatch):
+    """A tracked-but-never-started show is NOT on the rail: Continue
+    Watching means 'started but not finished', not 'tracked'"""
+    _mock_show(monkeypatch)
+    _track(sample_user, watched=1)
+    _watch(sample_user, 1, 1)
+    assert _unfinished_entries(sample_user) == []
+
+
+def test_continue_watching_paused_show_still_appears(auth_client, sample_user,
+                                                     monkeypatch):
+    """A paused show the user actually started still appears at its exact
+    episode — pausing must not hide or reset progress."""
     _mock_show(monkeypatch)
     _track(sample_user, status='paused', watched=1)
     _watch(sample_user, 1, 1)
+    cw.start_item(sample_user.id, 'tv', SHOW_ID, season=1, episode=2)
     e = _unfinished_entries(sample_user)[0]
-    assert e['is_paused'] is True
+    assert e['watch_url'] == f'/watch/tv/{SHOW_ID}/1/2'
 
 
 # ── Authorization + regressions ───────────────────────────────────────────────

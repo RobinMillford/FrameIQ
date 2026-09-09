@@ -253,31 +253,45 @@
         </div>
 
         {% if rail.kind == 'continue' %}
-        <div class="rail" id="rail-{{ rail.key }}">
+        <div class="rail" id="rail-{{ rail.key }}" data-continue-watching>
             {% for p in rail['entries'] %}
-            <a href="{{ p.watch_url }}" class="continue-card poster-glow group">
-                <div class="continue-thumb">
-                    {% if p.poster %}
-                    {% set poster_src = p.poster if p.poster.startswith('http') else ('https://image.tmdb.org/t/p/w500' ~ p.poster) %}
-                    <img src="{{ poster_src }}" alt="{{ p.title }}" loading="lazy"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                    <div class="w-full h-full hidden items-center justify-center">
-                        <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
+            <div class="shrink-0 snap-start w-[148px] sm:w-[160px]" data-cw-card
+                 data-media-type="{{ p.media_type }}" data-tmdb-id="{{ p.tmdb_id }}"
+                 data-season="{{ p.season or '' }}" data-episode="{{ p.episode or '' }}"
+                 data-title="{{ p.title }}">
+                <a href="{{ p.watch_url }}" class="continue-card poster-glow group block">
+                    <div class="continue-thumb">
+                        {% if p.poster %}
+                        {% set poster_src = p.poster if p.poster.startswith('http') else ('https://image.tmdb.org/t/p/w500' ~ p.poster) %}
+                        <img src="{{ poster_src }}" alt="{{ p.title }}" loading="lazy"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                        <div class="w-full h-full hidden items-center justify-center">
+                            <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
+                        </div>
+                        {% else %}
+                        <div class="w-full h-full flex items-center justify-center">
+                            <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
+                        </div>
+                        {% endif %}
                     </div>
+                    <p class="mt-2 text-[13px] font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent)] transition-colors">{{ p.title }}</p>
+                    {% if p.label %}
+                    <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.label }}</p>
                     {% else %}
-                    <div class="w-full h-full flex items-center justify-center">
-                        <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
-                    </div>
+                    <p class="font-slate text-[10px] text-[var(--text-low)]">Continue Watching</p>
                     {% endif %}
-                    <div class="continue-progress"><div style="width: {{ p.progress }}%"></div></div>
+                </a>
+                <div class="flex gap-1 mt-1.5">
+                    <a href="{{ p.watch_url }}"
+                       class="flex-1 text-center text-[10px] py-1 rounded border border-[var(--border)] text-[var(--text-hi)] hover:bg-[var(--surface-2)] transition-colors">▶ Continue</a>
+                    <button type="button" data-cw-finish
+                            class="text-[10px] py-1 px-1.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                            title="Mark as watched">✓ Finished</button>
+                    <button type="button" data-cw-remove
+                            class="text-[10px] py-1 px-1.5 rounded border border-[var(--border)] text-[var(--text-low)] hover:text-red-400 hover:border-red-400/40 transition-colors"
+                            title="Remove from Continue Watching">×</button>
                 </div>
-                <p class="mt-2 text-[13px] font-medium text-[var(--text-hi)] truncate group-hover:text-[var(--accent)] transition-colors">{{ p.title }}</p>
-                {% if p.label %}
-                <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.label }}{% if p.is_paused %} · ⏸ Paused{% endif %}</p>
-                {% else %}
-                <p class="font-slate text-[10px] text-[var(--text-low)]">{{ p.progress }}% watched</p>
-                {% endif %}
-            </a>
+            </div>
             {% endfor %}
         </div>
         {% else %}

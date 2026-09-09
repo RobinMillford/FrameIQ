@@ -118,104 +118,116 @@ def get_show_progress(show_id):
 def mark_episode_watched(show_id, season, episode):
     """Mark an episode as watched"""
     try:
-        logger.debug("Mark episode watched: show=%s S%sE%s user=%s", show_id, season, episode, current_user.id)
-
         data = request.get_json(silent=True) or {}
-
-        # Get or create progress entry
-        progress = TVShowProgress.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id
-        ).first()
-
-        if not progress:
-            show = fetch_tv_show_details(show_id)
-            progress = TVShowProgress(
-                user_id=current_user.id,
-                show_id=show_id,
-                total_seasons=show.get('number_of_seasons', 0),
-                total_episodes=show.get('number_of_episodes', 0),
-                watched_seasons=0,
-                watched_episodes=0,
-                status='watching'
-            )
-            db.session.add(progress)
-            db.session.flush()
-            logger.debug("Created progress id=%s for show %s", progress.id, show_id)
-        else:
-            logger.debug("Using progress id=%s for show %s", progress.id, show_id)
-        
-        # Check if episode already marked
-        existing = TVEpisodeWatch.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id,
-            season_number=season,
-            episode_number=episode
-        ).first()
-        
-        if existing:
-            existing.watched_date = datetime.strptime(data.get('watched_date', datetime.utcnow().strftime('%Y-%m-%d')), '%Y-%m-%d').date()
-            existing.rating = data.get('rating')
-            existing.notes = data.get('notes')
-            existing.is_rewatch = data.get('is_rewatch', False)
-            episode_watch = existing
-        else:
-            episode_watch = TVEpisodeWatch(
-                user_id=current_user.id,
-                show_id=show_id,
-                progress_id=progress.id,
-                season_number=season,
-                episode_number=episode,
-                episode_name=data.get('episode_name'),
-                watched_date=datetime.strptime(data.get('watched_date', datetime.utcnow().strftime('%Y-%m-%d')), '%Y-%m-%d').date(),
-                rating=data.get('rating'),
-                notes=data.get('notes'),
-                is_rewatch=data.get('is_rewatch', False)
-            )
-            db.session.add(episode_watch)
-
-            if not episode_watch.is_rewatch:
-                progress.watched_episodes += 1
-                logger.debug("Progress: %s/%s", progress.watched_episodes, progress.total_episodes)
-        
-        # Update last watched time
-        progress.last_watched = datetime.utcnow()
-        
-        # Check if season completed
-        update_season_progress(progress, show_id)
-        
-        # Check if show completed - but only mark as completed if show has actually ended
-        # For returning series, keep status as 'watching' even if all current episodes are watched
-        if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
-            # Fetch show details to check if it's actually ended
-            try:
-                show = fetch_tv_show_details(show_id)
-                show_status = show.get('status', '')
-                
-                # Only mark as completed if show has actually ended
-                if show_status in ['Ended', 'Canceled']:
-                    progress.status = 'completed'
-                    progress.completed_at = datetime.utcnow()
-                    logger.debug("Show %s marked COMPLETED (status: %s)", show_id, show_status)
-                else:
-                    logger.debug("Show %s: all episodes watched but status='%s', keeping 'watching'", show_id, show_status)
-                    if progress.status == 'completed':
-                        progress.status = 'watching'
-            except Exception as e:
-                logger.warning("Could not fetch show %s status: %s", show_id, e)
-
-        db.session.commit()
-
+        progress = mark_episode_watched_core(
+            current_user.id, show_id, season, episode, data)
         return jsonify({
             'success': True,
             'message': 'Episode marked as watched',
             'progress': progress.to_dict()
         }), 200
-
     except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
+def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
+    """Canonical episode-watched state (shared with Continue Watching finish).
+
+    Creates/maintains TVShowProgress + TVEpisodeWatch + season progress and
+    applies the established completion gating (only shows TMDb reports as
+    Ended/Canceled become 'completed'). Idempotent per episode: re-marking
+    updates the existing watch record.
+    """
+    logger.debug("Mark episode watched: show=%s S%sE%s user=%s", show_id, season, episode, user_id)
+
+    data = data or {}
+
+    # Get or create progress entry
+    progress = TVShowProgress.query.filter_by(
+        user_id=user_id,
+        show_id=show_id
+    ).first()
+
+    if not progress:
+        show = fetch_tv_show_details(show_id)
+        progress = TVShowProgress(
+            user_id=user_id,
+            show_id=show_id,
+            total_seasons=show.get('number_of_seasons', 0),
+            total_episodes=show.get('number_of_episodes', 0),
+            watched_seasons=0,
+            watched_episodes=0,
+            status='watching'
+        )
+        db.session.add(progress)
+        db.session.flush()
+        logger.debug("Created progress id=%s for show %s", progress.id, show_id)
+    else:
+        logger.debug("Using progress id=%s for show %s", progress.id, show_id)
+
+    # Check if episode already marked
+    existing = TVEpisodeWatch.query.filter_by(
+        user_id=user_id,
+        show_id=show_id,
+        season_number=season,
+        episode_number=episode
+    ).first()
+
+    if existing:
+        existing.watched_date = datetime.strptime(data.get('watched_date', datetime.utcnow().strftime('%Y-%m-%d')), '%Y-%m-%d').date()
+        existing.rating = data.get('rating')
+        existing.notes = data.get('notes')
+        existing.is_rewatch = data.get('is_rewatch', False)
+        episode_watch = existing
+    else:
+        episode_watch = TVEpisodeWatch(
+            user_id=user_id,
+            show_id=show_id,
+            progress_id=progress.id,
+            season_number=season,
+            episode_number=episode,
+            episode_name=data.get('episode_name'),
+            watched_date=datetime.strptime(data.get('watched_date', datetime.utcnow().strftime('%Y-%m-%d')), '%Y-%m-%d').date(),
+            rating=data.get('rating'),
+            notes=data.get('notes'),
+            is_rewatch=data.get('is_rewatch', False)
+        )
+        db.session.add(episode_watch)
+
+        if not episode_watch.is_rewatch:
+            progress.watched_episodes += 1
+            logger.debug("Progress: %s/%s", progress.watched_episodes, progress.total_episodes)
+
+    # Update last watched time
+    progress.last_watched = datetime.utcnow()
+
+    # Check if season completed
+    update_season_progress(progress, show_id)
+
+    # Check if show completed - but only mark as completed if show has actually ended
+    # For returning series, keep status as 'watching' even if all current episodes are watched
+    if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
+        # Fetch show details to check if it's actually ended
+        try:
+            show = fetch_tv_show_details(show_id)
+            show_status = show.get('status', '')
+
+            # Only mark as completed if show has actually ended
+            if show_status in ['Ended', 'Canceled']:
+                progress.status = 'completed'
+                progress.completed_at = datetime.utcnow()
+                logger.debug("Show %s marked COMPLETED (status: %s)", show_id, show_status)
+            else:
+                logger.debug("Show %s: all episodes watched but status='%s', keeping 'watching'", show_id, show_status)
+                if progress.status == 'completed':
+                    progress.status = 'watching'
+        except Exception as e:
+            logger.warning("Could not fetch show %s status: %s", show_id, e)
+
+    db.session.commit()
+    return progress
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/season/<int:season>/mark-watched', methods=['POST'])
