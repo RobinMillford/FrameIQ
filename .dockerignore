@@ -1,52 +1,88 @@
+# ============================================================
+# Python cache / local environments
+# ============================================================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 .Python
+
+.env
+.env.*
+!.env.example
+
 env/
 venv/
 myenv/
 .venv/
-.env
+
+# ============================================================
+# Git / IDE / local development
+# ============================================================
 .git/
 .github/
-.gitignore
-*.md
-*.log
-.DS_Store
-node_modules/
-
-# Exclude development/documentation files
-images/
-extra/
-.extra/
-migrates/
-data/
-chroma_db/
 .vscode/
 .idea/
+.DS_Store
+
+# ============================================================
+# Python / test caches
+# ============================================================
 .pytest_cache/
-github-actions-key.json
-uv.lock
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+
+# ============================================================
+# Node / frontend dependencies
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ============================================================
+# Local database / generated database files
+# ============================================================
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3.gz
+
+# ============================================================
+# Local data / development-only directories
+# ============================================================
+data/
+chroma_db/
+extra/
+.extra/
+images/
+
+# ============================================================
+# Documentation / planning files
+# These are not required by the runtime image.
+# ============================================================
+*.md
+*.markdown
+LICENSE
 agents.md
 cloud_run_deployment.md
 implementation_plan.md.resolved
-README.md
-LICENSE
 
-# Exclude Docker / ops files (not needed inside the image)
+# ============================================================
+# Local / development tooling
+# ============================================================
 Makefile
-docker-compose.yml
-nginx/
-.env.example
-gunicorn.conf.py.bak
-
-# Exclude database files
-*.db
-*.sqlite3
-*.sqlite3.gz
-
-# Exclude test files
-test_*.py
-*_test.py
 pytest.ini
+
+# ============================================================
+# Backups / temporary files
+# ============================================================
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
