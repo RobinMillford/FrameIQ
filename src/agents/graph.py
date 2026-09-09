@@ -158,7 +158,7 @@ async def _build_graph_once():
     than an explicit, loggable initialization failure (callers turn it
     into HTTP 503 before streaming starts).
     """
-    global _graph_instance, _graph_error, _graph_traceback
+    global _graph_instance
     if _graph_instance is not None:
         return _graph_instance
 
