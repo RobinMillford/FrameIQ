@@ -65,14 +65,14 @@ def cw_client(client, cw_user):
 class TestWatchPageStart:
     def test_opening_movie_watch_page_records_start(self, cw_client, cw_user,
                                                     db, app, monkeypatch):
-        from routes import watch as watch_routes
+        # Patch the real import source: routes.watch imports fetch_movie_details
+        # inside the function from api.tmdb_client.
         monkeypatch.setattr(
-            watch_routes, "fetch_movie_details",
+            "api.tmdb_client.fetch_movie_details",
             lambda mid, **kw: {'id': mid, 'title': 'Test Movie',
                                'poster_path': '/p.jpg', 'overview': '',
                                'release_date': '', 'genres': [],
-                               'vote_average': 0, 'recommendations': []},
-            raising=False)
+                               'vote_average': 0, 'recommendations': []})
         r = cw_client.get('/watch/movie/321321')
         assert r.status_code == 200
         with app.app_context():
@@ -83,14 +83,12 @@ class TestWatchPageStart:
 
     def test_reopening_movie_does_not_duplicate(self, cw_client, cw_user, db,
                                                 app, monkeypatch):
-        from routes import watch as watch_routes
         monkeypatch.setattr(
-            watch_routes, "fetch_movie_details",
+            "api.tmdb_client.fetch_movie_details",
             lambda mid, **kw: {'id': mid, 'title': 'Test Movie',
                                'poster_path': None, 'overview': '',
                                'release_date': '', 'genres': [],
-                               'vote_average': 0, 'recommendations': []},
-            raising=False)
+                               'vote_average': 0, 'recommendations': []})
         cw_client.get('/watch/movie/321321')
         cw_client.get('/watch/movie/321321')
         with app.app_context():
@@ -101,14 +99,12 @@ class TestWatchPageStart:
     def test_opening_tv_episode_records_exact_position(self, cw_client,
                                                        cw_user, db, app,
                                                        monkeypatch):
-        from routes import watch as watch_routes
         monkeypatch.setattr(
-            watch_routes, "fetch_tv_show_details",
+            "api.tmdb_client.fetch_tv_show_details",
             lambda sid, **kw: {'id': sid, 'name': 'Test Show', 'seasons': [],
                                'poster_path': None, 'overview': '',
                                'status': '', 'number_of_seasons': 0,
-                               'vote_average': 0},
-            raising=False)
+                               'vote_average': 0})
         r = cw_client.get('/watch/tv/17287/2/4')
         assert r.status_code == 200
         with app.app_context():
@@ -120,30 +116,26 @@ class TestWatchPageStart:
     def test_watch_page_start_failure_never_breaks_page(self, cw_client,
                                                         monkeypatch):
         """A CW-write failure must not 500 the watch page."""
-        from routes import watch as watch_routes
         monkeypatch.setattr(
             cw, "start_item",
             lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("db down")))
         monkeypatch.setattr(
-            watch_routes, "fetch_movie_details",
+            "api.tmdb_client.fetch_movie_details",
             lambda mid, **kw: {'id': mid, 'title': 'T', 'poster_path': None,
                                'overview': '', 'release_date': '',
                                'genres': [], 'vote_average': 0,
-                               'recommendations': []},
-            raising=False)
+                               'recommendations': []})
         r = cw_client.get('/watch/movie/4242')
         assert r.status_code == 200
 
     def test_anonymous_watch_page_does_not_record(self, client, db, app,
                                                   monkeypatch):
-        from routes import watch as watch_routes
         monkeypatch.setattr(
-            watch_routes, "fetch_movie_details",
+            "api.tmdb_client.fetch_movie_details",
             lambda mid, **kw: {'id': mid, 'title': 'T', 'poster_path': None,
                                'overview': '', 'release_date': '',
                                'genres': [], 'vote_average': 0,
-                               'recommendations': []},
-            raising=False)
+                               'recommendations': []})
         r = client.get('/watch/movie/603')
         assert r.status_code == 200
         with app.app_context():

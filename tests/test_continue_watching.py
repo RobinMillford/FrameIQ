@@ -21,6 +21,8 @@ SHOW_DETAILS = {
     "id": SHOW_ID,
     "name": "Party Down",
     "poster_path": "/partydown.jpg",
+    "number_of_seasons": 2,
+    "number_of_episodes": 20,
     "seasons": [
         {"season_number": 1, "episode_count": SEASON1_EPISODES},
         {"season_number": 2, "episode_count": 10},
@@ -58,8 +60,16 @@ def _clean_cw_state(db, sample_user):
 
 @pytest.fixture
 def mock_tmdb(monkeypatch):
-    """Mock both call sites: routes.tv_tracking (module binding) and
-    api.continue_watching (call-time import from api.tmdb_client)."""
+    """Mock every TMDb call site used by the flows under test:
+
+    - api.tmdb_client.*            → call-time imports in api.continue_watching
+    - routes.tv_tracking.fetch_tv_show_details → module-level binding used by
+      mark_episode_watched_core, update_season_progress, and completion
+      gating (all reached via cw.finish_tv_episode)
+
+    Without the tv_tracking patch the tests would silently hit the real
+    TMDb API when a valid key is present — the CI failure this fixes.
+    """
     calls = {"movie": 0, "tv": 0}
 
     def fake_movie(mid, **kw):
@@ -76,6 +86,8 @@ def mock_tmdb(monkeypatch):
 
     monkeypatch.setattr("api.tmdb_client.fetch_movie_details", fake_movie)
     monkeypatch.setattr("api.tmdb_client.fetch_tv_show_details", fake_show)
+    monkeypatch.setattr(
+        "routes.tv_tracking.fetch_tv_show_details", fake_show)
     return calls
 
 
