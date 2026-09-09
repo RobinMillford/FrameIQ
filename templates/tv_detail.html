@@ -319,7 +319,10 @@
                     </div>
                     {% endif %}
 
-                    <!-- Watch Now Button -->
+                    <!-- Where to Watch (legal availability) -->
+                    {% include 'partials/where_to_watch.html' with context %}
+
+                    <!-- Play on FrameIQ (beta embed player) -->
                     {% set _is_anime = show.genres is defined and 'Animation' in show.genres and show.origin_country is defined and 'JP' in show.origin_country %}
                     {% set _type_param = '?type=anime' if _is_anime else '' %}
                     {% if watch_resume %}
@@ -330,7 +333,7 @@
                     {% else %}
                     <a href="/watch/tv/{{ show.id }}/1/1{{ _type_param }}"
                        class="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-[var(--accent)] hover:to-[var(--accent-hi)] text-white px-6 py-3 rounded-lg font-semibold mb-3 transition-all shadow-lg shadow-indigo-900/40 hover:shadow-indigo-700/50 hover:scale-105 active:scale-100">
-                        <i class="fas fa-play"></i> Watch Now
+                        <i class="fas fa-play"></i> Play (beta)
                     </a>
                     {% endif %}
 
@@ -1461,6 +1464,7 @@
     <!-- Load Review Manager -->
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/where-to-watch.js') }}"></script>
     
     <!-- TV Tracking Scripts -->
     <script>

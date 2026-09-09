@@ -114,7 +114,40 @@
                         name="bio" 
                         rows="4">{{ current_user.bio or '' }}</textarea>
                 </div>
-                
+
+                <!-- My Services (Feature 03) -->
+                <div class="mb-6 border-t border-gray-700 pt-6">
+                    <h2 class="text-lg font-semibold mb-1">Streaming Services</h2>
+                    <p class="text-gray-400 text-sm mb-4">Pick the services you subscribe to — FrameIQ uses them to answer “where can I watch this?”</p>
+                    <div class="mb-4">
+                        <label class="block text-gray-300 mb-2" for="streaming-region">Region</label>
+                        <select id="streaming-region"
+                                class="w-48 px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                            <option value="US">United States</option>
+                            <option value="GB">United Kingdom</option>
+                            <option value="CA">Canada</option>
+                            <option value="AU">Australia</option>
+                            <option value="DE">Germany</option>
+                            <option value="FR">France</option>
+                            <option value="IN">India</option>
+                            <option value="BD">Bangladesh</option>
+                            <option value="BR">Brazil</option>
+                            <option value="JP">Japan</option>
+                            <option value="NL">Netherlands</option>
+                        </select>
+                    </div>
+                    <div id="services-list"
+                         class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4 text-sm">
+                        <p class="col-span-full text-gray-400">Loading services…</p>
+                    </div>
+                    <p id="services-error" class="hidden text-sm text-red-400 mb-2"></p>
+                    <button type="button" id="save-services"
+                            class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
+                        Save Services
+                    </button>
+                    <span id="services-status" class="ml-3 text-sm text-gray-400"></span>
+                </div>
+
                 <div class="flex justify-between">
                     <a href="{{ url_for('auth.profile') }}" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded transition duration-300">
                         Cancel
@@ -129,5 +162,6 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/my-services.js') }}"></script>
 </body>
 </html>
