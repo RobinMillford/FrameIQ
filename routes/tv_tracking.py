@@ -498,7 +498,12 @@ def get_unfinished_shows():
         for s in shows:
             watched = watched_by_show.get(s.show_id, set())
             last_ep = _last_watched_position(watched)
-            next_ep = _next_from_position(last_ep)
+            # Next episode is validated against authoritative TMDb season
+            # data (cached) — never naive E+1 arithmetic, which can emit a
+            # nonexistent episode / broken watch URL.
+            next_ep = _compute_next_episode_cached(current_user.id, s.show_id)
+            # An unaired episode must not be offered as playable.
+            playable = next_ep is not None and next_ep.get('aired', True)
             info = info_by_show.get(s.show_id, {})
             result.append({
                 'show_id': s.show_id,
@@ -509,11 +514,17 @@ def get_unfinished_shows():
                 'total_episodes': s.total_episodes,
                 'progress_percent': s.calculate_progress_percentage(),
                 'last_watched': s.last_watched.isoformat() if s.last_watched else None,
-                'last_episode': last_ep,
-                'next_episode': next_ep,
+                'last_episode': (
+                    {'season': last_ep[0], 'episode': last_ep[1]}
+                    if last_ep else None
+                ),
+                'next_episode': (
+                    {'season': next_ep['season'], 'episode': next_ep['episode']}
+                    if next_ep else None
+                ),
                 'watch_url': (
                     f"/watch/tv/{s.show_id}/{next_ep['season']}/{next_ep['episode']}"
-                    if next_ep else None
+                    if playable else None
                 ),
             })
 
@@ -529,14 +540,6 @@ def _last_watched_position(watched_set):
     if not watched_set:
         return None
     return max(watched_set, key=lambda p: (p[0], p[1]))
-
-
-def _next_from_position(last_ep):
-    """Next episode after a (season, episode) position: E+1 in season, else S+1E1."""
-    if not last_ep:
-        return None
-    season, episode = last_ep
-    return {'season': season, 'episode': episode + 1}
 
 
 def _compute_next_episode_cached(user_id, show_id):

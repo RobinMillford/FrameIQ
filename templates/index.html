@@ -258,7 +258,12 @@
             <a href="{{ p.watch_url }}" class="continue-card poster-glow group">
                 <div class="continue-thumb">
                     {% if p.poster %}
-                    <img src="https://image.tmdb.org/t/p/w500{{ p.poster }}" alt="{{ p.title }}" loading="lazy">
+                    {% set poster_src = p.poster if p.poster.startswith('http') else ('https://image.tmdb.org/t/p/w500' ~ p.poster) %}
+                    <img src="{{ poster_src }}" alt="{{ p.title }}" loading="lazy"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                    <div class="w-full h-full hidden items-center justify-center">
+                        <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
+                    </div>
                     {% else %}
                     <div class="w-full h-full flex items-center justify-center">
                         <i data-lucide="film" class="w-8 h-8 text-[var(--text-low)]"></i>
