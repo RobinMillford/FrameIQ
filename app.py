@@ -38,6 +38,7 @@ from routes.likes import likes_bp
 from routes.media_comments import media_comments_bp
 from routes.watchlist_priorities import priorities_bp
 from routes.tmdb_proxy import tmdb_proxy_bp
+from routes.availability import availability_bp
 
 # ── Routes: social & discovery ────────────────────────────────────────────────
 from routes.social import social
@@ -176,6 +177,7 @@ def create_app() -> Flask:
         # Features
         chat, reviews, reviews_enhanced_bp, lists, lists_advanced,
         diary, tags_bp, likes_bp, media_comments_bp, priorities_bp, tmdb_proxy_bp,
+        availability_bp,
         # Social & discovery
         social, analytics, trending, activity_feed, friends_activity,
         profile_enhancements, user_discovery, popular_bp, recommendations_bp,

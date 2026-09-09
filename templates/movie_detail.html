@@ -281,10 +281,13 @@
                     </div>
                     {% endif %}
                     
-                    <!-- Watch Now Button -->
+                    <!-- Where to Watch (legal availability) -->
+                    {% include 'partials/where_to_watch.html' with context %}
+
+                    <!-- Play on FrameIQ (beta embed player) -->
                     <a href="/watch/movie/{{ movie.id }}"
                        class="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-[var(--accent)] hover:to-[var(--accent-hi)] text-white px-6 py-3 rounded-lg font-semibold mb-3 transition-all shadow-lg shadow-indigo-900/40 hover:shadow-indigo-700/50 hover:scale-105 active:scale-100">
-                        <i class="fas fa-play"></i> Watch Now
+                        <i class="fas fa-play"></i> Play (beta)
                     </a>
 
                     <!-- Trailer Button -->
@@ -397,12 +400,17 @@
                             </div>
                             {% endif %}
                             {% if (movie.id, 'movie') not in user_viewed_ids %}
-                            <a href="{{ url_for('main.mark_as_viewed', media_id=movie.id, media_type='movie') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
+                            <button type="button"
+                                data-quick-log="{{ movie.id }}"
+                                data-title="{{ movie.title }}"
+                                {% if movie.poster_path %}data-poster-path="{{ movie.poster_path }}"{% endif %}
+                                {% if movie.release_date %}data-release-date="{{ movie.release_date }}"{% endif %}
+                                class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
-                                Mark as Viewed
-                            </a>
+                                <span class="ql-log-label">Log Watched</span>
+                            </button>
                             {% endif %}
                             
                             <!-- NEW: Diary and Lists buttons -->
@@ -1645,5 +1653,6 @@
     <!-- Load Review Manager -->
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/where-to-watch.js') }}"></script>
 </body>
 </html>{% endblock %}

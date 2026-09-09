@@ -113,6 +113,19 @@
                 </div>
             </section>
 
+            <!-- Unfinished Shows -->
+            <section class="mb-12">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold text-white flex items-center gap-3">
+                        <span class="text-4xl">⏳</span>
+                        Unfinished Shows
+                    </h2>
+                </div>
+                <div id="unfinished-shows" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <!-- Shows will be loaded here -->
+                </div>
+            </section>
+
             <!-- Recently Completed -->
             <section class="mb-12">
                 <div class="flex justify-between items-center mb-6">
@@ -292,6 +305,7 @@ async function loadDashboard() {
         
         // Load sections
         await loadContinueWatching(allShows);
+        await loadUnfinishedShows();
         await loadRecentlyCompleted(allShows);
         await loadUpcomingWeek();
         
@@ -351,6 +365,52 @@ async function loadContinueWatching(shows) {
     for (const show of watching) {
         const showDetails = await fetchShowDetails(show.show_id);
         container.innerHTML += renderShowCard(show, showDetails);
+    }
+}
+
+async function loadUnfinishedShows() {
+    const container = document.getElementById('unfinished-shows');
+    if (!container) return;
+
+    try {
+        const response = await fetch('/api/tv/unfinished-shows?limit=10');
+        const data = await response.json();
+        const shows = data.shows || [];
+
+        if (shows.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = shows.map(s => {
+            const poster = s.poster_path
+                ? (s.poster_path.startsWith('http') ? s.poster_path : `https://image.tmdb.org/t/p/w200${s.poster_path}`)
+                : '/static/images/no-image.png';
+            const last = s.last_episode ? `S${s.last_episode.season}E${s.last_episode.episode}` : '—';
+            const next = s.next_episode ? `S${s.next_episode.season}E${s.next_episode.episode}` : '—';
+            const statusLabel = s.status === 'paused' ? '⏸️ Paused' : '▶️ Watching';
+            const watchBtn = s.watch_url
+                ? `<a href="${s.watch_url}" class="mt-2 inline-block px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all">${s.status === 'paused' ? 'Resume' : '▶ Watch Next'}</a>`
+                : '';
+            return `
+                <div class="bg-white/5 hover:bg-white/10 rounded-xl overflow-hidden transition-all border border-white/10">
+                    <a href="/tv/${s.show_id}"><img src="${poster}" alt="${s.name || ''}" class="w-full aspect-[2/3] object-cover" onerror="this.src='/static/images/no-image.png'"></a>
+                    <div class="p-3">
+                        <div class="text-white font-semibold text-sm truncate">${s.name || 'Unknown show'}</div>
+                        <div class="text-xs text-[var(--text-mid)] mt-1">Last: ${last} · Next: ${next}</div>
+                        <div class="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500" style="width: ${s.progress_percent || 0}%"></div>
+                        </div>
+                        <div class="flex items-center justify-between mt-2">
+                            <span class="text-[10px] text-[var(--text-mid)]">${statusLabel} · ${Math.round(s.progress_percent || 0)}%</span>
+                            ${watchBtn}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        container.innerHTML = '';
     }
 }
 

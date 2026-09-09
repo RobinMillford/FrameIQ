@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Busy — FrameIQ</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            margin: 0; min-height: 100vh; display: flex;
+            align-items: center; justify-content: center;
+            background: #0f1117; color: #e5e7eb;
+            font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        }
+        .card { text-align: center; padding: 3rem 2.5rem; max-width: 26rem; }
+        .spinner {
+            width: 44px; height: 44px; margin: 0 auto 1.5rem;
+            border: 3px solid rgba(99,102,241,.25); border-top-color: #6366f1;
+            border-radius: 50%; animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+        p  { font-size: .875rem; color: #9ca3af; margin: 0 0 1.5rem; line-height: 1.6; }
+        button {
+            background: linear-gradient(90deg,#4f46e5,#7c3aed); color: #fff;
+            border: 0; border-radius: .5rem; padding: .625rem 1.5rem;
+            font-weight: 600; font-size: .875rem; cursor: pointer;
+        }
+        button:hover { filter: brightness(1.1); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>One moment…</h1>
+        <p>The page you asked for is loading right now. It will open automatically in a few seconds.</p>
+        <button onclick="location.reload()">Open now</button>
+    </div>
+    <script>
+        // Single bounded retry: mirrors the server's Retry-After header so the
+        // browser re-requests the page itself instead of leaving the user on
+        // a raw JSON error after clicking Watch/Stream.
+        (function () {
+            var retries = 0;
+            try { retries = parseInt(sessionStorage.getItem('__fiq_busy_retry') || '0', 10) || 0; } catch (e) {}
+            if (retries >= 2) return; // stop after 2 automatic retries
+            try { sessionStorage.setItem('__fiq_busy_retry', String(retries + 1)); } catch (e) {}
+            var delay = 0;
+            try { delay = (parseInt(document.querySelector('meta[name="retry-after"]') || '0', 10) || 0) * 1000; } catch (e) {}
+            if (!delay) delay = 5000;
+            setTimeout(function () { location.reload(); }, delay);
+        })();
+    </script>
+</body>
+</html>

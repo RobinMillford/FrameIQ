@@ -12,6 +12,7 @@
 
         function setupMobileMenu() {
             const mobileMenuButton = document.getElementById('mobile-menu-button');
+            if (!mobileMenuButton) return; // pages without a mobile menu button
             const mobileMenu = document.createElement('div');
             mobileMenu.className = 'fixed top-16 left-0 right-0 bg-gray-900 glass-effect hidden';
             mobileMenu.innerHTML = `

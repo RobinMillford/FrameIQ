@@ -12,7 +12,20 @@ class TVTracker {
 
     async initialize() {
         await this.loadProgress();
+        if (this.progress && this.progress.status) {
+            await this.loadNextEpisode();
+        }
         this.renderTrackingUI();
+    }
+
+    async loadNextEpisode() {
+        try {
+            const response = await fetch(`/api/tv/${this.showId}/next-episode`);
+            const data = await response.json();
+            this.nextEpisode = data.next_episode || null;
+        } catch (error) {
+            this.nextEpisode = null;
+        }
     }
 
     async loadProgress() {
@@ -142,6 +155,7 @@ class TVTracker {
             'watching': { color: 'green', icon: '▶️', label: 'Watching' },
             'plan_to_watch': { color: 'blue', icon: '📋', label: 'Plan to Watch' },
             'completed': { color: 'purple', icon: '✅', label: 'Completed' },
+            'paused': { color: 'yellow', icon: '⏸️', label: 'Paused' },
             'on_hold': { color: 'yellow', icon: '⏸️', label: 'On Hold' },
             'dropped': { color: 'red', icon: '🚫', label: 'Dropped' }
         };
@@ -211,6 +225,8 @@ class TVTracker {
                     </div>
                 </div>
 
+                ${this._nextEpisodeBlock()}
+
                 <div class="flex gap-3">
                     <button onclick="window.location.href='/tv/upcoming'" 
                             class="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-2">
@@ -219,6 +235,7 @@ class TVTracker {
                         </svg>
                         📅 Calendar
                     </button>
+                    ${this._pauseResumeButton()}
                     <button onclick="tvTracker.openStatusModal()" 
                             class="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -232,12 +249,56 @@ class TVTracker {
         `;
     }
 
+    _nextEpisodeBlock() {
+        const ne = this.nextEpisode;
+        if (!ne) return '';
+
+        if (!ne.aired) {
+            const when = ne.air_date ? `Airs ${ne.air_date}` : 'Not yet aired';
+            return `
+                <div class="mb-6 bg-white/5 border border-white/10 rounded-xl p-4">
+                    <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Next Episode</p>
+                    <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${ne.title}` : ''}</p>
+                    <p class="text-yellow-400 text-sm mt-1">⏳ ${when}</p>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="mb-6 bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/20 rounded-xl p-4">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs text-indigo-300 uppercase tracking-wide mb-1">Next Episode</p>
+                        <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${ne.title}` : ''}</p>
+                    </div>
+                    <a href="/watch/tv/${this.showId}/${ne.season}/${ne.episode}"
+                       class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap">
+                        ▶ Watch Next
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    _pauseResumeButton() {
+        if (!this.progress || !this.progress.status) return '';
+        const isPaused = this.progress.status === 'paused';
+        const next = isPaused ? 'watching' : 'paused';
+        const label = isPaused ? '▶️ Resume' : '⏸️ Pause';
+        return `
+            <button onclick="tvTracker.changeStatus('${next}')"
+                    class="flex-1 px-4 py-3 ${isPaused ? 'bg-green-600 hover:bg-green-500' : 'bg-yellow-600/80 hover:bg-yellow-600'} text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2">
+                ${label}
+            </button>
+        `;
+    }
+
     openStatusModal() {
         const statuses = [
             { value: 'watching', label: 'Watching', icon: '▶️', color: 'green' },
+            { value: 'paused', label: 'Paused', icon: '⏸️', color: 'yellow' },
             { value: 'plan_to_watch', label: 'Plan to Watch', icon: '📋', color: 'blue' },
             { value: 'completed', label: 'Completed', icon: '✅', color: 'purple' },
-            { value: 'on_hold', label: 'On Hold', icon: '⏸️', color: 'yellow' },
             { value: 'dropped', label: 'Dropped', icon: '🚫', color: 'red' }
         ];
 

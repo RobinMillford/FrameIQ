@@ -55,6 +55,7 @@ from models.tv import (                                       # noqa: F401
     UpcomingEpisode,
 )
 from models.watch import WatchProgress                        # noqa: F401
+from models.streaming import UserStreamingService             # noqa: F401
 from models.chat import (                                      # noqa: F401
     ChatConversation,
     ChatMessage,
@@ -73,5 +74,6 @@ __all__ = [
     'DiaryEntry', 'Tag', 'UserMediaTag', 'MediaLike', 'MediaComment',
     'TVShowProgress', 'TVEpisodeWatch', 'UpcomingEpisode',
     'WatchProgress',
+    'UserStreamingService',
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
 ]

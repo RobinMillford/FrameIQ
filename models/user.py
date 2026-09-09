@@ -56,6 +56,9 @@ class User(UserMixin, db.Model):
     followers_count = db.Column(db.Integer, default=0)
     following_count = db.Column(db.Integer, default=0)
 
+    # Where-to-Watch region preference (Feature 03). ISO-3166 alpha-2.
+    streaming_region = db.Column(db.String(2))
+
     def __init__(self, **kwargs):
         super(User, self).__init__(**kwargs)
 

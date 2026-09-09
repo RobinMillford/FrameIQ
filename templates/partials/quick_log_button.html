@@ -1,0 +1,22 @@
+{# One-tap movie logging for poster/card surfaces.
+   Params: media_id (TMDb id), title, poster_path (optional),
+           release_date (optional, YYYY-MM-DD), force_rewatch ("true"|"false"),
+           compact (true → icon-only chip for rail cards).
+   Driven by static/js/quick-log.js (loaded site-wide via base.html). #}
+{% if current_user.is_authenticated %}
+<button
+    type="button"
+    data-quick-log="{{ media_id }}"
+    data-title="{{ title }}"
+    {% if poster_path %}data-poster-path="{{ poster_path }}"{% endif %}
+    {% if release_date %}data-release-date="{{ release_date }}"{% endif %}
+    {% if force_rewatch %}data-rewatch="{{ force_rewatch }}"{% endif %}
+    class="quick-log-btn glass-effect text-white text-xs px-2 py-1 rounded flex items-center gap-1 hover:bg-green-600 transition-colors"
+    title="Log watched (today)"
+>
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    <span class="ql-log-label">Log Watched</span>
+</button>
+{% endif %}

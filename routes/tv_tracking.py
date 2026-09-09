@@ -7,7 +7,7 @@ from flask_login import current_user, login_required
 
 from api.tmdb_client import cached_tmdb_request, fetch_tv_show_details
 from api.tmdb.config import TMDB_API_KEY
-from models import TVEpisodeWatch, TVShowProgress, db
+from models import TVEpisodeWatch, TVShowProgress, UpcomingEpisode, db
 from routes._tv_bp import TMDB_BASE_URL, tv_tracking
 
 # Register page + calendar routes on the shared blueprint so app.py's single
@@ -364,7 +364,7 @@ def update_show_status(show_id):
         data = request.get_json()
         new_status = data.get('status')
         
-        if new_status not in ['watching', 'completed', 'plan_to_watch', 'dropped']:
+        if new_status not in ['watching', 'completed', 'plan_to_watch', 'dropped', 'paused']:
             return jsonify({'error': 'Invalid status'}), 400
         
         progress = TVShowProgress.query.filter_by(
@@ -376,12 +376,12 @@ def update_show_status(show_id):
             return jsonify({'error': 'Show not being tracked'}), 404
         
         progress.status = new_status
-        
+
         if new_status == 'completed':
             progress.completed_at = datetime.utcnow()
         elif progress.completed_at:
             progress.completed_at = None
-        
+
         db.session.commit()
         
         return jsonify({
@@ -393,6 +393,202 @@ def update_show_status(show_id):
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
+@tv_tracking.route('/api/tv/<int:show_id>/next-episode')
+@login_required
+def get_next_episode(show_id):
+    """First-class Next Episode for a tracked show.
+
+    Returns the earliest unwatched, non-specials episode. Aired state comes
+    from the synced UpcomingEpisode table — no extra TMDb request is made.
+    """
+    try:
+        progress = TVShowProgress.query.filter_by(
+            user_id=current_user.id, show_id=show_id
+        ).first()
+
+        if not progress:
+            return jsonify({'tracked': False, 'next_episode': None}), 200
+
+        if progress.status in ('completed', 'dropped'):
+            return jsonify({
+                'tracked': True,
+                'status': progress.status,
+                'progress': {
+                    'watched': progress.watched_episodes,
+                    'total': progress.total_episodes,
+                    'percent': progress.calculate_progress_percentage(),
+                },
+                'next_episode': None,
+            }), 200
+
+        next_ep = _compute_next_episode_cached(current_user.id, show_id)
+        return jsonify({
+            'tracked': True,
+            'status': progress.status,
+            'progress': {
+                'watched': progress.watched_episodes,
+                'total': progress.total_episodes,
+                'percent': progress.calculate_progress_percentage(),
+            },
+            'next_episode': next_ep,
+        }), 200
+
+    except Exception:
+        logger.error("Unexpected error in get_next_episode", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
+@tv_tracking.route('/api/tv/unfinished-shows')
+@login_required
+def get_unfinished_shows():
+    """Unfinished Shows shelf: watching/paused shows that are not complete.
+
+    Sorted by most recently watched. Batched queries — one query for the
+    progress rows, one for all watched episodes, one for show display info.
+    """
+    try:
+        limit = min(request.args.get('limit', 20, type=int), 50)
+        shows = TVShowProgress.query.filter(
+            TVShowProgress.user_id == current_user.id,
+            TVShowProgress.status.in_(['watching', 'paused']),
+        ).order_by(TVShowProgress.last_watched.desc()).limit(limit).all()
+
+        if not shows:
+            return jsonify({'shows': []}), 200
+
+        show_ids = [s.show_id for s in shows]
+
+        # One query for every watched episode across all tracked shows.
+        watched_rows = (
+            db.session.query(
+                TVEpisodeWatch.show_id,
+                TVEpisodeWatch.season_number,
+                TVEpisodeWatch.episode_number,
+            )
+            .filter(
+                TVEpisodeWatch.user_id == current_user.id,
+                TVEpisodeWatch.show_id.in_(show_ids),
+                TVEpisodeWatch.is_rewatch == False,
+            )
+            .all()
+        )
+        watched_by_show = {}
+        for sid, sn, en in watched_rows:
+            watched_by_show.setdefault(sid, set()).add((sn, en))
+
+        # Display info (name/poster) from the synced UpcomingEpisode cache —
+        # one query, no TMDb calls.
+        info_rows = (
+            db.session.query(
+                UpcomingEpisode.show_id,
+                UpcomingEpisode.show_name,
+                UpcomingEpisode.poster_path,
+            )
+            .filter(UpcomingEpisode.show_id.in_(show_ids))
+            .all()
+        )
+        info_by_show = {}
+        for sid, name, poster in info_rows:
+            if sid not in info_by_show:
+                info_by_show[sid] = {'name': name, 'poster_path': poster}
+
+        result = []
+        for s in shows:
+            watched = watched_by_show.get(s.show_id, set())
+            last_ep = _last_watched_position(watched)
+            next_ep = _next_from_position(last_ep)
+            info = info_by_show.get(s.show_id, {})
+            result.append({
+                'show_id': s.show_id,
+                'name': info.get('name'),
+                'poster_path': info.get('poster_path'),
+                'status': s.status,
+                'watched_episodes': s.watched_episodes,
+                'total_episodes': s.total_episodes,
+                'progress_percent': s.calculate_progress_percentage(),
+                'last_watched': s.last_watched.isoformat() if s.last_watched else None,
+                'last_episode': last_ep,
+                'next_episode': next_ep,
+                'watch_url': (
+                    f"/watch/tv/{s.show_id}/{next_ep['season']}/{next_ep['episode']}"
+                    if next_ep else None
+                ),
+            })
+
+        return jsonify({'shows': result}), 200
+
+    except Exception:
+        logger.error("Unexpected error in get_unfinished_shows", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
+def _last_watched_position(watched_set):
+    """Highest (season, episode) pair from a set of watched positions."""
+    if not watched_set:
+        return None
+    return max(watched_set, key=lambda p: (p[0], p[1]))
+
+
+def _next_from_position(last_ep):
+    """Next episode after a (season, episode) position: E+1 in season, else S+1E1."""
+    if not last_ep:
+        return None
+    season, episode = last_ep
+    return {'season': season, 'episode': episode + 1}
+
+
+def _compute_next_episode_cached(user_id, show_id):
+    """Earliest unwatched episode using cached TMDb season episode counts.
+
+    Uses the already-cached fetch_tv_show_details; per-episode air state is
+    resolved from the UpcomingEpisode table (no per-episode TMDb requests).
+    """
+    watched = set(
+        db.session.query(TVEpisodeWatch.season_number, TVEpisodeWatch.episode_number)
+        .filter(
+            TVEpisodeWatch.user_id == user_id,
+            TVEpisodeWatch.show_id == show_id,
+            TVEpisodeWatch.is_rewatch == False,
+        )
+        .all()
+    )
+
+    try:
+        show = fetch_tv_show_details(show_id)
+    except Exception:
+        logger.warning("Could not load show %s for next-episode", show_id, exc_info=True)
+        return None
+
+    today = datetime.utcnow().date()
+    # One query for all synced rows of this show: air date + title per episode.
+    upcoming = {
+        (u.season_number, u.episode_number): u
+        for u in UpcomingEpisode.query.filter_by(show_id=show_id).all()
+    }
+
+    for season in sorted(show.get('seasons', []), key=lambda s: s.get('season_number') or 0):
+        sn = season.get('season_number')
+        if not sn or sn == 0:  # skip specials
+            continue
+        for en in range(1, (season.get('episode_count') or 0) + 1):
+            if (sn, en) in watched:
+                continue
+            u = upcoming.get((sn, en))
+            air_date = u.air_date if u else None
+            aired = air_date is None or air_date <= today
+            result = {
+                'season': sn,
+                'episode': en,
+                'aired': aired,
+            }
+            if air_date:
+                result['air_date'] = air_date.isoformat()
+            if u and u.episode_name:
+                result['title'] = u.episode_name
+            return result
+    return None
 
 
 @tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/update-watch', methods=['POST'])
