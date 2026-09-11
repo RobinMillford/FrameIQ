@@ -108,12 +108,17 @@ def _normalize_groups(raw_providers, region):
     return entry
 
 
-def _empty_availability(region):
+def _empty_availability(region, status="ok"):
+    """Safe empty shape. status distinguishes a successful-but-empty lookup
+    ("ok", availability genuinely absent for the region) from an upstream
+    failure ("unknown") so the UI can show a finite message instead of a
+    spinner or a false "not available"."""
     return {
         "region": region,
         "stream": [], "free": [], "rent": [], "buy": [],
         "link": None,
         "available": False,
+        "status": status,
     }
 
 
@@ -137,10 +142,13 @@ def _fetch_provider_results(media_type, tmdb_id):
     url = f"{TMDB_BASE}{path}?api_key={TMDB_API_KEY}&language=en-US"
     try:
         data = cached_tmdb_request(url, max_age=6 * 3600)
-        results = (data or {}).get("results", {}) or {}
     except Exception:
+        # Upstream failure: return None (= unknown state). Failures are NOT
+        # memoized, so the next request retries instead of staying unknown
+        # for the memo TTL.
         logger.warning("Provider fetch failed for %s/%s", media_type, tmdb_id)
-        results = {}
+        return None
+    results = (data or {}).get("results", {}) or {}
 
     with _memo_lock:
         if len(_provider_memo) >= _PROVIDER_MEMO_MAX:
@@ -163,12 +171,18 @@ def get_availability(media_type, tmdb_id, region=None):
     region = normalize_region(region)
 
     results = _fetch_provider_results(media_type, tmdb_id)
+
+    if results is None:
+        # TMDb could not be reached: availability is UNKNOWN, not empty.
+        return _empty_availability(region, status="unknown")
+
     raw = results.get(region)
 
     if raw is None or raw == {}:
         availability = _empty_availability(region)
     else:
         availability = _normalize_groups(raw, region)
+        availability["status"] = "ok"
         availability["available"] = bool(
             availability["stream"] or availability["free"]
             or availability["rent"] or availability["buy"]

@@ -154,6 +154,21 @@
                 <!-- User menu -->
                 <div class="flex items-center gap-3 shrink-0">
                     {% if current_user.is_authenticated %}
+                        <!-- Notification bell (Feature 04) -->
+                        <div class="relative" id="notif-root">
+                            <button id="notif-bell" class="relative p-2 text-[var(--text-mid)] hover:text-white transition-colors"
+                                    aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+                                <i data-lucide="bell" class="w-5 h-5"></i>
+                                <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold leading-[1.1rem] text-center text-black bg-[var(--accent)] rounded-full" aria-hidden="true"></span>
+                            </button>
+                            <div id="notif-panel" class="hidden absolute right-0 top-full mt-2 w-[22rem] max-w-[calc(100vw-2rem)] z-50 rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-2xl overflow-hidden" role="dialog" aria-label="Notifications">
+                                <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--line)]">
+                                    <span class="text-sm font-semibold text-white">Notifications</span>
+                                    <button id="notif-mark-all" class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors">Mark all as read</button>
+                                </div>
+                                <div id="notif-list" class="max-h-[24rem] overflow-y-auto"></div>
+                            </div>
+                        </div>
                         {% include "partials/profile_dropdown.html" %}
                     {% else %}
                     <div class="hidden md:flex items-center gap-3">
@@ -314,6 +329,9 @@
     <!-- Continue Watching: finish/remove actions on home rail cards -->
     {% if current_user.is_authenticated %}
     <script src="{{ url_for('static', filename='js/continue-watching.js') }}"></script>
+    {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+    {% endif %}
     {% endif %}
 
     <!-- Page-specific JavaScript -->

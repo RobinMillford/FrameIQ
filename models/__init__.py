@@ -56,6 +56,7 @@ from models.tv import (                                       # noqa: F401
 )
 from models.watch import WatchProgress                        # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
+from models.notification import Notification                  # noqa: F401
 from models.streaming import UserStreamingService             # noqa: F401
 from models.chat import (                                      # noqa: F401
     ChatConversation,
