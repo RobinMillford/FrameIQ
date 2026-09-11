@@ -12,6 +12,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app import app, db
 from models import TVShowProgress, UpcomingEpisode
 from api.tmdb_client import fetch_tv_show_details
+
+# Feature 04: notify tracked users about episodes that just aired. Runs BEFORE
+# the "air_date < today" purge below so the fresh transition is never missed.
+from api.notifications import notify_newly_aired_episodes
 import requests
 
 TMDB_API_KEY = os.getenv('TMDB_API_KEY')
@@ -124,6 +128,18 @@ def sync_upcoming_episodes():
             print("No shows being tracked yet. Nothing to sync.")
             return
         
+        # Feature 04 — notify tracked users about episodes that just aired.
+        # Must run BEFORE the purge below: episodes are purged once their
+        # air_date passes, and this window is the transition the notification
+        # represents. Idempotent (unique constraint), so re-runs never duplicate.
+        try:
+            created = notify_newly_aired_episodes()
+            print(f"\nCreated {created} new-episode notification(s)")
+        except Exception as e:
+            # Never let a notification failure abort the sync.
+            db.session.rollback()
+            print(f"  Notification fan-out failed (sync continues): {e}")
+
         # Clear old upcoming episodes (older than today)
         today = datetime.now().date()
         deleted = UpcomingEpisode.query.filter(UpcomingEpisode.air_date < today).delete()

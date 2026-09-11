@@ -1,9 +1,17 @@
 /**
- * Where to Watch — availability loader (Feature 03).
+ * Where to Watch — availability loader (Feature 03 + Part A fix).
  *
- * Fetches /api/media/<type>/<id>/availability and renders provider groups,
- * My Services match, and graceful empty/error states. Never blocks page
- * render; the section hides itself if availability cannot be determined.
+ * Explicit FINITE state machine. The spinner is always removed once the
+ * request completes, fails, or errors — never left spinning:
+ *
+ *   LOADING        "Checking availability…"
+ *   AVAILABLE      stream/free/rent/buy provider groups (+ My Services match)
+ *   NO_AVAILABILITY  API succeeded, but the user's region has no providers
+ *   UNKNOWN        request failed / payload unusable (never "not available")
+ *
+ * One request → one finite result. No polling, no retries, no timers.
+ * The URL is built from the section anchor (/movie/<id> or /tv/<id>) so the
+ * loader works even if media_type/media_id context vars are unset.
  */
 (function () {
     'use strict';
@@ -15,6 +23,40 @@
         d.textContent = String(s == null ? '' : s);
         return d.innerHTML;
     }
+
+    /* ── State renderers ───────────────────────────────────────────────── */
+
+    function stateLoading() {
+        var body = document.getElementById('wtw-body');
+        if (body) {
+            body.innerHTML =
+                '<p id="wtw-loading" class="text-sm text-[var(--text-low)] flex items-center gap-2">' +
+                '<span class="inline-block w-3.5 h-3.5 border-2 border-[var(--text-low)] border-t-transparent rounded-full animate-spin"></span>' +
+                'Checking availability…</p>';
+        }
+    }
+
+    function stateNoAvailability(region) {
+        var body = document.getElementById('wtw-body');
+        if (!body) return;
+        body.innerHTML =
+            '<p class="text-sm text-[var(--text-mid)]">No streaming availability found in ' +
+            esc(region) + '.</p>';
+    }
+
+    function stateUnknown() {
+        var body = document.getElementById('wtw-body');
+        if (!body) return;
+        body.innerHTML =
+            '<p class="text-sm text-[var(--text-mid)]">Streaming availability is currently unavailable.</p>';
+    }
+
+    function hide() {
+        var section = document.getElementById('where-to-watch');
+        if (section) section.style.display = 'none';
+    }
+
+    /* ── Available rendering ───────────────────────────────────────────── */
 
     function providerChip(p, extraClass) {
         var label = esc(p.name);
@@ -65,16 +107,10 @@
         return '';
     }
 
-    function hide() {
-        var section = document.getElementById('where-to-watch');
-        if (section) section.style.display = 'none';
-    }
-
-    function render(data) {
+    function renderAvailable(data) {
         var body = document.getElementById('wtw-body');
         var regionEl = document.getElementById('wtw-region');
-        if (!body) return;
-        if (regionEl) regionEl.textContent = '(' + data.region + ')';
+        if (regionEl && data.region) regionEl.textContent = '(' + data.region + ')';
 
         var groups =
             renderGroup('Stream', data.providers.stream) +
@@ -82,28 +118,53 @@
             renderGroup('Rent', data.providers.rent) +
             renderGroup('Buy', data.providers.buy);
 
-        if (!groups) {
-            body.innerHTML = '<p class="text-sm text-[var(--text-low)]">' +
-                             'Availability currently unavailable.</p>';
-            return;
-        }
         body.innerHTML = groups + renderMatchBanner(data);
     }
+
+    /* ── Dispatch: map a response/error to exactly one terminal state ──── */
+
+    function terminalState(data) {
+        var body = document.getElementById('wtw-body');
+        if (body) body.innerHTML = '';
+
+        if (!data || !data.providers || !data.region) {
+            stateUnknown();                       // failed / unusable payload
+        } else if (data.status === 'unknown') {
+            stateUnknown();                       // upstream explicitly unknown
+        } else if (!data.available) {
+            stateNoAvailability(data.region);     // succeeded, region has none
+        } else {
+            renderAvailable(data);                // genuine providers
+        }
+    }
+
+    /* ── Init: one bounded fetch, one finite result ────────────────────── */
 
     function init() {
         var section = document.getElementById('where-to-watch');
         if (!section) return;
-        var type = section.getAttribute('data-media-type');
-        var id = section.getAttribute('data-media-id');
-        if (!type || !id) return;
 
-        fetch('/api/media/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/availability')
+        var type = section.getAttribute('data-media-type') || '';
+        var id = section.getAttribute('data-media-id') || '';
+        var url = null;
+
+        if (type && id) {
+            url = '/api/media/' + encodeURIComponent(type) + '/' +
+                  encodeURIComponent(id) + '/availability';
+        } else {
+            // Robust fallback: parse the section's location anchor instead of
+            // depending on context variables.
+            var m = window.location.pathname.match(/^\/(movie|tv)\/(\d+)/);
+            if (m) {
+                url = '/api/media/' + m[1] + '/' + m[2] + '/availability';
+            }
+        }
+        if (!url) return;  // not a title page; section stays hidden (no spinner)
+
+        fetch(url)
             .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-            .then(function (data) {
-                if (!data || !data.providers) throw new Error('bad payload');
-                render(data);
-            })
-            .catch(hide); // graceful: hide the section, never break the page
+            .then(terminalState)
+            .catch(terminalState.bind(null, null));  // network/HTTP failure → UNKNOWN
     }
 
     if (document.readyState === 'loading') {

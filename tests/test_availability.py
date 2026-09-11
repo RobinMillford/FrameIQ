@@ -387,3 +387,88 @@ class TestMatching:
         a = get_availability('movie', 603, 'US')
         m = match_my_services(a, [300])  # Tubi (free)
         assert m['available'] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Part A — finite states (spinner must never stick)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFiniteStates:
+    """Where-to-Watch must always leave LOADING: one request, one finite
+    result. NO_AVAILABILITY (successful empty lookup) and UNKNOWN (upstream
+    failure) are distinct states and are never merged."""
+
+    def test_successful_empty_result_has_ok_status(self, tmdb_providers):
+        """Bangladesh with zero providers = NO_AVAILABILITY, not a spinner."""
+        from api.availability import get_availability
+        a = get_availability('movie', 603, 'BD')
+        assert a['status'] == 'ok'
+        assert a['available'] is False
+        assert a['stream'] == [] and a['rent'] == [] and a['buy'] == []
+
+    def test_tmdb_failure_yields_unknown_status(self):
+        import api.availability
+        with patch.object(api.availability, "cached_tmdb_request",
+                          side_effect=RuntimeError("upstream down")):
+            api.availability._provider_memo.clear()
+            a = api.availability.get_availability('movie', 603, 'US')
+        assert a['status'] == 'unknown'   # never reported as "not available"
+        assert a['available'] is False
+
+    def test_failure_is_not_cached_as_empty(self):
+        """A failed lookup must NOT be memoized: the next request retries
+        instead of staying 'unknown' for the whole memo TTL."""
+        import api.availability
+        with patch.object(api.availability, "cached_tmdb_request",
+                          side_effect=RuntimeError("upstream down")):
+            api.availability._provider_memo.clear()
+            first = api.availability.get_availability('movie', 777, 'US')
+        assert first['status'] == 'unknown'
+        # After failure, a succeeding request resolves normally (no stale memo).
+        with patch.object(api.availability, "cached_tmdb_request",
+                          return_value=TMDB_PROVIDERS_RESPONSE):
+            api.availability._provider_memo.clear()
+            second = api.availability.get_availability('movie', 777, 'US')
+        assert second['status'] == 'ok'
+        assert second['available'] is True
+
+    def test_no_silent_region_fallback(self, tmdb_providers):
+        """A region with no data must never silently fall back to another
+        country: the response region stays the requested one."""
+        from api.availability import get_availability
+        a = get_availability('movie', 603, 'BD')
+        assert a['region'] == 'BD'           # Bangladesh stays Bangladesh
+        assert a['available'] is False
+
+    def test_detail_page_passes_context_to_wtw_partial(self, client, monkeypatch):
+        """Root cause of the infinite spinner: the partial read media_type /
+        media_id, which the routes never passed — data attributes rendered
+        empty and the loader bailed before fetching. The partial must now
+        render non-empty data attributes on its own."""
+        import routes.details as details
+        monkeypatch.setattr(details, 'fetch_movie_details', lambda _id: {
+            'id': _id, 'title': 'T', 'poster_path': None, 'overview': '',
+            'release_date': '', 'genres': [], 'vote_average': 0,
+            'recommendations': [], 'budget': 0, 'revenue': 0,
+            'cast': [], 'crew': [], 'videos': {'results': []},
+            'images': {}, 'runtime': 100, 'reviews': [],
+            'tagline': '', 'vote_count': 0, 'status': 'Released',
+            'original_language': 'en', 'trailer_url': None,
+            'certification': None, 'director': '', 'writer': '',
+            'backdrop_path': None,
+        })
+        r = client.get('/movie/603')
+        html = r.data.decode('utf-8')
+        assert r.status_code == 200
+        assert 'data-media-type="movie"' in html
+        assert 'data-media-id="603"' in html
+
+    def test_loader_js_has_finite_states(self):
+        """Source guard: the loader must dispatch to a terminal state for
+        every outcome and never poll."""
+        src = open('static/js/where-to-watch.js').read()
+        assert 'NO_AVAILABILITY' in src or 'stateNoAvailability' in src
+        assert 'stateUnknown' in src
+        assert 'terminalState' in src
+        for banned in ('setInterval', 'setTimeout', 'while (true)'):
+            assert banned not in src, f"polling/timer machinery found: {banned}"
