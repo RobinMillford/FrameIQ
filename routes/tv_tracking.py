@@ -7,7 +7,9 @@ from flask_login import current_user, login_required
 
 from api.tmdb_client import cached_tmdb_request, fetch_tv_show_details
 from api.tmdb.config import TMDB_API_KEY
-from models import TVEpisodeWatch, TVShowProgress, UpcomingEpisode, db
+from models import (
+    MediaItem, TVEpisodeWatch, TVShowProgress, UpcomingEpisode, db,
+)
 from routes._tv_bp import TMDB_BASE_URL, tv_tracking
 
 # Register page + calendar routes on the shared blueprint so app.py's single
@@ -457,8 +459,10 @@ def get_next_episode(show_id):
 def get_unfinished_shows():
     """Unfinished Shows shelf: watching/paused shows that are not complete.
 
-    Sorted by most recently watched. Batched queries — one query for the
-    progress rows, one for all watched episodes, one for show display info.
+    Sorted by most recently watched. Batched queries — one for the progress
+    rows, one for all watched episodes, one batched MediaItem lookup for
+    canonical display metadata, plus a bounded cached-TMDb fallback only for
+    shows missing from the local cache (result persisted back to MediaItem).
     """
     try:
         limit = min(request.args.get('limit', 20, type=int), 50)
@@ -490,21 +494,26 @@ def get_unfinished_shows():
         for sid, sn, en in watched_rows:
             watched_by_show.setdefault(sid, set()).add((sn, en))
 
-        # Display info (name/poster) from the synced UpcomingEpisode cache —
-        # one query, no TMDb calls.
-        info_rows = (
-            db.session.query(
-                UpcomingEpisode.show_id,
-                UpcomingEpisode.show_name,
-                UpcomingEpisode.poster_path,
-            )
-            .filter(UpcomingEpisode.show_id.in_(show_ids))
-            .all()
-        )
-        info_by_show = {}
-        for sid, name, poster in info_rows:
-            if sid not in info_by_show:
-                info_by_show[sid] = {'name': name, 'poster_path': poster}
+        # Canonical display metadata: MediaItem is the local cache of "what
+        # this show is" — one batched query for all tracked shows.
+        # (UpcomingEpisode is episode air-state, NOT show metadata; a tracked
+        # show can legitimately have no upcoming row.)
+        media_rows = MediaItem.query.filter(
+            MediaItem.tmdb_id.in_(show_ids),
+            MediaItem.media_type == 'tv',
+        ).all()
+        info_by_show = {
+            m.tmdb_id: {'name': m.title, 'poster_path': m.poster_path}
+            for m in media_rows
+        }
+
+        # Missing local cache → bounded cached-TMDb fallback, persisted back
+        # to MediaItem so later requests are served locally. Deduplicated per
+        # request; a TMDb failure degrades that card only (name stays None →
+        # frontend generic fallback) and never breaks the shelf.
+        missing = [sid for sid in show_ids if sid not in info_by_show]
+        if missing:
+            _hydrate_missing_show_metadata(missing, info_by_show)
 
         result = []
         for s in shows:
@@ -552,6 +561,64 @@ def _last_watched_position(watched_set):
     if not watched_set:
         return None
     return max(watched_set, key=lambda p: (p[0], p[1]))
+
+
+def _tmdb_poster_path(poster):
+    """Normalize a TMDb poster reference to the raw path MediaItem stores.
+
+    fetch_tv_show_details returns a full image URL
+    (https://image.tmdb.org/t/p/w500/xyz.jpg) while MediaItem.poster_path
+    holds the bare '/xyz.jpg' path (convention used by routes/diary.py and
+    routes/reviews.py). The frontend accepts either form.
+    """
+    if not poster:
+        return None
+    marker = '/t/p/'
+    idx = poster.find(marker)
+    if idx == -1:
+        return poster if poster.startswith('/') else None
+    tail = poster[idx + len(marker):]
+    slash = tail.find('/')
+    return tail[slash:] if slash != -1 else None
+
+
+def _hydrate_missing_show_metadata(missing_show_ids, info_by_show):
+    """Resolve display metadata for shows missing from the local MediaItem
+    cache via the existing cached-TMDb helper, persisting the result back so
+    subsequent requests are served locally.
+
+    Bounded: deduplicated per request, capped by the endpoint's result limit
+    (max 50). A TMDb failure degrades that single card (name stays None →
+    frontend generic fallback) and never raises.
+    """
+    for sid in dict.fromkeys(missing_show_ids):
+        try:
+            show = fetch_tv_show_details(sid)
+        except Exception:
+            logger.warning(
+                "Could not hydrate show %s metadata", sid, exc_info=True)
+            continue
+        name = show.get('name')
+        if not name:
+            continue
+        poster = _tmdb_poster_path(show.get('poster_path'))
+        try:
+            existing = MediaItem.query.filter_by(
+                tmdb_id=sid, media_type='tv').first()
+            if existing is None:
+                db.session.add(MediaItem(
+                    tmdb_id=sid, media_type='tv',
+                    title=name[:200], poster_path=poster,
+                ))
+            else:
+                existing.title = name[:200]
+                existing.poster_path = poster
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.warning(
+                "Could not persist hydrated show %s", sid, exc_info=True)
+        info_by_show[sid] = {'name': name, 'poster_path': poster}
 
 
 def _compute_next_episode_cached(user_id, show_id):

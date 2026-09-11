@@ -11,8 +11,8 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from models import (
-    ContinueWatchingItem, TVEpisodeWatch, TVShowProgress, UpcomingEpisode,
-    WatchProgress, db,
+    ContinueWatchingItem, MediaItem, TVEpisodeWatch, TVShowProgress,
+    UpcomingEpisode, WatchProgress, db,
 )
 import api.continue_watching as cw
 from routes.tv_tracking import _compute_next_episode_cached
@@ -399,3 +399,185 @@ def test_existing_rows_survive_no_migration(auth_client, sample_user):
     db.session.expire_all()
     assert TVShowProgress.query.filter_by(
         user_id=sample_user.id).first().status == 'paused'
+
+
+# ── Unfinished shows: canonical metadata hydration ────────────────────────────
+# Data ownership: TVShowProgress = tracking state, MediaItem = local metadata
+# cache, UpcomingEpisode = air state, TMDb = fallback when local cache missing.
+
+def _track_show(user, show_id, status='watching', watched=2, total=7):
+    p = TVShowProgress(user_id=user.id, show_id=show_id, status=status,
+                       watched_episodes=watched, total_episodes=total)
+    db.session.add(p)
+    db.session.commit()
+    return p
+
+
+def _unfinished_payload(client):
+    r = client.get('/api/tv/unfinished-shows')
+    assert r.status_code == 200
+    return r.get_json()['shows']
+
+
+def test_metadata_from_mediaitem_without_upcoming_row(auth_client, sample_user):
+    """Show 2: tracked show with a MediaItem but NO UpcomingEpisode row still
+    gets title/poster (the old UpcomingEpisode-only path rendered
+    'Unknown show' here)."""
+    _track_show(sample_user, 2316)
+    db.session.add(MediaItem(tmdb_id=2316, media_type='tv',
+                             title='The Office', poster_path='/office.jpg'))
+    db.session.commit()
+
+    shows = _unfinished_payload(auth_client)
+    card = next(s for s in shows if s['show_id'] == 2316)
+    assert card['name'] == 'The Office'
+    assert card['poster_path'] == '/office.jpg'
+
+
+def test_metadata_falls_back_to_cached_tmdb_and_persists(
+        auth_client, sample_user, monkeypatch):
+    """Show 3+4: no MediaItem row → cached-TMDb fallback resolves title/poster
+    and persists a MediaItem so a second request needs no TMDb call."""
+    _track_show(sample_user, 17287)
+    calls = []
+
+    def fake_show(show_id, **kw):
+        calls.append(show_id)
+        return {
+            'id': show_id,
+            'name': 'Party Down',
+            'poster_path': 'https://image.tmdb.org/t/p/w500/party.jpg',
+            'seasons': SEASONS,
+        }
+
+    monkeypatch.setattr(
+        'routes.tv_tracking.fetch_tv_show_details', fake_show)
+
+    shows = _unfinished_payload(auth_client)
+    card = shows[0]
+    assert card['name'] == 'Party Down'
+    # Full TMDb URL normalized to the raw path MediaItem stores.
+    assert card['poster_path'] == '/party.jpg'
+
+    # Persisted to the local cache, no duplicate rows.
+    m = MediaItem.query.filter_by(tmdb_id=17287, media_type='tv').one()
+    assert m.title == 'Party Down'
+    assert m.poster_path == '/party.jpg'
+
+    # Second request: metadata served from the persisted MediaItem — the
+    # hydration path makes zero TMDb calls (any remaining call is the
+    # preserved next-episode resolution, not metadata).
+    db.session.expire_all()
+    calls.clear()
+    shows2 = _unfinished_payload(auth_client)
+    assert shows2[0]['name'] == 'Party Down'
+    m2 = MediaItem.query.filter_by(tmdb_id=17287, media_type='tv').one()
+    assert m2.title == 'Party Down'
+    assert MediaItem.query.filter_by(tmdb_id=17287).count() == 1
+
+
+def test_metadata_tmdb_failure_degrades_card_only(
+        auth_client, sample_user, monkeypatch):
+    """Show 5+6: TMDb fallback failure keeps the API 200 and the shelf intact;
+    that card alone degrades (name None → frontend generic fallback).
+    Raw TMDb IDs are never rendered as titles."""
+    _track_show(sample_user, 1)
+    db.session.add(MediaItem(tmdb_id=2, media_type='tv',
+                             title='Cached Show', poster_path='/c.jpg'))
+    _track_show(sample_user, 2)
+    db.session.commit()
+
+    def boom(show_id, **kw):
+        raise LookupError(f'TV show {show_id} was not found')
+
+    monkeypatch.setattr(
+        'routes.tv_tracking.fetch_tv_show_details', boom)
+
+    r = auth_client.get('/api/tv/unfinished-shows')
+    assert r.status_code == 200
+    shows = r.get_json()['shows']
+    assert len(shows) == 2
+    broken = next(s for s in shows if s['show_id'] == 1)
+    cached = next(s for s in shows if s['show_id'] == 2)
+    assert broken['name'] is None  # frontend shows generic fallback
+    assert cached['name'] == 'Cached Show'
+    # No MediaItem row fabricated from a failed lookup.
+    assert MediaItem.query.filter_by(tmdb_id=1, media_type='tv').count() == 0
+
+
+def test_mediaitem_of_other_type_ignored(
+        auth_client, sample_user, monkeypatch):
+    """tmdb_id identity includes media_type: a movie MediaItem must not
+    satisfy TV metadata lookup."""
+    _track_show(sample_user, 555)
+    db.session.add(MediaItem(tmdb_id=555, media_type='movie',
+                             title='A Movie', poster_path='/m.jpg'))
+    db.session.commit()
+
+    monkeypatch.setattr(
+        'routes.tv_tracking.fetch_tv_show_details',
+        lambda sid, **kw: {'id': sid, 'name': 'Real Show',
+                           'poster_path': '/real.jpg', 'seasons': SEASONS})
+
+    shows = _unfinished_payload(auth_client)
+    card = shows[0]
+    assert card['name'] == 'Real Show'
+    # The movie row is untouched — no duplicate, no overwrite.
+    m = MediaItem.query.filter_by(tmdb_id=555, media_type='movie').one()
+    assert m.title == 'A Movie'
+
+
+def test_multiple_shows_single_response_hydrated(
+        auth_client, sample_user, monkeypatch):
+    """Shows 8+7: multiple unfinished shows return through ONE response with
+    canonical titles; mixed local-cache/fallback sources; no raw-ID titles."""
+    _track_show(sample_user, 100)
+    _track_show(sample_user, 200)
+    _track_show(sample_user, 300)
+    db.session.add(MediaItem(tmdb_id=100, media_type='tv',
+                             title='Local Show', poster_path='/local.jpg'))
+    db.session.commit()
+
+    def fake_show(show_id, **kw):
+        return {'id': show_id, 'name': f'TMDb Show {show_id}',
+                'poster_path': f'/{show_id}.jpg', 'seasons': SEASONS}
+
+    monkeypatch.setattr(
+        'routes.tv_tracking.fetch_tv_show_details', fake_show)
+
+    shows = _unfinished_payload(auth_client)
+    assert {s['show_id'] for s in shows} == {100, 200, 300}
+    by_id = {s['show_id']: s for s in shows}
+    assert by_id[100]['name'] == 'Local Show'
+    assert by_id[200]['name'] == 'TMDb Show 200'
+    assert by_id[300]['name'] == 'TMDb Show 300'
+    assert all(s['name'] for s in shows)  # never a raw numeric ID title
+
+
+def test_progress_and_next_episode_unchanged_by_metadata_fix(
+        auth_client, sample_user, monkeypatch):
+    """Shows 9-14: metadata hydration does not disturb progress values,
+    next-episode validation (no naive E+1), unaired exclusion, watch_url,
+    paused/watching semantics, or the poster onerror fallback contract."""
+    _mock_show(monkeypatch)  # S1: 4 eps, S2: 3 eps — S1E5 does NOT exist
+    MediaItem.query.filter_by(tmdb_id=SHOW_ID, media_type='tv').delete()
+    _track_show(sample_user, SHOW_ID, status='paused', watched=4, total=7)
+    _watch(sample_user, 1, 1)
+    _watch(sample_user, 1, 2)
+    _watch(sample_user, 1, 3)
+    _watch(sample_user, 1, 4)
+    db.session.add(MediaItem(tmdb_id=SHOW_ID, media_type='tv',
+                             title='Test Show', poster_path='/test.jpg'))
+    db.session.commit()
+
+    s = _unfinished_payload(auth_client)[0]
+    assert s['status'] == 'paused'
+    assert s['watched_episodes'] == 4
+    assert s['total_episodes'] == 7
+    assert s['progress_percent'] == pytest.approx(4 / 7 * 100, abs=0.1)
+    assert s['last_episode'] == {'season': 1, 'episode': 4}
+    # Crosses into S2E1 — naive E+1 would emit the nonexistent S1E5.
+    assert s['next_episode'] == {'season': 2, 'episode': 1}
+    assert s['watch_url'] == f'/watch/tv/{SHOW_ID}/2/1'
+    assert s['name'] == 'Test Show'
+    assert s['poster_path'] == '/test.jpg'
