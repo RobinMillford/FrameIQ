@@ -30,7 +30,13 @@ docker run -p 5000:8080 -e DATABASE_URL=... frameiq
 make deploy / make logs / make restart / make clean
 
 # Schema migrations (no Alembic — run manually when column changes needed)
-python migrates/migrate_<name>.py
+# SKIP_SCHEMA_GUARD=1 lets a migration run against the drifted DB it repairs
+# (importing `app` triggers create_app(), whose startup guard otherwise
+# refuses to boot on schema drift). Fresh/complete DBs don't need it.
+SKIP_SCHEMA_GUARD=1 python migrates/migrate_<name>.py
+
+# Read-only schema parity check (also runs automatically at startup)
+python -m utils.schema_guard
 ```
 
 ## Architecture
@@ -57,6 +63,7 @@ python migrates/migrate_<name>.py
 ### Database
 - All models in `models.py` (39 KB, single file)
 - `db.create_all()` runs on every startup — new tables auto-created
+- **Schema parity guard** (`utils/schema_guard.py`, read-only): after `create_all()`, startup compares live schema vs model metadata and **fails startup** on missing tables/columns (e.g. forgotten `ALTER TABLE` for a new model column). Deploy sequence: deploy code → run required migration(s) → app starts → guard verifies → healthy. `SKIP_SCHEMA_GUARD=1` is the explicit escape hatch for migration runs; the operator CLI (`python -m utils.schema_guard`) prints drift without mutating anything.
 - Chat tables (`chat_conversation`, `chat_message`, `user_chat_daily_usage`,
   `user_chat_memory`) are imported through `models/__init__.py`, so Docker/VPS
   startup creates them automatically.
