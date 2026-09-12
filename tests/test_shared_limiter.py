@@ -211,6 +211,43 @@ def test_fallback_flip_is_bounded_not_a_storm(fake_valkey_uri):
         "storage-failure warning should fire once per outage, not per request")
 
 
+# ── G. Packaging regression: redis client must exist in the runtime env ─────
+
+def test_redis_prerequisite_available_in_runtime_env():
+    """Prod incident regression: the Docker runtime image installs deps from
+    requirements.txt ONLY (pyproject.toml/uv.lock are not used in the build).
+    With `redis` missing there, limits raises ConfigurationError the moment
+    RATELIMIT_STORAGE_URI=redis://... is set. CI runs pytest inside the same
+    requirements.txt environment, so a packaging regression fails here."""
+    import redis as _redis  # noqa: F401 — must be importable at runtime
+    from limits.storage import storage_from_string
+    from limits.storage.redis import RedisStorage
+
+    # Construction registers Lua scripts only — never contacts the server.
+    storage = storage_from_string("redis://:x@localhost:6379/0")
+    assert isinstance(storage, RedisStorage)
+
+
+def test_flask_limiter_boots_with_shared_uri_no_configuration_error(
+        monkeypatch):
+    """RATELIMIT_STORAGE_URI=redis://... must initialize Flask-Limiter
+    successfully — RedisStorage selected, in-memory fallback armed, and no
+    ConfigurationError — without any live Valkey (mirrors production boot)."""
+    monkeypatch.setenv("RATELIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATELIMIT_STORAGE_URI",
+                       "redis://:x@localhost:6379/0")  # unpatched redis client
+    import importlib
+    mod = importlib.reload(extensions)
+    try:
+        from flask import Flask
+        mod.limiter.init_app(Flask(__name__))  # must not raise
+        assert isinstance(mod.limiter.storage, RedisStorage)
+        assert mod.limiter._in_memory_fallback_enabled is True
+    finally:
+        monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
+        importlib.reload(extensions)
+
+
 # ── F. No production limit definitions changed ───────────────────────────────
 
 def test_route_limit_definitions_unchanged():
