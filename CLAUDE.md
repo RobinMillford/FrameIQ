@@ -64,6 +64,14 @@ python -m utils.schema_guard
 - All models in `models.py` (39 KB, single file)
 - `db.create_all()` runs on every startup — new tables auto-created
 - **Schema parity guard** (`utils/schema_guard.py`, read-only): after `create_all()`, startup compares live schema vs model metadata and **fails startup** on missing tables/columns (e.g. forgotten `ALTER TABLE` for a new model column). Deploy sequence: deploy code → run required migration(s) → app starts → guard verifies → healthy. `SKIP_SCHEMA_GUARD=1` is the explicit escape hatch for migration runs; the operator CLI (`python -m utils.schema_guard`) prints drift without mutating anything.
+
+### Rate limiting (shared Valkey storage)
+- **Why:** with Gunicorn's 2 workers and the default `memory://` storage, every worker counted independently — documented limits were effectively N× weaker. Valkey (`valkey/valkey:8-alpine`, compose service) gives one shared counter set.
+- **Enable (production):** set in `.env`: `VALKEY_PASSWORD=<openssl rand -base64 24>` and `RATELIMIT_STORAGE_URI=redis://:${VALKEY_PASSWORD}@valkey:6379/0`. Compose passes both to `web`. Unset → per-process `memory://` exactly as before (local dev/CI default; nothing else changes).
+- **Failover (native Flask-Limiter `in_memory_fallback_enabled`):** if Valkey errors on a request, the limiter warns once and counts in per-worker memory until a bounded backoff check succeeds — no 500s, no fail-open, no retry storms, no background threads. Valkey is never a hard dependency for serving.
+- **Verify:** `docker compose exec valkey valkey-cli -a "$VALKEY_PASSWORD" ping` → `PONG`; `docker compose exec valkey valkey-cli -a "$VALKEY_PASSWORD" info stats | grep -E "evicted_keys|rejected_connections"`; watch `web` logs for `falling back to in-memory storage`.
+- **Failure drill:** `docker compose stop valkey` → app keeps serving (limited per-worker); `docker compose start valkey` → recovery is automatic (backoff check), no restart needed.
+- **Rollback:** unset `RATELIMIT_STORAGE_URI` in `.env` and `docker compose up -d` — behavior reverts to per-worker memory exactly; the valkey service can then be removed. Rate-limit **values** never changed — only where counters live.
 - Chat tables (`chat_conversation`, `chat_message`, `user_chat_daily_usage`,
   `user_chat_memory`) are imported through `models/__init__.py`, so Docker/VPS
   startup creates them automatically.
