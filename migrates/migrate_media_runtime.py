@@ -21,6 +21,15 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Escape the startup schema guard BEFORE importing the app: importing `app`
+# already executes create_app() (incl. the read-only guard), and this
+# migration exists precisely to repair a database the guard would refuse.
+# SKIP_SCHEMA_GUARD disables only the guard (read-only); the ALTER below is
+# this script's explicit, deliberate write. All other migrates/*.py scripts
+# keep their existing behavior (they create/alter only on missing objects,
+# so the guard passes on their target databases).
+os.environ.setdefault("SKIP_SCHEMA_GUARD", "1")
+
 from app import app  # noqa: E402
 from models import db  # noqa: E402
 from sqlalchemy import inspect, text  # noqa: E402

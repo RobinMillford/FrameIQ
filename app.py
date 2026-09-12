@@ -223,6 +223,14 @@ def create_app() -> Flask:
             _log.error("Error creating database tables: %s", exc)
             raise
 
+        # ── Schema parity guard (read-only) ───────────────────────────────────
+        # db.create_all() creates NEW tables but never ALTERs existing ones.
+        # If a model column is missing from the live database (forgotten
+        # migration), the app used to boot and then serve broken pages. Now
+        # startup fails loudly instead. Read-only; runs once per worker boot.
+        from utils.schema_guard import ensure_schema_compatible
+        ensure_schema_compatible(app)
+
     return app
 
 

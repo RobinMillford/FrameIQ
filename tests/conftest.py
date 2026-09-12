@@ -23,6 +23,11 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
 os.environ.setdefault("TMDB_API_KEY", "test-tmdb-key")
 os.environ.setdefault("WTF_CSRF_ENABLED", "False")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+# The test harness bootstraps its own schema AFTER the app imports (the
+# session fixture calls db.create_all() on the empty temp file), so the
+# startup schema-parity guard would see an empty database and abort every
+# test. Tests are an explicit non-production bootstrap context.
+os.environ.setdefault("SKIP_SCHEMA_GUARD", "1")
 # Ensure no actual email is sent during tests
 os.environ["MAIL_SERVER"] = ""
 # Disable rate limiter entirely during tests
