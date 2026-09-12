@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}{{ smart_list.name }} — Smart List — FrameIQ{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-8">
+  <!-- Breadcrumb -->
+  <nav class="mb-4 text-sm text-[var(--text-mid)]" aria-label="Breadcrumb">
+    <a href="{{ url_for('main.index') }}" class="hover:text-[var(--accent)]">Home</a>
+    <span class="mx-1">›</span>
+    <a href="/lists" class="hover:text-[var(--accent)]">My Lists</a>
+    <span class="mx-1">›</span>
+    <span class="text-[var(--text-bright)]">{{ smart_list.name }}</span>
+  </nav>
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+    <div class="flex items-start gap-3 min-w-0">
+      <span class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-[var(--surface)] border border-[var(--line)] text-[var(--accent)] shrink-0" aria-hidden="true">
+        <i class="fas fa-bolt"></i>
+      </span>
+      <div class="min-w-0">
+        <h1 class="text-2xl sm:text-3xl font-bold text-[var(--text-bright)] truncate">{{ smart_list.name }}</h1>
+        {% if smart_list.description %}
+        <p class="text-sm text-[var(--text-mid)] mt-1">{{ smart_list.description }}</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="sl-edit-btn" class="text-sm px-3 py-2 rounded-lg border border-[var(--line)] hover:border-[var(--accent)] text-[var(--text-mid)] hover:text-[var(--text-bright)] transition-colors">
+        <i class="fas fa-pen mr-1" aria-hidden="true"></i> Edit
+      </button>
+      <button id="sl-delete-btn" class="text-sm px-3 py-2 rounded-lg border border-[var(--line)] hover:border-red-500 text-[var(--text-mid)] hover:text-red-400 transition-colors">
+        <i class="fas fa-trash mr-1" aria-hidden="true"></i> Delete
+      </button>
+    </div>
+  </div>
+
+  <!-- Rules -->
+  <div class="flex flex-wrap items-center gap-2 mb-6" id="sl-rules">
+    {% for rule in rules %}
+    <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--surface)] border border-[var(--line)] text-[var(--text-mid)]">{{ rule }}</span>
+    {% endfor %}
+  </div>
+
+  <!-- Results -->
+  <div id="sl-count" class="text-sm text-[var(--text-mid)] mb-4" aria-live="polite"></div>
+
+  <div id="sl-loading" class="py-12 text-center text-[var(--text-mid)]">
+    <i class="fas fa-circle-notch fa-spin mr-2" aria-hidden="true"></i> Loading results…
+  </div>
+
+  <div id="sl-error" class="hidden py-10 text-center">
+    <p class="text-[var(--text-mid)] mb-4">Couldn't load this Smart List.</p>
+    <button id="sl-retry" class="text-sm px-4 py-2 rounded-lg bg-[var(--accent)] text-white">Retry</button>
+  </div>
+
+  <div id="sl-empty" class="hidden py-12 text-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+    <i class="far fa-folder-open text-3xl text-[var(--text-mid)] mb-3 block" aria-hidden="true"></i>
+    <h2 class="text-lg font-semibold text-[var(--text-bright)] mb-1">No matching titles right now.</h2>
+    <p class="text-sm text-[var(--text-mid)]">Your rules don't match anything yet — they apply automatically as your data changes.</p>
+  </div>
+
+  <div id="sl-grid" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"></div>
+
+  <div id="sl-more-wrap" class="hidden text-center mt-6">
+    <button id="sl-more" class="text-sm px-5 py-2.5 rounded-lg border border-[var(--line)] hover:border-[var(--accent)] text-[var(--text-mid)] hover:text-[var(--text-bright)] transition-colors">
+      Load more
+    </button>
+  </div>
+</div>
+
+<!-- Edit modal (same fields as create) -->
+<div id="sl-edit-modal" class="hidden fixed inset-0 z-50 bg-black/70 items-center justify-center p-4">
+  <div class="w-full max-w-lg rounded-xl border border-[var(--line)] bg-[var(--elevated)] p-6 max-h-[90vh] overflow-y-auto">
+    <h2 class="text-lg font-semibold text-[var(--text-bright)] mb-4">Edit Smart List</h2>
+    <div class="space-y-3 text-sm">
+      <div>
+        <label for="sl-name" class="block mb-1 text-[var(--text-mid)]">Name</label>
+        <input id="sl-name" type="text" maxlength="200" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+      </div>
+      <div>
+        <label for="sl-desc" class="block mb-1 text-[var(--text-mid)]">Description</label>
+        <input id="sl-desc" type="text" maxlength="1000" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="sl-scope" class="block mb-1 text-[var(--text-mid)]">Source</label>
+          <select id="sl-scope" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="watchlist">My Watchlist</option>
+            <option value="diary">Watched History</option>
+            <option value="tracked_tv">Tracked TV</option>
+            <option value="all">Everything</option>
+          </select>
+        </div>
+        <div>
+          <label for="sl-sort" class="block mb-1 text-[var(--text-mid)]">Sort by</label>
+          <select id="sl-sort" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="date_added">Date Added</option>
+            <option value="priority">Priority</option>
+            <option value="rating">Rating</option>
+            <option value="runtime">Runtime</option>
+            <option value="release_date">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="random">Surprise Me</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="sl-watch-state" class="block mb-1 text-[var(--text-mid)]">Watch state</label>
+          <select id="sl-watch-state" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="">Any</option>
+            <option value="unwatched">Unwatched</option>
+            <option value="watched">Watched</option>
+          </select>
+        </div>
+        <div>
+          <label for="sl-runtime" class="block mb-1 text-[var(--text-mid)]">Runtime</label>
+          <select id="sl-runtime" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="">Any</option>
+            <option value="under_90">Under 90 min</option>
+            <option value="under_120">Under 120 min</option>
+            <option value="under_150">Under 150 min</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="sl-services" class="block mb-1 text-[var(--text-mid)]">Availability</label>
+          <select id="sl-services" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="">Anywhere</option>
+            <option value="my_services">On My Services</option>
+          </select>
+        </div>
+        <div>
+          <label for="sl-min-rating" class="block mb-1 text-[var(--text-mid)]">Min rating</label>
+          <select id="sl-min-rating" class="w-full rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-2 text-[var(--text-bright)]">
+            <option value="">Any</option>
+            <option value="7">7+</option>
+            <option value="8">8+</option>
+            <option value="9">9+</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="sl-edit-cancel" class="px-4 py-2 rounded-lg border border-[var(--line)] text-[var(--text-mid)]">Cancel</button>
+        <button id="sl-edit-save" class="px-4 py-2 rounded-lg bg-[var(--accent)] text-white">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.SMART_LIST_PAGE = {
+  id: {{ smart_list.id | tojson }},
+  config: {{ smart_list.to_dict() | tojson }},
+  rules: {{ rules | tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/smart-list-detail.js') }}"></script>
+{% endblock %}

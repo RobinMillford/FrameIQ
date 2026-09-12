@@ -12,6 +12,9 @@ class MediaItem(db.Model):
     genres = db.Column(db.String(200))  # Comma-separated genre labels
     overview = db.Column(db.Text)
     rating = db.Column(db.Float)
+    # Runtime in minutes (movies: main runtime; TV: first episode_run_time).
+    # Nullable — only populated for titles hydrated after this column existed.
+    runtime = db.Column(db.Integer)
 
     def __init__(self, **kwargs):
         super(MediaItem, self).__init__(**kwargs)
