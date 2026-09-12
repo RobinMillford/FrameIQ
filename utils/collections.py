@@ -25,6 +25,19 @@ def get_user_collection_ids(user):
         return set(), set(), set()
 
 
+def _extract_runtime(media_type, data):
+    """Runtime in minutes from a TMDb details payload (None if absent)."""
+    if media_type == 'movie':
+        value = data.get('runtime')
+    else:
+        runs = data.get('episode_run_time') or []
+        value = runs[0] if runs else None
+    try:
+        return int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
 def get_or_create_media_item(media_id, media_type):
     """Find a MediaItem by TMDb id, creating it from TMDb if missing.
 
@@ -56,6 +69,7 @@ def get_or_create_media_item(media_id, media_type):
         poster_path=data.get('poster_path'),
         overview=data.get('overview'),
         rating=data.get('vote_average'),
+        runtime=_extract_runtime(media_type, data),
     )
     db.session.add(media_item)
     db.session.commit()

@@ -57,6 +57,7 @@ from routes.stats import stats_bp
 from routes.tv_tracking import tv_tracking
 from routes.watch import watch_bp
 from routes.notifications import notifications_bp
+from routes.smart_lists import smart_lists_bp
 
 # ── Routes: AI ────────────────────────────────────────────────────────────────
 from src.api.flask_integration import agent_chat
@@ -184,8 +185,8 @@ def create_app() -> Flask:
         profile_enhancements, user_discovery, popular_bp, recommendations_bp,
         # SEO
         seo_bp,
-        # Stats, TV, watch, notifications
-        stats_bp, tv_tracking, watch_bp, notifications_bp,
+        # Stats, TV, watch, notifications, smart lists
+        stats_bp, tv_tracking, watch_bp, notifications_bp, smart_lists_bp,
         # AI
         agent_chat,
     ]

@@ -410,9 +410,19 @@ def discover_lists():
 @lists.route('/lists')
 @login_required
 def my_lists():
-    """View all user's lists"""
+    """View all user's lists (normal + Smart Lists)"""
+    from models.smart_lists import SmartList
+    from api.smart_lists import rule_summary
+
     user_lists = current_user.lists.order_by(UserList.created_at.desc()).all()
-    return render_template('my_lists.html', user_lists=user_lists)
+    smart_lists = (SmartList.query
+                   .filter_by(user_id=current_user.id)
+                   .order_by(SmartList.created_at.desc())
+                   .all())
+    smart_data = [{**sl.to_dict(), 'rules': rule_summary(sl)}
+                  for sl in smart_lists]
+    return render_template('my_lists.html', user_lists=user_lists,
+                           smart_lists=smart_data)
 
 
 @lists.route('/lists/<int:list_id>')

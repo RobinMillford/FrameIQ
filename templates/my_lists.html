@@ -85,20 +85,62 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-16  rounded-lg border border-gray-700">
-            <i class="fas fa-list text-6xl text-[var(--text-mid)] mb-4"></i>
-            <h3 class="text-2xl font-bold text-[var(--text-mid)] mb-2">No Lists Yet</h3>
+        {% if not smart_lists %}
+        <div class="text-center py-12  rounded-lg border border-gray-700">
+            <i class="fas fa-list text-5xl text-[var(--text-mid)] mb-4"></i>
+            <h3 class="text-xl font-bold text-[var(--text-mid)] mb-2">No Lists Yet</h3>
             <p class="text-[var(--text-mid)] mb-6">Create your first custom list to organize your favorite movies and TV shows</p>
             <button onclick="openCreateListModal()" class="bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 <i class="fas fa-plus"></i> Create Your First List
             </button>
         </div>
         {% endif %}
+        {% endif %}
+
+        <!-- Smart Lists -->
+        <div class="flex items-center justify-between mt-12 mb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-[var(--accent)] flex items-center gap-2">
+                    <i class="fas fa-bolt"></i> Smart Lists
+                </h2>
+                <p class="text-[var(--text-mid)] text-sm mt-1">Saved filters that update automatically as your data changes</p>
+            </div>
+            <button onclick="openSmartListModal()" class="border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white font-medium py-2 px-4 rounded-lg transition-all flex items-center gap-2">
+                <i class="fas fa-plus"></i> New Smart List
+            </button>
+        </div>
+
+        {% if smart_lists %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for sl in smart_lists %}
+            <a href="/smart-lists/{{ sl.id }}" class="list-card  rounded-lg p-6 border border-gray-700 hover:border-[var(--accent)] block">
+                <div class="flex justify-between items-start mb-3">
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="fas fa-bolt text-[var(--accent)] text-sm" aria-hidden="true"></i> {{ sl.name }}
+                    </h3>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mb-4">
+                    {% for rule in sl.rules %}
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-300">{{ rule }}</span>
+                    {% endfor %}
+                </div>
+                <div class="flex items-center justify-between text-sm text-[var(--text-mid)]">
+                    <span><i class="fas fa-magic"></i> Dynamic — always current</span>
+                    <span><i class="fas fa-lock"></i> Private</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8 rounded-lg border border-dashed border-gray-700 text-[var(--text-mid)]">
+            <p class="text-sm">No Smart Lists yet — create one like “Watchlist under 2 hours on my services”.</p>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Create List Modal -->
     <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class=" rounded-lg p-8 w-full max-w-md mx-4">
+        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4 border border-gray-700 shadow-xl">
             <h2 class="text-2xl font-bold mb-6 text-[var(--accent)]">Create New List</h2>
             
             <div class="space-y-4">
@@ -133,7 +175,7 @@
         function openCreateListModal() {
             document.getElementById('create-list-modal').classList.remove('hidden');
         }
-        
+
         function closeCreateListModal() {
             document.getElementById('create-list-modal').classList.add('hidden');
             document.getElementById('list-title').value = '';
@@ -173,7 +215,127 @@
                 alert('An error occurred');
             }
         }
+
+        // ── Smart Lists ──────────────────────────────────────────────
+        function openSmartListModal() {
+            document.getElementById('create-smart-list-modal').classList.remove('hidden');
+        }
+
+        function closeSmartListModal() {
+            document.getElementById('create-smart-list-modal').classList.add('hidden');
+        }
+
+        async function createSmartList() {
+            const name = document.getElementById('sl-name').value.trim();
+            if (!name) {
+                alert('Please enter a name');
+                return;
+            }
+
+            const filters = {};
+            const watchState = document.getElementById('sl-watch-state').value;
+            if (watchState) filters.watch_state = watchState;
+            const runtime = document.getElementById('sl-runtime').value;
+            if (runtime) filters.runtime = runtime;
+            const services = document.getElementById('sl-services').value;
+            if (services) filters.services = services;
+
+            const payload = {
+                name: name,
+                scope: document.getElementById('sl-scope').value,
+                sort: document.getElementById('sl-sort').value,
+                filters: filters
+            };
+
+            try {
+                const response = await fetch('/api/smart-lists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    window.location.href = '/smart-lists/' + data.id;
+                } else {
+                    alert(data.error || 'Failed to create Smart List');
+                }
+            } catch (error) {
+                alert('An error occurred');
+            }
+        }
     </script>
+
+    <!-- Create Smart List Modal -->
+    <div id="create-smart-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
+        <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto border border-gray-700 shadow-xl">
+            <h2 class="text-2xl font-bold mb-2 text-[var(--accent)]">New Smart List</h2>
+            <p class="text-[var(--text-mid)] text-sm mb-6">FrameIQ builds the list from your rules — it stays current automatically.</p>
+            <div class="space-y-4">
+                <div>
+                    <label for="sl-name" class="block text-sm font-semibold mb-2">Name *</label>
+                    <input type="text" id="sl-name" maxlength="200" placeholder="e.g., Watch Tonight" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                </div>
+                <div>
+                    <label for="sl-scope" class="block text-sm font-semibold mb-2">Source</label>
+                    <select id="sl-scope" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                        <option value="watchlist">My Watchlist</option>
+                        <option value="diary">Watched History</option>
+                        <option value="tracked_tv">Tracked TV</option>
+                        <option value="all">Everything</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="sl-watch-state" class="block text-sm font-semibold mb-2">Watch state</label>
+                        <select id="sl-watch-state" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
+                            <option value="">Any</option>
+                            <option value="unwatched">Unwatched</option>
+                            <option value="watched">Watched</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="sl-runtime" class="block text-sm font-semibold mb-2">Runtime</label>
+                        <select id="sl-runtime" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
+                            <option value="">Any</option>
+                            <option value="under_90">Under 90 min</option>
+                            <option value="under_120">Under 120 min</option>
+                            <option value="under_150">Under 150 min</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="sl-services" class="block text-sm font-semibold mb-2">Availability</label>
+                        <select id="sl-services" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
+                            <option value="">Anywhere</option>
+                            <option value="my_services">On My Services</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="sl-sort" class="block text-sm font-semibold mb-2">Sort by</label>
+                        <select id="sl-sort" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white">
+                            <option value="date_added">Date Added</option>
+                            <option value="priority">Priority</option>
+                            <option value="rating">Rating</option>
+                            <option value="runtime">Runtime</option>
+                            <option value="release_date">Newest</option>
+                            <option value="oldest">Oldest</option>
+                            <option value="random">Surprise Me</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="flex space-x-4 mt-6">
+                <button onclick="createSmartList()" class="flex-1 bg-[var(--accent)] hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    Save Smart List
+                </button>
+                <button onclick="closeSmartListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>
