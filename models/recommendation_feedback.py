@@ -177,6 +177,18 @@ class RecommendationFeedback(db.Model):
 
     # ── Sanctioned write path ────────────────────────────────────────────────
     @classmethod
+    def serialize_payload(cls, payload):
+        """Serialize + size-bound a payload — the single source of the
+        MAX_PAYLOAD_CHARS rule, reused by the API's validate-before-persist
+        step and by record() itself."""
+        serialized = json.dumps(payload, sort_keys=True)
+        if len(serialized) > MAX_PAYLOAD_CHARS:
+            raise ValueError(
+                'payload_json exceeds MAX_PAYLOAD_CHARS '
+                f'({len(serialized)} > {MAX_PAYLOAD_CHARS})')
+        return serialized
+
+    @classmethod
     def record(cls, user_id, media_id, media_type, surface, event, source,
                position=None, reason_kind=None, payload=None,
                model_version=MODEL_VERSION, commit=True):
@@ -196,11 +208,7 @@ class RecommendationFeedback(db.Model):
 
         serialized = None
         if payload is not None:
-            serialized = json.dumps(payload, sort_keys=True)
-            if len(serialized) > MAX_PAYLOAD_CHARS:
-                raise ValueError(
-                    'payload_json exceeds MAX_PAYLOAD_CHARS '
-                    f'({len(serialized)} > {MAX_PAYLOAD_CHARS})')
+            serialized = cls.serialize_payload(payload)
 
         feedback = cls(
             user_id=user_id, media_id=media_id, media_type=media_type,
