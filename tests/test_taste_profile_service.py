@@ -579,3 +579,418 @@ def test_describe_profile_accepts_plain_dict():
     assert d['top_positive_genres'][0]['genre'] == 'Drama'
     assert d['runtime_pref']['p75'] == 140
     assert d['is_personalized'] is True
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Feature #7 Phase 3 — recommendation feedback → taste profile
+# ════════════════════════════════════════════════════════════════════════
+
+from models.recommendation_feedback import RecommendationFeedback  # noqa: E402
+
+
+def _add_feedback(user, media_type, media_id, event, created_at=None,
+                  surface='more_like_this', source='genre_discover',
+                  position=None, reason_kind=None, payload=None):
+    """Insert a feedback row bypassing record()'s once-per-day rule where
+    the test needs multiple same-day events for one title."""
+    fb = RecommendationFeedback(
+        user_id=user.id, media_id=media_id, media_type=media_type,
+        surface=surface, source=source or '', event=event,
+        position=position, reason_kind=reason_kind, payload=payload)
+    if created_at is not None:
+        fb.event_date = created_at.date()
+    db.session.add(fb)
+    db.session.flush()
+    if created_at is not None:
+        # created_at has a server default; override explicitly for decay tests.
+        db.session.execute(
+            RecommendationFeedback.__table__.update()
+            .where(RecommendationFeedback.__table__.c.id == fb.id)
+            .values(created_at=created_at))
+        db.session.commit()
+    else:
+        db.session.commit()
+    return fb
+
+
+# ── 1–6. feedback_event_weight: pure, all six events ────────────────────────
+
+def test_feedback_click_weight():
+    assert tp.feedback_event_weight('click') == 0.25
+
+
+def test_feedback_saved_weight():
+    assert tp.feedback_event_weight('saved') == 0.35
+
+
+def test_feedback_rated_weight():
+    assert tp.feedback_event_weight('rated') == 1.0
+
+
+def test_feedback_not_interested_negative_weight():
+    assert tp.feedback_event_weight('not_interested') == -0.75
+
+
+def test_feedback_impression_zero():
+    assert tp.feedback_event_weight('impression') == 0.0
+
+
+def test_feedback_already_watched_zero():
+    assert tp.feedback_event_weight('already_watched') == 0.0
+
+
+def test_feedback_event_weight_covers_all_events():
+    from models.recommendation_feedback import EVENTS
+    for event in EVENTS:
+        assert tp.feedback_event_weight(event) == \
+            tp.FEEDBACK_EVENT_WEIGHTS[event]
+
+
+def test_feedback_event_weight_unknown_is_zero():
+    """Fail-safe: unknown event names never invent taste evidence."""
+    assert tp.feedback_event_weight('hover') == 0.0
+    assert tp.feedback_event_weight(None) == 0.0
+
+
+# ── 7. feedback recency decay ───────────────────────────────────────────────
+
+def test_feedback_recency_decay(app, db, user, media_factory):
+    m = media_factory(genres='Thriller')
+    old = datetime.utcnow() - timedelta(days=365)
+    _add_feedback(user, 'movie', m.tmdb_id, 'click', created_at=old)
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved',
+                  surface='profile_recs')  # different surface → not a dup
+    profile = tp.compute_profile(user.id)
+    # Two signals; the saved row (now) weighs 0.35, the year-old click weighs
+    # ~0.25 × 0.5 — strictly less than the fresh one.
+    assert profile.signal_count == 2
+
+
+def test_feedback_decayed_weight_weaker_than_fresh(app, db, user,
+                                                   media_factory):
+    """Genre evidence from a year-old click is strictly weaker than from a
+    fresh click on a same-genre title (decay actually applies)."""
+    m1 = media_factory(genres='Thriller')
+    m2 = media_factory(genres='Western')
+    _add_feedback(user, 'movie', m1.tmdb_id, 'click',
+                  created_at=datetime.utcnow() - timedelta(days=365))
+    _add_feedback(user, 'movie', m2.tmdb_id, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.genre_weights['Western'] > profile.genre_weights['Thriller']
+
+
+# ── 8. negative evidence preserved ──────────────────────────────────────────
+
+def test_feedback_negative_evidence_preserved(app, db, user, media_factory):
+    m = media_factory(genres='Horror')
+    _add_feedback(user, 'movie', m.tmdb_id, 'not_interested')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 1
+    assert profile.distinct_title_count == 1
+    assert profile.genre_weights.get('Horror', 0) < 0
+
+
+def test_feedback_not_interested_no_state_mutation(app, db, user,
+                                                   media_factory):
+    """/api/rec/feedback stays untouched; here we assert the COMPUTATION
+    never mutates canonical state — feedback is evidence, not a mutation."""
+    m = media_factory(genres='Horror')
+    _add_feedback(user, 'movie', m.tmdb_id, 'not_interested')
+    _add_watchlist(user, m)
+    before_watchlist = db.session.execute(
+        user_watchlist.select()).all()
+    tp.compute_profile(user.id)
+    after_watchlist = db.session.execute(
+        user_watchlist.select()).all()
+    assert before_watchlist == after_watchlist
+    # The negative evidence still flows into the profile.
+    assert tp.compute_profile(user.id).genre_weights.get('Horror', 0) < 0
+
+
+# ── 9–12. metadata dimensions via local MediaItem ───────────────────────────
+
+def test_feedback_contributes_genre(app, db, user, media_factory):
+    m = media_factory(genres='Thriller, Mystery')
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.genre_weights.get('Thriller', 0) > 0
+    assert profile.genre_weights.get('Mystery', 0) > 0
+
+
+def test_feedback_contributes_decade(app, db, user, media_factory):
+    m = media_factory(release_date=date(1994, 9, 10))
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved')
+    profile = tp.compute_profile(user.id)
+    assert profile.decade_weights.get('1990s', 0) > 0
+
+
+def test_feedback_contributes_media_type(app, db, user, media_factory):
+    m = media_factory(media_type='tv')
+    _add_feedback(user, 'tv', m.tmdb_id, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.media_type_pref.get('tv', 0) > 0
+
+
+def test_feedback_contributes_runtime_when_local(app, db, user,
+                                                 media_factory):
+    m = media_factory(genres='Drama', runtime=105)
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved')
+    profile = tp.compute_profile(user.id)
+    assert profile.runtime_pref['sample_count'] == 1
+    assert profile.runtime_pref['p25'] == 105
+    assert profile.runtime_pref['p75'] == 105
+
+
+# ── 13–14. missing local metadata: graceful + network-free ──────────────────
+
+def test_feedback_missing_local_metadata_no_crash(app, db, user):
+    """TMDb-only ids (no MediaItem row) still contribute the generic signal."""
+    _add_feedback(user, 'movie', 987654321, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 1
+    assert profile.distinct_title_count == 1
+    assert profile.genre_weights == {}
+    assert profile.runtime_pref == {}
+
+
+def test_feedback_missing_metadata_no_network(app, db, user, monkeypatch):
+    """Resolving missing metadata must never fall back to an external call."""
+    import socket
+
+    class _Forbidden(socket.socket):
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("network socket created during taste "
+                                 "profile computation")
+
+    monkeypatch.setattr(socket, 'socket', _Forbidden)
+    _add_feedback(user, 'movie', 987654322, 'click')
+    _add_feedback(user, 'tv', 987654323, 'not_interested')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 2  # both counted, both metadata-less
+
+
+# ── 15–19. signal_count / distinct_title_count semantics ────────────────────
+
+def test_feedback_signal_count_semantics(app, db, user, media_factory):
+    m = media_factory(genres='Drama')
+    # click/saved/not_interested/rated count; impression/already_watched don't.
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved',
+                  surface='home_for_you')
+    _add_feedback(user, 'movie', m.tmdb_id, 'not_interested',
+                  surface='profile_recs')
+    _add_feedback(user, 'movie', m.tmdb_id, 'rated')
+    _add_feedback(user, 'movie', m.tmdb_id, 'impression')  # 0 weight
+    _add_feedback(user, 'movie', m.tmdb_id, 'already_watched')  # 0 weight
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 4
+
+
+def test_feedback_impression_does_not_increase_signal_count(app, db, user,
+                                                            media_factory):
+    _add_feedback(user, 'movie', 987654324, 'impression')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 0
+    assert profile.distinct_title_count == 0
+    assert profile.confidence == 0.0
+
+
+def test_feedback_already_watched_does_not_increase_signal_count(
+        app, db, user, media_factory):
+    _add_feedback(user, 'movie', 987654325, 'already_watched')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 0
+    assert profile.distinct_title_count == 0
+
+
+def test_feedback_multiple_events_one_title_counts_once(app, db, user,
+                                                        media_factory):
+    """click + save + not_interested on ONE title → 3 signals, 1 title."""
+    m = media_factory(genres='Drama')
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved',
+                  surface='home_for_you')
+    _add_feedback(user, 'movie', m.tmdb_id, 'not_interested',
+                  surface='profile_recs')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 3
+    assert profile.distinct_title_count == 1
+
+
+def test_feedback_rated_signal_semantics(app, db, user, media_factory):
+    """rated contributes its generic +1.0 weight; payload is never treated
+    as an authoritative star rating (no fabricated stars from clients)."""
+    m = media_factory(genres='Drama')
+    _add_feedback(user, 'movie', m.tmdb_id, 'rated',
+                  payload={'rating': 0.5})  # hostile payload must be ignored
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 1
+    assert profile.genre_weights.get('Drama', 0) > 0  # NOT strongly negative
+
+
+# ── 20–23. combination + dominance + invariant weights ──────────────────────
+
+def test_feedback_combines_with_explicit_signals(app, db, user,
+                                                 media_factory):
+    m = media_factory(genres='Drama')
+    db.session.add(Review(user_id=user.id, media_id=m.id, media_type='movie',
+                          rating=5.0))
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 2  # review_rating + feedback_saved
+    assert profile.distinct_title_count == 1
+    assert profile.genre_weights.get('Drama', 0) > 0
+
+
+def test_explicit_rating_stronger_than_feedback(app, db, user,
+                                                media_factory):
+    """/2.5★ review evidence on Drama must outweigh a click on Drama."""
+    drama = media_factory(genres='Drama')
+    _add_feedback(user, 'movie', drama.tmdb_id, 'click')
+
+    westerns = [media_factory(genres='Western') for _ in range(6)]
+    for w in westerns:
+        db.session.add(Review(user_id=user.id, media_id=w.id,
+                              media_type='movie', rating=2.5))
+    db.session.commit()
+    profile = tp.compute_profile(user.id)
+    assert profile.genre_weights['Western'] > profile.genre_weights['Drama']
+
+
+def test_repeated_daily_duplicate_no_duplicate_profile_evidence(
+        app, db, user, media_factory):
+    """The API's idempotency (model partial unique index) means duplicates
+    never become extra rows — so the profile sees them exactly once."""
+    m = media_factory(genres='Drama')
+    kwargs = dict(user_id=user.id, media_id=m.tmdb_id,
+                  media_type='movie', surface='more_like_this',
+                  source='genre_discover', event='click')
+    first = RecommendationFeedback.record(**kwargs)
+    dup = RecommendationFeedback.record(**kwargs)
+    assert first is not None and dup is None  # duplicate suppressed
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 1
+    assert profile.distinct_title_count == 1
+
+
+def test_surface_does_not_alter_weight(app, db, user, media_factory):
+    """Same event weight from every surface → identical genre evidence."""
+    m1 = media_factory(genres='Thriller')
+    _add_feedback(user, 'movie', m1.tmdb_id, 'click',
+                  surface='home_for_you')
+    p1 = tp.compute_profile(user.id)
+    w1 = p1.genre_weights['Thriller']
+    db.session.delete(RecommendationFeedback.query.first())
+    db.session.commit()
+
+    m2 = media_factory(genres='Thriller')
+    _add_feedback(user, 'movie', m2.tmdb_id, 'click',
+                  surface='profile_recs')
+    p2 = tp.compute_profile(user.id)
+    assert p2.genre_weights['Thriller'] == pytest.approx(w1)
+
+
+def test_source_does_not_alter_weight(app, db, user, media_factory):
+    """Same event weight regardless of source string."""
+    m1 = media_factory(genres='Thriller')
+    _add_feedback(user, 'movie', m1.tmdb_id, 'click',
+                  source='trending')
+    p1 = tp.compute_profile(user.id)
+    w1 = p1.genre_weights['Thriller']
+    db.session.delete(RecommendationFeedback.query.first())
+    db.session.commit()
+
+    m2 = media_factory(genres='Thriller')
+    _add_feedback(user, 'movie', m2.tmdb_id, 'click',
+                  source='similar_to:550')
+    p2 = tp.compute_profile(user.id)
+    assert p2.genre_weights['Thriller'] == pytest.approx(w1)
+
+
+# ── 25–29. invariants + hygiene ─────────────────────────────────────────────
+
+def test_feedback_director_affinity_remains_empty(app, db, user,
+                                                  media_factory):
+    m = media_factory(genres='Drama')
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.director_affinity == {}
+    assert profile.director_affinity_json == '{}'
+
+
+def test_feedback_confidence_remains_gated(app, db, user, media_factory):
+    """Lots of feedback on <5 distinct titles → confidence stays 0."""
+    for i in range(4):  # 4 distinct titles only
+        m = media_factory(genres='Drama')
+        _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 4
+    assert profile.distinct_title_count == 4
+    assert profile.confidence == 0.0
+
+
+def test_feedback_deterministic_computation(app, db, user, media_factory):
+    m = media_factory(genres='Thriller', runtime=110)
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    p1 = tp.compute_profile(user.id)
+    snap1 = p1.to_dict()
+    p2 = tp.compute_profile(user.id)
+    snap2 = p2.to_dict()
+    for key in ('genre_weights', 'decade_weights', 'media_type_pref',
+                'runtime_pref', 'confidence', 'signal_count',
+                'distinct_title_count'):
+        assert snap1[key] == snap2[key], key
+
+
+def test_feedback_persistence_updates_existing_profile(app, db, user):
+    _add_feedback(user, 'movie', 987654330, 'click')
+    p1 = tp.compute_profile(user.id)
+    original_id = p1.id
+    p2 = tp.compute_profile(user.id)
+    assert p2.id == original_id  # update, never a second row
+    assert TasteProfile.query.filter_by(user_id=user.id).count() == 1
+
+
+def test_feedback_no_external_network(app, db, user, media_factory,
+                                      monkeypatch):
+    """The feedback-integrated computation remains fully local."""
+    import socket
+
+    class _Forbidden(socket.socket):
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("network socket created during taste "
+                                 "profile computation")
+
+    monkeypatch.setattr(socket, 'socket', _Forbidden)
+    m = media_factory(genres='Thriller')
+    _add_feedback(user, 'movie', m.tmdb_id, 'saved')
+    _add_feedback(user, 'movie', 987654331, 'not_interested')
+    profile = tp.compute_profile(user.id)
+    assert profile.signal_count == 2
+
+
+def test_legacy_taste_tables_untouched_by_feedback_integration(
+        app, db, user, media_factory):
+    """Legacy user_taste_profile/user_similarity must remain unknown to the
+    service — no reads, no writes, no cleanup."""
+    m = media_factory(genres='Drama')
+    _add_feedback(user, 'movie', m.tmdb_id, 'click')
+    tp.compute_profile(user.id)
+    legacy = ('user_taste_profile', 'user_similarity')
+    assert not db.session.execute(
+        db.text(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('user_taste_profile', 'user_similarity')"
+        )).fetchall()
+    # And the source scan shows no reference to them.
+    import inspect
+    import api.taste_profile as tp_mod
+    src = inspect.getsource(tp_mod)
+    for table in legacy:
+        assert table not in src, f"service must not reference {table}"
+
+
+def test_feedback_row_bound_is_bounded(app, db, user):
+    """The collector caps its read (documented bound: most recent 300) —
+    never an unbounded per-user scan."""
+    assert tp._FEEDBACK_ROW_LIMIT == 300

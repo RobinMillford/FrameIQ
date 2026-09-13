@@ -69,6 +69,39 @@ W_DIARY_REWATCH = 0.7
 W_TAG = 0.3
 W_WATCHLIST_ADD = 0.2
 
+# Recommendation-feedback signals (Feature #7 Phase 3) — a SEPARATE, weaker
+# evidence family than explicit ratings. These are recommendation-interaction
+# signals, not star ratings: a click/save is weaker than any rating, and
+# impression/already_watched are exposure/bookkeeping events with ZERO taste
+# evidence. Constant map (not scattered literals) so tests and future
+# analytics read one table. Surface/source deliberately do NOT modify the
+# weight (no surface weighting, no source weighting in V1).
+W_FEEDBACK_CLICK = 0.25
+W_FEEDBACK_SAVED = 0.35
+W_FEEDBACK_RATED = 1.0
+W_FEEDBACK_NOT_INTERESTED = -0.75
+W_FEEDBACK_IMPRESSION = 0.0        # exposure, never preference
+W_FEEDBACK_ALREADY_WATCHED = 0.0   # real viewing is captured by canonical signals
+
+FEEDBACK_EVENT_WEIGHTS = {
+    'click': W_FEEDBACK_CLICK,
+    'saved': W_FEEDBACK_SAVED,
+    'rated': W_FEEDBACK_RATED,
+    'not_interested': W_FEEDBACK_NOT_INTERESTED,
+    'impression': W_FEEDBACK_IMPRESSION,
+    'already_watched': W_FEEDBACK_ALREADY_WATCHED,
+}
+assert set(FEEDBACK_EVENT_WEIGHTS) == set(
+    __import__('models.recommendation_feedback', fromlist=['EVENTS']).EVENTS), \
+    'FEEDBACK_EVENT_WEIGHTS must cover every RecommendationFeedback event'
+
+# Bounded feedback read: the most recent per-user feedback rows. Non-zero-
+# weight events are once-per-day per (user, media, surface, event) by the
+# model's partial unique index, so real evidence grows slowly — 300 rows is
+# far beyond a user's monthly interactive feedback while keeping the nightly
+# job's per-user query bounded (full history stays available for analytics).
+_FEEDBACK_ROW_LIMIT = 300
+
 # Watchlist is weak intent: it may inform genre/decade/media-type but must
 # never overwhelm explicit ratings. Hard cap on titles drawn from it.
 _WATCHLIST_CAP = 30
@@ -223,6 +256,16 @@ def _confidence(signal_count, distinct_title_count):
         return 0.0
     return round(min(1.0, signal_count / _CONFIDENCE_SIGNAL_DIVISOR),
                  _ROUND_DIGITS)
+
+
+def feedback_event_weight(event):
+    """Pure: RecommendationFeedback event → signed base taste weight.
+
+    click +0.25 · saved +0.35 · rated +1.0 · not_interested −0.75 ·
+    impression 0.0 · already_watched 0.0. Zero-weight events are exposure
+    or bookkeeping, never preference (see FEEDBACK_EVENT_WEIGHTS). Unknown
+    event names → 0.0 (fail-safe: never invent taste evidence)."""
+    return FEEDBACK_EVENT_WEIGHTS.get(event, 0.0)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -510,6 +553,65 @@ def _collect_watchlist(acc, user_id, now):
         )
 
 
+def _collect_feedback_events(acc, user_id, now):
+    """Recommendation feedback (Feature #7 Phase 3) — weak/medium signals.
+
+    RecommendationFeedback.media_id is a TMDb id (models/
+    recommendation_feedback.py): metadata is resolved ONLY via batched
+    MediaItem(tmdb_id, media_type) lookups — never MediaItem.id, never an
+    external call. Events referencing titles with no local MediaItem still
+    contribute their generic signal/count (documented V1 rule); dimensions
+    needing metadata (genre/decade/runtime) are skipped for those.
+
+    Weights come from feedback_event_weight(); impression and
+    already_watched weigh 0.0 and therefore contribute NO signal and NO
+    distinct title (the accumulator's _MIN_SIGNAL_MAGNITUDE gate handles
+    this). Recency uses RecommendationFeedback.created_at through the
+    canonical decay. Surface and source are deliberately NOT weighted.
+
+    NOTE on `rated`: the feedback row is only an event record — its payload
+    is NEVER treated as an authoritative star rating (no fabricated stars
+    from client data). It contributes its generic +1.0 weight here; when
+    the user also has a persisted rating for the same title, that explicit
+    review/diary/episode rating contributes separately through its own
+    (dominant) signal.
+
+    `not_interested` produces SIGNED NEGATIVE genre/decade evidence (the
+    accumulator preserves signs end-to-end; L2 normalization never discards
+    them). It is pure evidence — it mutates no watchlist/wishlist/diary/
+    viewed/like state.
+    """
+    from models.recommendation_feedback import RecommendationFeedback
+
+    events = (
+        RecommendationFeedback.query.filter_by(user_id=user_id)
+        .order_by(RecommendationFeedback.created_at.desc())
+        .limit(_FEEDBACK_ROW_LIMIT)
+        .all()
+    )
+    if not events:
+        return
+    meta = _media_meta_map(
+        'movie', {e.media_id for e in events if e.media_type == 'movie'})
+    meta.update(_media_meta_map(
+        'tv', {e.media_id for e in events if e.media_type == 'tv'}))
+
+    for e in events:
+        item, key = _lookup(meta, e.media_type, e.media_id)
+        weight = feedback_event_weight(e.event) \
+            * recency_decay(e.created_at or now, now)
+        acc.add(
+            evidence=1.0,  # polarity lives in the weight's sign
+            weight=weight,
+            title_key=key,
+            signal_name=f'feedback_{e.event}',
+            genre=_genres_list(item),
+            decade=decade_from_release_date(item.release_date) if item else None,
+            media_type=e.media_type,
+            runtime=item.runtime if item else None,
+        )
+
+
 def _collect_episode_ratings(acc, user_id, now):
     """episode_rating (1.0) — sparse but strong; mapped to the PARENT SHOW.
 
@@ -578,9 +680,10 @@ PROFILE_VERSION = 1  # bump when the computation algorithm changes
 def compute_profile(user_id, now=None):
     """Compute and persist the user's TasteProfile. Idempotent.
 
-    Bounded reads: ≤7 targeted queries (reviews, diary, likes, tags,
-    watchlist rows, episode ratings, batched MediaItem metadata lookups)
-    — no full-table scans, no N+1, no external calls.
+    Bounded reads: ≤8 targeted queries (reviews, diary, likes, tags,
+    watchlist rows, episode ratings, recent recommendation feedback, plus
+    batched MediaItem metadata lookups) — no full-table scans, no N+1, no
+    external calls.
 
     Returns the TasteProfile model instance (created or updated).
     """
@@ -601,6 +704,7 @@ def compute_profile(user_id, now=None):
     _collect_tags(acc, user_id, now)
     _collect_watchlist(acc, user_id, now)
     _collect_episode_ratings(acc, user_id, now)
+    _collect_feedback_events(acc, user_id, now)
 
     profile = TasteProfile.query.filter_by(user_id=user_id).first()
     if profile is None:
