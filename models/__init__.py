@@ -61,6 +61,7 @@ from models.notification import Notification                  # noqa: F401
 from models.smart_lists import SmartList                      # noqa: F401
 from models.streaming import UserStreamingService             # noqa: F401
 from models.taste_profile import TasteProfile                 # noqa: F401
+from models.recommendation_feedback import RecommendationFeedback  # noqa: F401
 from models.chat import (                                      # noqa: F401
     ChatConversation,
     ChatMessage,
@@ -81,5 +82,6 @@ __all__ = [
     'WatchProgress',
     'UserStreamingService',
     'TasteProfile',
+    'RecommendationFeedback',
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
 ]
