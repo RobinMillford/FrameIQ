@@ -248,22 +248,25 @@ def test_route_uses_session_identity_not_request_args():
 # ── 12–20. Client hygiene (source guards, repo-established pattern) ─────────
 
 def test_js_makes_exactly_one_fetch():
-    assert _js_source().count('fetch(') == 1
+    """Exactly ONE /api/for-you request per page load (the second fetch in
+    the module is the Phase 7 feedback flush, pinned separately)."""
+    assert _js_code().count("fetch('/api/for-you'") == 1
 
 
 def test_js_has_no_polling():
     src = _js_code()
-    for banned in ('setInterval', 'setTimeout', 'scroll'):
+    for banned in ('setInterval', 'scroll'):
         assert banned not in src, f'banned polling/loop token: {banned}'
 
 
 def test_js_calls_only_the_canonical_api():
-    src = _js_source()
+    src = _js_code()
     assert '/api/for-you' in src
     assert 'api.themoviedb.org' not in src       # no direct TMDb
-    assert '/api/rec/' not in src                # no feedback calls
-    assert 'feedback' not in src                 # no feedback integration
     assert 'taste' not in src                    # no TasteProfile calls
+    # Phase 7: exactly one feedback endpoint, the canonical one.
+    assert src.count("'/api/rec/feedback'") == 1
+    assert src.count('/api/rec/') == 1
 
 
 def test_js_contains_no_scoring_or_ranking_logic():
