@@ -1,0 +1,77 @@
+# Nightly Taste Profile Recomputation (Feature #6, Phase 9)
+#
+# Scheduler: GitHub Actions cron (UTC only — do not assume the UI shows
+# local time). Schedule: 19:30 UTC daily = 01:30 AM Bangladesh Standard
+# Time (UTC+6, no DST) — outside the busiest interactive evening window.
+#
+# Execution model: this workflow ONLY orchestrates over SSH. All work
+# happens inside the existing production web container. There is no cron
+# in the container, no systemd timer, no Celery/APScheduler, no Render
+# cron, and no background/detached execution — the SSH session WAITS for
+# the script and the workflow receives its real exit code (0 = success,
+# 1 = user failures, 2 = fatal error; both 1 and 2 fail this workflow).
+#
+# Concurrency: one group for scheduled AND manual runs. Overlapping runs
+# are QUEUED (cancel-in-progress: false) — a second invocation never
+# kills an in-flight recomputation halfway through.
+#
+# Security: reuses the existing deployment secrets (VPS_HOST / VPS_USER /
+# SSH_PRIVATE_KEY). No secrets are echoed, and no new credentials are
+# introduced. No migrations, no db.create_all(), no external API calls:
+# the compute/verify scripts are local-data only by design.
+
+name: Nightly Taste Profiles
+
+on:
+  schedule:
+    # 19:30 UTC daily == 01:30 AM Asia/Dhaka (UTC+6)
+    - cron: '30 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taste-profile-nightly
+  cancel-in-progress: false
+
+jobs:
+  recompute-verify:
+    runs-on: ubuntu-latest
+    # Generous ceiling: the SSH command itself is capped at 30m below.
+    timeout-minutes: 45
+
+    steps:
+      - name: Recompute taste profiles
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Default command timeout is 10m — too short for a nightly batch
+          # over a growing user base. 30m is safely above expected runtime.
+          command_timeout: 30m
+          # REQUIRED: without this the action CONTINUES after a failed
+          # command, which would let verification run after a failed
+          # recomputation. With it, a non-zero script exit aborts the step
+          # and fails the workflow (exit codes are never swallowed).
+          script_stop: true
+          script: |
+            cd /home/deployer/FrameIQ
+            echo "[WORKFLOW] web service status:"
+            docker compose ps web
+            docker compose exec -T web python scripts/compute_taste_profiles.py
+
+      - name: Verify feedback pipeline
+        # Default step semantics: runs ONLY if the previous step succeeded.
+        # A failed recomputation never reaches verification.
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            cd /home/deployer/FrameIQ
+            docker compose exec -T web python scripts/verify_recommendation_feedback.py
