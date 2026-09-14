@@ -253,8 +253,7 @@
         </div>
 
         {% if rail.kind == 'continue' %}
-        <div class="rail" id="rail-{{ rail.key }}" data-continue-watching>
-            {% for p in rail['entries'] %}
+        <div class="rail" id="rail-{{ rail.key }}" data-continue-watching>            {% for p in rail['entries'] %}
             <div class="shrink-0 snap-start w-[148px] sm:w-[160px]" data-cw-card
                  data-media-type="{{ p.media_type }}" data-tmdb-id="{{ p.tmdb_id }}"
                  data-season="{{ p.season or '' }}" data-episode="{{ p.episode or '' }}"
@@ -294,6 +293,10 @@
             </div>
             {% endfor %}
         </div>
+        {% elif rail.kind == 'for_you' %}
+        {# Placeholder only — cards arrive via GET /api/for-you (for-you.js).
+            Cold-start/error → the JS removes this whole section. #}
+        {% with %}{% include "partials/for_you_rail.html" %}{% endwith %}
         {% else %}
         <div class="rail" id="rail-{{ rail.key }}">
             {% set rail_type = 'tv' if rail.key in ('on_tv', 'popular_tv') else 'movie' %}
@@ -341,6 +344,12 @@
     </section>
     {% endif %}
 </div>
+
+<!-- For You rail: one bounded fetch for authenticated users; fills the
+     placeholder above and hides the section on cold-start/error. -->
+{% if current_user.is_authenticated %}
+<script src="{{ url_for('static', filename='js/for-you.js') }}"></script>
+{% endif %}
 
 <!-- ══ Hero carousel JS ══ -->
 <script>

@@ -251,6 +251,9 @@ def index():
                 "subtitle": sub, "kind": "media", "entries": genre_films,
             })
 
+    # ── For You (Feature #6/#7 Phase 5) — shell only, client-filled ──
+    _append_for_you_placeholder(rails, current_user.is_authenticated)
+
     trending_items = _trending_rail()
     if trending_items:
         rails.append({
@@ -300,6 +303,24 @@ def index():
         user_wishlist_ids=wishlist_ids,
         user_viewed_ids=viewed_ids,
     )
+
+
+def _append_for_you_placeholder(rails, is_authenticated):
+    """Shell-only For You rail entry; cards are client-rendered by
+    static/js/for-you.js from GET /api/for-you.
+
+    The engine is NEVER invoked during homepage rendering (anonymous
+    performance is untouched, no request-time fanout): the section and
+    skeletons render server-side and the JS fills them, removing the
+    section entirely on cold-start/error.
+    """
+    if not is_authenticated:
+        return
+    rails.append({
+        "key": "for_you", "title": "For You",
+        "subtitle": "picked for your taste", "kind": "for_you",
+        "entries": [None],  # shell only; cards are client-rendered
+    })
 
 
 def _unfinished_tv_entries(user_id, limit=6):
