@@ -24,6 +24,7 @@ _SYNC = Path(".github/workflows/sync-upcoming-episodes.yml")
 _ENRICH = "enrich_directors.py"
 _COMPUTE = "compute_taste_profiles.py"
 _VERIFY = "verify_recommendation_feedback.py"
+_ANALYZE = "analyze_recommendation_feedback.py"
 
 
 @pytest.fixture(scope="module")
@@ -144,7 +145,7 @@ def test_failure_is_not_swallowed(raw):
 
 def test_verify_only_after_successful_compute(wf):
     steps = _steps(wf)
-    assert len(steps) == 3
+    assert len(steps) == 4  # Phase 18: verify + analytics added
     verify_idx = next(i for i, s in enumerate(steps)
                       if _VERIFY in s.get("with", {}).get("script", ""))
     # GitHub Actions' default step condition is success() — an explicit
@@ -168,7 +169,11 @@ def test_no_plaintext_secrets(raw):
     assert "BEGIN" not in code and "ssh-rsa" not in code
     for secret in ("VPS_HOST", "VPS_USER", "SSH_PRIVATE_KEY"):
         assert f"secrets.{secret}" in code
-    assert _WORKFLOW.read_text().count("secrets.SSH_PRIVATE_KEY") == 3
+    # Phase 18: four steps (enrich/compute/verify/analyze) — host+user+key
+    # referenced once per step, nothing else.
+    assert _WORKFLOW.read_text().count("secrets.SSH_PRIVATE_KEY") == 4
+    assert _WORKFLOW.read_text().count("secrets.VPS_HOST") == 4
+    assert _WORKFLOW.read_text().count("secrets.VPS_USER") == 4
 
 
 def test_reuses_existing_deployment_secrets():
@@ -345,3 +350,163 @@ def test_no_director_specific_verifier(raw):
     assert "director" not in _script_of(
         yaml.safe_load(raw), _VERIFY).replace(
         "verify_recommendation_feedback.py", "")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 18 — nightly recommendation feedback analytics
+# ════════════════════════════════════════════════════════════════════════════
+
+def _idx_of(wf, needle):
+    steps = _steps(wf)
+    return next(i for i, s in enumerate(steps)
+                if needle in s.get("with", {}).get("script", ""))
+
+
+def test_analytics_command_exists(wf):
+    assert _script_of(wf, _ANALYZE) is not None
+
+
+def test_analytics_uses_sync_exec_t(wf):
+    script = _script_of(wf, _ANALYZE)
+    line = next(ln for ln in script.splitlines() if _ANALYZE in ln)
+    assert line.strip() == (
+        f"docker compose exec -T web python scripts/{_ANALYZE}"), line
+
+
+def test_analytics_runs_in_production_container(wf):
+    assert "cd /home/deployer/FrameIQ" in _script_of(wf, _ANALYZE)
+
+
+def test_analytics_runs_after_verification(wf):
+    assert _idx_of(wf, _VERIFY) < _idx_of(wf, _ANALYZE)
+
+
+def test_analytics_is_synchronous(raw):
+    code = _code_lines(raw)
+    for banned in ("nohup", "docker exec -d", "docker compose exec -d",
+                   "exec -d"):
+        assert banned not in code
+    assert "\n&" not in code and " & " not in code and not code.rstrip().endswith(" &")
+
+
+def test_analytics_keeps_script_stop(wf):
+    step = _steps(wf)[_idx_of(wf, _ANALYZE)]
+    assert step.get("with", {}).get("script_stop") is True
+
+
+def test_analytics_failure_fails_workflow(wf):
+    # GitHub's default success() gate: no if/continue-on-error on the
+    # analytics step, so a non-zero CLI exit (1 or 2) fails the workflow.
+    step = _steps(wf)[_idx_of(wf, _ANALYZE)]
+    assert "if" not in step
+    assert "continue-on-error" not in step
+
+
+def test_no_failure_suppression_anywhere(raw):
+    code = _code_lines(raw)
+    for banned in ("|| true", "continue-on-error: true", "if: always()",
+                   "if: failure()", "> /dev/null", "2>/dev/null"):
+        assert banned not in code
+
+
+def test_analytics_uses_default_window(wf):
+    # No --days override: the CLI's default 7-day window is intentional.
+    script = _script_of(wf, _ANALYZE)
+    line = next(ln for ln in script.splitlines() if _ANALYZE in ln)
+    assert "--" not in line
+
+
+def test_analytics_step_runs_all_variants_identically(wf):
+    # Scheduled and workflow_dispatch share one job — same four steps.
+    assert len(_steps(wf)) == 4
+
+
+def test_schedule_and_concurrency_unchanged(wf):
+    assert [t["cron"] for t in wf["on"]["schedule"]] == ['30 19 * * *']
+    assert wf["concurrency"] == {"group": "taste-profile-nightly",
+                                 "cancel-in-progress": False}
+    assert wf["jobs"]["recompute-verify"]["timeout-minutes"] == 45
+
+
+def test_no_new_scheduler_introduced_phase18():
+    # Still exactly two scheduled workflows; no extra analytics workflow.
+    workflow_dir = _WORKFLOW.parent
+    scheduled = [p.name for p in workflow_dir.glob("*.yml")
+                 if "cron:" in p.read_text()]
+    assert sorted(scheduled) == ["sync-upcoming-episodes.yml",
+                                 "taste-profile-nightly.yml"]
+    assert not (workflow_dir / "feedback-analytics.yml").exists()
+    assert not (workflow_dir / "recommendation-analytics.yml").exists()
+
+
+def test_deploy_workflow_unchanged_phase18():
+    text = _DEPLOY.read_text()
+    assert _ANALYZE not in text
+    assert _COMPUTE not in text and _VERIFY not in text
+    assert "schedule" not in text
+    assert "up -d --build" in text
+
+
+def test_no_plaintext_secrets_phase18(raw):
+    code = _code_lines(raw)
+    assert "password" not in code.lower()
+    assert "BEGIN" not in code and "ssh-rsa" not in code
+    # Same three secret references, four steps now (host+user+key each).
+    assert _WORKFLOW.read_text().count("secrets.SSH_PRIVATE_KEY") == 4
+    assert _WORKFLOW.read_text().count("secrets.VPS_HOST") == 4
+    assert _WORKFLOW.read_text().count("secrets.VPS_USER") == 4
+
+
+def test_no_external_api_command_phase18(raw):
+    code = _code_lines(raw)
+    for banned in ("curl ", "wget ", "api.themoviedb.org", "https://api."):
+        assert banned not in code
+
+
+def test_no_migration_or_schema_commands_phase18(raw):
+    code = _code_lines(raw)
+    for banned in ("migrate", "create_all", "alembic", "ALTER TABLE"):
+        assert banned not in code
+
+
+def test_exact_final_stage_ordering(wf):
+    """The exact Phase 18 production sequence:
+    enrich → compute → verify → analyze."""
+    steps = _steps(wf)
+    order = []
+    for s in steps:
+        script = s.get("with", {}).get("script", "")
+        if _ENRICH in script:
+            order.append(_ENRICH)
+        elif _COMPUTE in script:
+            order.append(_COMPUTE)
+        elif _VERIFY in script:
+            order.append(_VERIFY)
+        elif _ANALYZE in script:
+            order.append(_ANALYZE)
+    assert order == [_ENRICH, _COMPUTE, _VERIFY, _ANALYZE]
+
+
+def test_full_chain_gates_enforce_ordering(wf):
+    # Structural proof of the whole chain: each later stage is its own
+    # step AFTER the earlier one, with no always()/failure() condition —
+    # GitHub's default success() is the only propagation mechanism.
+    steps = _steps(wf)
+    order = [_ENRICH, _COMPUTE, _VERIFY, _ANALYZE]
+    idxs = [_idx_of(wf, n) for n in order]
+    assert idxs == sorted(idxs) and len(set(idxs)) == 4
+    for i in idxs:
+        assert "if" not in steps[i]
+        assert "continue-on-error" not in steps[i]
+
+
+def test_verify_failure_blocks_analytics(wf):
+    # A failed verification never reaches analytics — analytics is a
+    # separate later step with the default success() condition.
+    steps = _steps(wf)
+    verify_idx = _idx_of(wf, _VERIFY)
+    analyze_idx = _idx_of(wf, _ANALYZE)
+    assert verify_idx < analyze_idx
+    assert "if" not in steps[analyze_idx]
+    assert "continue-on-error" not in steps[analyze_idx]
+    assert steps[verify_idx]["with"]["script_stop"] is True

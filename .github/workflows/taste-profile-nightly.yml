@@ -1,4 +1,5 @@
-# Nightly Taste Profiles + Director Enrichment (Feature #6, Phases 9–11)
+# Nightly Taste Profiles + Director Enrichment + Feedback Analytics
+# (Feature #6, Phases 9–11; Feature #7, Phase 18)
 #
 # Scheduler: GitHub Actions cron (UTC only — do not assume the UI shows
 # local time). Schedule: 19:30 UTC daily = 01:30 AM Bangladesh Standard
@@ -11,12 +12,14 @@
 # each script and the workflow receives its real exit code (0 = success,
 # 1 = user failures, 2 = fatal error; both 1 and 2 fail this workflow).
 #
-# Command order (Phase 11): bounded director enrichment runs BEFORE
+# Command order (Phases 11+18): bounded director enrichment runs BEFORE
 # taste recomputation so newly captured director evidence participates
 # in that night's profiles; verification runs only after a successful
-# recomputation. enrich_directors.py is the ONLY nightly step allowed to
-# reach TMDb (through the existing cached fetch_movie_details path); the
-# compute/verify scripts remain local-data only by design.
+# recomputation; analytics runs only after successful verification
+# (read-only aggregate CLI, default 7-day window). enrich_directors.py
+# is the ONLY nightly step allowed to reach TMDb (through the existing
+# cached fetch_movie_details path); the compute/verify/analytics scripts
+# remain local-data only by design.
 #
 # Concurrency: one group for scheduled AND manual runs. Overlapping runs
 # are QUEUED (cancel-in-progress: false) — a second invocation never
@@ -99,3 +102,19 @@ jobs:
           script: |
             cd /home/deployer/FrameIQ
             docker compose exec -T web python scripts/verify_recommendation_feedback.py
+
+      - name: Analyze recommendation feedback
+        # Default step semantics: runs ONLY if verification succeeded.
+        # A failed verification never reaches analytics. The CLI is
+        # read-only, aggregate-only, network-free, and uses its default
+        # 7-day window (no --days override); exit 0/1/2 propagate as-is.
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            cd /home/deployer/FrameIQ
+            docker compose exec -T web python scripts/analyze_recommendation_feedback.py
