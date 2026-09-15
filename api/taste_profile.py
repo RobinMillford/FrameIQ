@@ -889,3 +889,231 @@ def _as_float_map(raw):
         except (TypeError, ValueError):
             continue
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Smart Lists taste matching (Feature #6, Phase 12) — pure helpers.
+#
+# The canonical TasteProfile is the ONLY taste source for the Smart Lists
+# 'matches_my_taste' filter (api/smart_lists.py). These functions perform
+# no DB work and no network work: they take an already-loaded profile and
+# a plain candidate dict and produce a deterministic, inspectable score.
+# V1 deliberately uses a zero-for-missing model — an unavailable dimension
+# contributes 0 rather than being treated as negative evidence — and a
+# fixed threshold (no dynamic re-normalization, no percentile cutoffs).
+# ══════════════════════════════════════════════════════════════════════════
+
+# Fixed V1 match threshold (not user-configurable, not dynamically tuned).
+TASTE_MATCH_THRESHOLD = 0.45
+
+# Component weights of taste_match_score(). Weights sum to 1.0; a missing
+# dimension contributes 0 for its component (the score is NOT re-normalized
+# over available dimensions).
+TASTE_MATCH_WEIGHTS = {
+    'genre': 0.50,
+    'director': 0.20,
+    'decade': 0.10,
+    'media_type': 0.10,
+    'runtime': 0.10,
+}
+
+
+def genre_match_score(profile_genres, candidate_genres):
+    """Mean of the profile's signed weights over the candidate's genres.
+
+    Bounded aggregation choice: the MEAN of the candidate's distinct genre
+    weights (not the sum) so a title is never rewarded purely for having
+    many genres. Duplicates are de-duplicated case-insensitively (the first
+    spelling wins, matching the persisted profile's canonical labels).
+    Missing/empty either side → 0.0.
+    """
+    if not isinstance(profile_genres, dict) or not candidate_genres:
+        return 0.0
+    seen = set()
+    picked = []
+    for genre in candidate_genres:
+        if not isinstance(genre, str):
+            continue
+        label = genre.strip()
+        key = label.casefold()
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        try:
+            picked.append(float(profile_genres.get(label, 0.0)))
+        except (TypeError, ValueError):
+            picked.append(0.0)
+    if not picked:
+        return 0.0
+    return round(sum(picked) / len(picked), _ROUND_DIGITS)
+
+
+def director_match_score(profile_directors, candidate_directors):
+    """Best positive director affinity among the candidate's directors.
+
+    The candidate's persisted director names (batched lookup upstream) are
+    matched against the L2-normalized top-8 profile affinity. Missing
+    evidence on either side contributes 0 — never negative evidence.
+    """
+    if not isinstance(profile_directors, dict) or not candidate_directors:
+        return 0.0
+    best = 0.0
+    for name in candidate_directors:
+        if not isinstance(name, str):
+            continue
+        try:
+            weight = float(profile_directors.get(name, 0.0))
+        except (TypeError, ValueError):
+            continue
+        if weight > best:
+            best = weight
+    return round(best, _ROUND_DIGITS)
+
+
+def decade_match_score(profile_decades, candidate_decade):
+    """Signed profile weight for the candidate's decade label.
+
+    candidate_decade uses the canonical '1980s' convention — reuse
+    decade_from_release_date() upstream; no second parser lives here.
+    Missing candidate decade or empty profile map → 0.0.
+    """
+    if not isinstance(profile_decades, dict) or not candidate_decade:
+        return 0.0
+    try:
+        return round(float(profile_decades.get(candidate_decade, 0.0)),
+                     _ROUND_DIGITS)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def media_type_match_score(profile_media_types, candidate_media_type):
+    """Positive share of the user's typed evidence spent on this type.
+
+    profile_media_types is the share-of-total map ({'movie': 0.6, 'tv': 0.4}):
+    a preferred type scores its share, the other type scores 0 (never
+    negative — the taste matcher is a score, not a hard type gate).
+    """
+    if not isinstance(profile_media_types, dict) or not candidate_media_type:
+        return 0.0
+    try:
+        share = float(profile_media_types.get(candidate_media_type, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+    return round(share if share > 0 else 0.0, _ROUND_DIGITS)
+
+
+def runtime_match_score(runtime_pref, candidate_runtime):
+    """1.0 inside the learned [p25, p75] interval, tapering outside.
+
+    The taper is half the interquartile width on each side (deterministic,
+    zero-config): score = 1 - distance/half_width, so halfway through the
+    taper scores 0.5 and at (or beyond) the full taper distance the score
+    reaches 0. Missing interval, missing runtime, or a degenerate
+    (zero-width) interval → 0.0.
+    """
+    if not isinstance(runtime_pref, dict):
+        return 0.0
+    try:
+        if candidate_runtime is None:
+            return 0.0
+        p25 = float(runtime_pref.get('p25'))
+        p75 = float(runtime_pref.get('p75'))
+    except (TypeError, ValueError):
+        return 0.0
+    if p75 <= p25:  # degenerate interval (insufficient variance)
+        return 0.0
+    try:
+        runtime = float(candidate_runtime)
+    except (TypeError, ValueError):
+        return 0.0
+    if p25 <= runtime <= p75:
+        return 1.0
+    half = (p75 - p25) / 2.0
+    distance = p25 - runtime if runtime < p25 else runtime - p75
+    return round(max(0.0, 1.0 - distance / half), _ROUND_DIGITS)
+
+
+def taste_match_score(profile, candidate=None):
+    """Deterministic 0..1 taste-match score for one candidate title.
+
+        score = 0.50 * genre_match
+              + 0.20 * director_match
+              + 0.10 * decade_match
+              + 0.10 * media_type_match
+              + 0.10 * runtime_match
+
+    Components (genre_match_score etc., same module) combine the persisted,
+    signed profile dimensions with the candidate's local metadata. A missing
+    dimension contributes 0 (zero-for-missing model — missing evidence is
+    NOT negative evidence). Canonical form:
+
+        taste_match_score(profile, candidate)
+
+    where `profile` may be a TasteProfile, its to_dict(), or a precomputed
+    taste_match_inputs() snapshot (so hot loops parse the profile JSON
+    once). The single-argument form taste_match_score(profile) evaluates
+    that dict ITSELF as the candidate (REPL/test convenience).
+    Candidates are plain dicts with optional keys: genres, directors,
+    decade, media_type, runtime.
+    """
+    if candidate is None:
+        candidate = profile
+        profile = taste_match_inputs(profile)
+    inputs = (profile if isinstance(profile, dict)
+              and 'genre_weights_json' not in profile
+              else taste_match_inputs(profile))
+    genres = candidate.get('genres') or []
+    return round(
+        TASTE_MATCH_WEIGHTS['genre'] * genre_match_score(
+            inputs['genre_weights'], genres)
+        + TASTE_MATCH_WEIGHTS['director'] * director_match_score(
+            inputs['director_affinity'], candidate.get('directors'))
+        + TASTE_MATCH_WEIGHTS['decade'] * decade_match_score(
+            inputs['decade_weights'], candidate.get('decade'))
+        + TASTE_MATCH_WEIGHTS['media_type'] * media_type_match_score(
+            inputs['media_type_pref'], candidate.get('media_type'))
+        + TASTE_MATCH_WEIGHTS['runtime'] * runtime_match_score(
+            inputs['runtime_pref'], candidate.get('runtime')),
+        _ROUND_DIGITS)
+
+
+def taste_match_inputs(profile):
+    """Snapshot a TasteProfile (model or dict) into plain match inputs.
+
+    One dict per profile load; consumed by taste_match_score() so repeated
+    candidate scoring parses no JSON repeatedly.
+    """
+    data = profile.to_dict() if hasattr(profile, 'to_dict') else dict(profile)
+    runtime = data.get('runtime_pref')
+    if not isinstance(runtime, dict):
+        runtime = {}
+    return {
+        'genre_weights': data.get('genre_weights')
+        if isinstance(data.get('genre_weights'), dict) else {},
+        'director_affinity': data.get('director_affinity')
+        if isinstance(data.get('director_affinity'), dict) else {},
+        'decade_weights': data.get('decade_weights')
+        if isinstance(data.get('decade_weights'), dict) else {},
+        'media_type_pref': data.get('media_type_pref')
+        if isinstance(data.get('media_type_pref'), dict) else {},
+        'runtime_pref': runtime,
+        'confidence': float(data.get('confidence') or 0.0),
+        'distinct_title_count': int(data.get('distinct_title_count') or 0),
+    }
+
+
+def taste_profile_eligible(profile):
+    """Canonical cold-start gate shared with For You: full personalization
+    requires >= 5 distinct titles and confidence >= 0.4. Reuses For You's
+    audited constants via a local import to avoid a circular dependency.
+    """
+    from api.for_you import (FULL_PERSONALIZED_MIN_TITLES,
+                             FULL_PERSONALIZED_MIN_CONFIDENCE)
+    data = profile.to_dict() if hasattr(profile, 'to_dict') else dict(profile)
+    try:
+        titles = int(data.get('distinct_title_count') or 0)
+        confidence = float(data.get('confidence') or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return (titles >= FULL_PERSONALIZED_MIN_TITLES
+            and confidence >= FULL_PERSONALIZED_MIN_CONFIDENCE)
