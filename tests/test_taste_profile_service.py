@@ -994,3 +994,243 @@ def test_feedback_row_bound_is_bounded(app, db, user):
     """The collector caps its read (documented bound: most recent 300) —
     never an unbounded per-user scan."""
     assert tp._FEEDBACK_ROW_LIMIT == 300
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 10: director affinity from persisted local evidence
+# ════════════════════════════════════════════════════════════════════════════
+
+_DIRECTOR_FILE = 'tests/test_taste_profile_service.py'
+_TMDB_COUNTER2 = {'n': 980000}
+_PERSON_COUNTER = {'n': 990_900}  # module-level: shared session DB, unique
+
+
+def _dir_uid(prefix):
+    import uuid
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def dir_user(app, db):
+    u = User(username=_dir_uid('diruser'), email=f"{_dir_uid('diruser')}@x.io")
+    u.set_password('password123')
+    db.session.add(u)
+    db.session.commit()
+    return u
+
+
+@pytest.fixture
+def dir_media(app, db):
+    def _make(media_type='movie', title='Dune', genres='Drama, Crime',
+              release_date=date(2015, 6, 1), runtime=120):
+        _TMDB_COUNTER2['n'] += 1
+        m = MediaItem(tmdb_id=_TMDB_COUNTER2['n'], media_type=media_type,
+                      title=title, genres=genres, release_date=release_date,
+                      runtime=runtime)
+        db.session.add(m)
+        db.session.commit()
+        return m
+    return _make
+
+
+@pytest.fixture
+def dir_link(app, db):
+    """Link a MediaItem to a persisted Director (capture-phase shape)."""
+    from models import Director as D, MediaDirector as MD
+
+    def _make(media_item, name='Denis Villeneuve', person_id=None):
+        _PERSON_COUNTER['n'] += 1
+        d = D(tmdb_person_id=person_id or _PERSON_COUNTER['n'], name=name,
+              source='tmdb')
+        db.session.add(d)
+        db.session.flush()
+        db.session.add(MD(media_item_id=media_item.id, director_id=d.id))
+        db.session.commit()
+        return d
+    return _make
+
+
+def test_director_local_evidence_contributes(app, db, dir_user, dir_media,
+                                             dir_link):
+    m = dir_media()
+    dir_link(m)
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert list(profile.director_affinity) == ['Denis Villeneuve']
+    assert profile.director_affinity['Denis Villeneuve'] > 0
+
+
+def test_director_weighting_matches_signal_system(app, db, dir_user,
+                                                  dir_media, dir_link):
+    """A 0.5-rated review (quality −1.0) yields NEGATIVE director evidence
+    with the same magnitude machinery as the genre dimension."""
+    m = dir_media()
+    dir_link(m, 'Villeneuve')
+    db.session.add(Review(user_id=dir_user.id, media_id=m.id,
+                          media_type='movie', rating=0.5))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert profile.director_affinity['Villeneuve'] < 0
+    # Same signed-evidence pipeline: the genre dimension for this title's
+    # genres is negative too (identical contribution).
+    assert all(v <= 0 for v in profile.genre_weights.values())
+
+
+def test_director_affinity_is_top8_and_stable(app, db, dir_user, dir_media,
+                                              dir_link):
+    names = [f'Dir{i:02d}' for i in range(12)]
+    m = dir_media()
+    for name in names:
+        dir_link(m, name)
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    keys = list(profile.director_affinity)
+    assert len(keys) == 8  # top-8 target
+    # Deterministic truncation: alphabetical among equal weights (stable
+    # ordering rule), never arbitrary.
+    assert keys == sorted(names)[:8]
+    # Repeated computation is byte-identical.
+    again = tp.compute_profile(dir_user.id)
+    assert again.director_affinity == profile.director_affinity
+
+
+def test_director_negative_evidence_preserved(app, db, dir_user, dir_media,
+                                              dir_link):
+    m = dir_media()
+    dir_link(m, 'Disliked Director')
+    from models.recommendation_feedback import RecommendationFeedback
+    RecommendationFeedback.record(
+        user_id=dir_user.id, media_id=m.tmdb_id, media_type='movie',
+        surface='home_for_you', event='not_interested', source='trending')
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert profile.director_affinity['Disliked Director'] < 0
+
+
+def test_director_no_evidence_stays_empty(app, db, dir_user, dir_media):
+    m = dir_media()  # no director capture, but a real signal exists
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert profile.director_affinity == {}
+    assert profile.signal_count == 1
+
+
+def test_director_multiple_directors_on_one_title(app, db, dir_user,
+                                                  dir_media, dir_link):
+    m = dir_media()
+    dir_link(m, 'Co Director A')
+    dir_link(m, 'Co Director B')
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert set(profile.director_affinity) == {'Co Director A', 'Co Director B'}
+    # One evidence event split across two dimensions entries.
+    assert profile.signal_count == 1
+
+
+def test_director_counts_not_inflated(app, db, dir_user, dir_media, dir_link):
+    """Spec §16: the director dimension is another view of the SAME event —
+    signal_count and distinct_title_count must be identical with and
+    without persisted directors."""
+    from models import MediaLike
+    # Two users, identical single like event; only one title has the
+    # persisted director dimension. Comparing their computations isolates
+    # the dimension's effect on the counters.
+    u2 = User(username=_dir_uid('diruser2'),
+              email=f"{_dir_uid('diruser2')}@x.io")
+    u2.set_password('password123')
+    db.session.add(u2)
+    db.session.commit()
+    m_plain, m_dir = dir_media(), dir_media()
+    dir_link(m_dir, 'Counted Director')
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m_dir.tmdb_id,
+                             media_type='movie'))
+    db.session.add(MediaLike(user_id=u2.id, media_id=m_plain.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    with_dir = tp.compute_profile(dir_user.id)
+    without_dir = tp.compute_profile(u2.id)
+    # SAME single like event with and without the director dimension:
+    # counters must be identical — the dimension adds no evidence event.
+    assert (with_dir.signal_count,
+            with_dir.distinct_title_count) == (without_dir.signal_count,
+                                               without_dir.distinct_title_count)
+    assert (without_dir.signal_count, without_dir.distinct_title_count) == (1, 1)
+    assert list(with_dir.director_affinity) == ['Counted Director']
+
+
+def test_director_feedback_influences_affinity(app, db, dir_user, dir_media,
+                                               dir_link):
+    m = dir_media()
+    dir_link(m, 'Saved Director')
+    from models.recommendation_feedback import RecommendationFeedback
+    RecommendationFeedback.record(
+        user_id=dir_user.id, media_id=m.tmdb_id, media_type='movie',
+        surface='home_for_you', event='saved', source='trending')
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    assert profile.director_affinity['Saved Director'] > 0
+
+
+def test_director_old_profile_updates_correctly(app, db, dir_user, dir_media,
+                                                dir_link):
+    m = dir_media()
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    before = tp.compute_profile(dir_user.id)
+    assert before.director_affinity == {}  # capture hadn't run
+    dir_link(m, 'Late Director')  # enrichment runs AFTER the last compute
+    after = tp.compute_profile(dir_user.id)
+    assert list(after.director_affinity) == ['Late Director']
+
+
+def test_director_computation_zero_network(app, db, dir_user, dir_media,
+                                           dir_link, monkeypatch):
+    m = dir_media()
+    dir_link(m, 'Offline Director')
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    import socket
+
+    class _Forbidden(socket.socket):
+        def __init__(self, *a, **kw):
+            raise AssertionError('network socket created during profile '
+                                 'computation')
+
+    monkeypatch.setattr(socket, 'socket', _Forbidden)
+    profile = tp.compute_profile(dir_user.id)
+    assert list(profile.director_affinity) == ['Offline Director']
+
+
+def test_describe_profile_exposes_director_affinity(app, db, dir_user,
+                                                    dir_media, dir_link):
+    m = dir_media()
+    dir_link(m, 'Described Director')
+    from models import MediaLike
+    db.session.add(MediaLike(user_id=dir_user.id, media_id=m.tmdb_id,
+                             media_type='movie'))
+    db.session.commit()
+    profile = tp.compute_profile(dir_user.id)
+    described = tp.describe_profile(profile)
+    assert described['director_affinity']['Described Director'] > 0
+    top = described['director_affinity']['Described Director']
+    # Deterministic ordering within the description.
+    assert described['top_positive_genres'] == sorted(
+        described['top_positive_genres'],
+        key=lambda g: (-g['weight'], g['genre']))
+    assert top == max(described['director_affinity'].values())

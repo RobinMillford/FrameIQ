@@ -4,12 +4,13 @@ The SINGLE source of truth for turning a user's first-party behavioral
 data into the persisted, explainable TasteProfile (models/taste_profile.py):
 
     local persisted signals (reviews, diary, likes, tags, watchlist,
-                             episode ratings)
+                             episode ratings, recommendation feedback)
         ↓  compute_profile(user_id)
     weighted evidence (quality factor × signal weight × recency decay)
         ↓  per-dimension aggregation + L2 normalization
+        ↓  (genre / decade / director / media type / runtime)
     persisted TasteProfile row
-        ↓  (later phases: For You rail, CineBot context, Smart List filters)
+        ↓  (For You rail, CineBot context, Smart List filters)
 
 Design invariants:
 
@@ -101,6 +102,11 @@ assert set(FEEDBACK_EVENT_WEIGHTS) == set(
 # far beyond a user's monthly interactive feedback while keeping the nightly
 # job's per-user query bounded (full history stays available for analytics).
 _FEEDBACK_ROW_LIMIT = 300
+
+# Phase 10: top-N directors kept in director_affinity_json (audited V1
+# target). The dimension reuses existing evidence events — see
+# _director_affinity().
+_DIRECTOR_TOP_N = 8
 
 # Watchlist is weak intent: it may inform genre/decade/media-type but must
 # never overwhelm explicit ratings. Hard cap on titles drawn from it.
@@ -286,6 +292,7 @@ class _Accumulator:
     def __init__(self):
         self.genre = defaultdict(float)
         self.decade = defaultdict(float)
+        self.director = defaultdict(float)
         self.media_type = defaultdict(float)
         self.runtime_values = []
         self.runtime_weights = []
@@ -293,7 +300,8 @@ class _Accumulator:
         self.titles = set()
 
     def add(self, evidence, weight, title_key, signal_name,
-            genre=None, decade=None, media_type=None, runtime=None):
+            genre=None, decade=None, media_type=None, runtime=None,
+            directors=None):
         """Record one evidence observation.
 
         evidence: signed quality factor (positive/negative/neutral)
@@ -312,6 +320,9 @@ class _Accumulator:
                 self.genre[g] += contribution
         if decade:
             self.decade[decade] += contribution
+        if directors:
+            for d in directors:
+                self.director[d] += contribution
         if media_type:
             self.media_type[media_type] += abs(contribution)
         if runtime is not None:
@@ -367,6 +378,35 @@ def _genres_list(media_item):
     return [g.strip() for g in str(media_item.genres).split(',') if g.strip()]
 
 
+def _director_names_map(items):
+    """Batched local director lookup: {MediaItem.id: [name, ...]}.
+
+    Phase 10: persisted Director/MediaDirector evidence (models/director.py,
+    populated by the offline scripts/enrich_directors.py batch — NEVER at
+    request time). One join over exactly the resolved MediaItems; names are
+    sorted for deterministic aggregation. Empty map when a MediaItem has no
+    persisted director evidence (enrichment not run, or 'enriched and
+    empty') — callers simply skip the director dimension.
+    """
+    ids = {m.id for m in items if m is not None}
+    if not ids:
+        return {}
+    from models.director import Director, MediaDirector
+    rows = (
+        MediaDirector.query
+        .filter(MediaDirector.media_item_id.in_(ids))
+        .join(MediaDirector.director)
+        .with_entities(MediaDirector.media_item_id, Director.name)
+        .all()
+    )
+    names = defaultdict(list)
+    for media_item_id, name in rows:
+        names[media_item_id].append(name)
+    for media_item_id in names:
+        names[media_item_id].sort()
+    return dict(names)
+
+
 def _collect_review_ratings(acc, user_id, now):
     """review_rating signal (1.0) — explicit, signed, strongest per-title."""
     reviews = (
@@ -381,7 +421,7 @@ def _collect_review_ratings(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {r.media_id for r in reviews if r.media_type == 'tv'},
         by='pk'))
-
+    directors_map = _director_names_map(meta.values())
     for r in reviews:
         item, key = _lookup(meta, r.media_type, r.media_id)
         event_time = r.created_at or (r.watched_date if r.watched_date else now)
@@ -395,6 +435,7 @@ def _collect_review_ratings(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=r.media_type,
             runtime=item.runtime if item else None,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -416,6 +457,7 @@ def _collect_diary_entries(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {e.media_id for e in entries if e.media_type == 'tv'},
         by='pk'))
+    directors_map = _director_names_map(meta.values())
 
     for e in entries:
         item, key = _lookup(meta, e.media_type, e.media_id)
@@ -432,6 +474,7 @@ def _collect_diary_entries(acc, user_id, now):
                 decade=decade_from_release_date(item.release_date) if item else None,
                 media_type=e.media_type,
                 runtime=item.runtime if item else None,
+                directors=directors_map.get(item.id) if item else None,
             )
 
         if e.is_rewatch:
@@ -444,6 +487,7 @@ def _collect_diary_entries(acc, user_id, now):
                 genre=_genres_list(item),
                 decade=decade_from_release_date(item.release_date) if item else None,
                 media_type=e.media_type,
+                directors=directors_map.get(item.id) if item else None,
             )
 
 
@@ -463,6 +507,7 @@ def _collect_media_likes(acc, user_id, now):
         'movie', {lk.media_id for lk in likes if lk.media_type == 'movie'})
     meta.update(_media_meta_map(
         'tv', {lk.media_id for lk in likes if lk.media_type == 'tv'}))
+    directors_map = _director_names_map(meta.values())
 
     for lk in likes:
         item, key = _lookup(meta, lk.media_type, lk.media_id)
@@ -476,6 +521,7 @@ def _collect_media_likes(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=lk.media_type,
             runtime=item.runtime if item else None,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -491,6 +537,7 @@ def _collect_tags(acc, user_id, now):
         'movie', {t.media_id for t in tags if t.media_type == 'movie'})
     meta.update(_media_meta_map(
         'tv', {t.media_id for t in tags if t.media_type == 'tv'}))
+    directors_map = _director_names_map(meta.values())
 
     # Resolve tag names in ONE query instead of per-row lazy loads.
     from models import Tag
@@ -516,6 +563,7 @@ def _collect_tags(acc, user_id, now):
             genre=_genres_list(item),
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=t.media_type,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -539,6 +587,7 @@ def _collect_watchlist(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {r.media_id for r in rows if r.media_type == 'tv'},
         by='pk'))
+    directors_map = _director_names_map(meta.values())
 
     for r in rows:
         item, key = _lookup(meta, r.media_type, r.media_id)
@@ -550,6 +599,7 @@ def _collect_watchlist(acc, user_id, now):
             genre=_genres_list(item),
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=r.media_type,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -595,6 +645,7 @@ def _collect_feedback_events(acc, user_id, now):
         'movie', {e.media_id for e in events if e.media_type == 'movie'})
     meta.update(_media_meta_map(
         'tv', {e.media_id for e in events if e.media_type == 'tv'}))
+    directors_map = _director_names_map(meta.values())
 
     for e in events:
         item, key = _lookup(meta, e.media_type, e.media_id)
@@ -609,6 +660,7 @@ def _collect_feedback_events(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=e.media_type,
             runtime=item.runtime if item else None,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -629,6 +681,10 @@ def _collect_episode_ratings(acc, user_id, now):
     if not episodes:
         return
     meta = _media_meta_map('tv', {e.show_id for e in episodes})
+    # TV director evidence is deliberately absent today (no reliable
+    # series-level director source — see models/director.py), so this map
+    # is empty for shows; wiring is future-proof if TV capture ever lands.
+    directors_map = _director_names_map(meta.values())
 
     for e in episodes:
         item, key = _lookup(meta, 'tv', e.show_id)
@@ -643,6 +699,7 @@ def _collect_episode_ratings(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type='tv',
             runtime=item.runtime if item else None,
+            directors=directors_map.get(item.id) if item else None,
         )
 
 
@@ -660,14 +717,24 @@ def _runtime_pref(acc):
 
 
 def _director_affinity(acc):
-    """Phase 2: always empty — see module docstring.
+    """Top-8 directors by the SAME signed weighted evidence as genre/decade.
 
-    Directors exist only as request-time TMDb credits, never as persisted
-    per-user evidence. Populating this requires the director-capture phase;
-    doing it here would need external calls or a speculative new table,
-    both forbidden for this service.
+    Phase 10: directors come from persisted Director/MediaDirector rows
+    (models/director.py — populated only by the offline enrichment batch).
+    No external calls, no separate scoring: every already-supported signal
+    (ratings, diary, likes, tags, watchlist intent, feedback) flows through
+    _Accumulator.add(directors=...) with its existing weight, recency decay
+    and sign — negative evidence (e.g. not_interested on a Villeneuve film)
+    is preserved. Output: L2-normalized like the other dimensions, keys
+    sorted for deterministic JSON. signal_count / distinct_title_count are
+    NOT affected: the director dimension reuses the same evidence events,
+    it is not new evidence.
     """
-    return {}
+    if not acc.director:
+        return {}
+    normalized = normalize_l2(dict(acc.director))
+    ranked = sorted(normalized.items(), key=lambda kv: (-kv[1], kv[0]))
+    return dict(ranked[:_DIRECTOR_TOP_N])
 
 
 # ══════════════════════════════════════════════════════════════════════════

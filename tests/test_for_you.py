@@ -1027,3 +1027,200 @@ def test_no_legacy_recommendation_modules_modified():
     import routes.recommendations  # noqa: F401 — import proves module intact
     from api.for_you import get_for_you  # noqa: F401
     assert callable(get_for_you)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 10: director affinity from persisted local capture
+# ════════════════════════════════════════════════════════════════════════════
+
+_FY_DIR_PERSON = {'n': 991_500}
+
+
+def _fy_dir_user(app):
+    from models import User
+    import uuid
+    u = User(username=f"fydir_{uuid.uuid4().hex[:8]}",
+             email=f"fydir_{uuid.uuid4().hex[:8]}@x.io")
+    u.set_password('TestPass1')
+    db.session.add(u)
+    db.session.commit()
+    return u
+
+
+def _capture_director(media_item, name):
+    """Persist director evidence exactly as scripts/enrich_directors.py
+    would (stable person id, unique association)."""
+    from models.director import Director, MediaDirector
+    _FY_DIR_PERSON['n'] += 1
+    d = Director(tmdb_person_id=_FY_DIR_PERSON['n'], name=name, source='tmdb')
+    db.session.add(d)
+    db.session.flush()
+    db.session.add(MediaDirector(media_item_id=media_item.id, director_id=d.id))
+    db.session.commit()
+    return d
+
+
+def _attach_setup(app, user_id, directors_map, tmdb_ids):
+    """Profile + local MediaItems (+ captured directors) for attach tests."""
+    from models import MediaItem
+    from datetime import datetime as _dt
+    with app.app_context():
+        db.session.add(_profile(user_id, directors=directors_map))
+        items = {}
+        for tid in tmdb_ids:
+            m = MediaItem(tmdb_id=tid, media_type='movie', title=f'M{tid}',
+                          genres='Thriller', rating=7.5, runtime=110,
+                          poster_path='/p.jpg',
+                          release_date=_dt(2019, 6, 1).date())
+            db.session.add(m)
+            items[tid] = m
+        db.session.commit()
+        yield items
+        # leave no residue: associations cascade with media rows
+        for m in items.values():
+            db.session.delete(m)
+        db.session.commit()
+
+
+def test_director_affinity_now_affects_ranking(app, user, monkeypatch):
+    from datetime import datetime as _dt
+    today = _dt(2026, 9, 1).date()
+    with app.app_context():
+        # Candidate A's director has positive profile affinity; B's has none.
+        m_a = _media(910001, title='AffinityHit')
+        m_b = _media(910002, title='NoAffinity')
+        db.session.add_all([m_a, m_b])
+        db.session.commit()
+        _capture_director(m_a, 'Christopher Nolan')
+        _capture_director(m_b, 'Random Director')
+        db.session.add(_profile(user.id,
+                                directors={'Christopher Nolan': 0.9}))
+        db.session.commit()
+
+        base = dict(vote=7.5, votes=5000, genres=(53,), pop=50.0, year='2019')
+        c_a = fy._normalize_candidate(_tmdb_raw(910001, **base), 'movie',
+                                      'genre_discover', 1,
+                                      TasteProfile.query.filter_by(
+                                          user_id=user.id).one())
+        c_b = fy._normalize_candidate(_tmdb_raw(910002, **base), 'movie',
+                                      'genre_discover', 1,
+                                      TasteProfile.query.filter_by(
+                                          user_id=user.id).one())
+        # Prior affinity must be neutralized so ONLY the director differs.
+        c_b['profile_directors'] = dict(c_a['profile_directors'])
+        c_a, c_b = fy._attach_local_directors([c_a, c_b])
+        assert c_a['director'] == 'Christopher Nolan'
+        assert c_b['director'] is None  # captured but NOT in profile
+        scored = fy.rank_candidates([c_a, c_b], today)
+        scores = {c['tmdb_id']: s for c, s, _ in scored}
+        assert scores[910001] > scores[910002]
+
+
+def test_director_affinity_remains_zero_when_empty(app, user):
+    with app.app_context():
+        db.session.add(_profile(user.id, directors={}))
+        db.session.commit()
+        m = _media(910011)
+        db.session.add(m)
+        db.session.commit()
+        _capture_director(m, 'Some Director')
+        c = fy._normalize_candidate(_tmdb_raw(910011), 'movie',
+                                    'trending', 3,
+                                    TasteProfile.query.filter_by(
+                                        user_id=user.id).one())
+        c = fy._attach_local_directors([c])[0]
+        assert c['director'] is None          # never tagged from capture alone
+        assert fy.build_reason(c)['kind'] != 'director_affinity'
+
+
+def test_director_reason_only_with_real_evidence(app, user):
+    c = fy._normalize_candidate(_tmdb_raw(910021), 'movie', 'trending', 3,
+                                None)
+    c['director'] = 'Christopher Nolan'  # name with NO profile affinity
+    assert fy.build_reason(c)['kind'] != 'director_affinity'
+
+    c['profile_directors'] = {'Christopher Nolan': 0.4}
+    reason = fy.build_reason(c)
+    assert reason['kind'] == 'director_affinity'
+    assert reason['text'] == 'Because you liked films by Christopher Nolan'
+    assert reason['evidence'][0] == {'director': 'Christopher Nolan',
+                                     'affinity': 0.4}
+
+
+def test_director_negative_affinity_never_reasoned(app, user):
+    c = fy._normalize_candidate(_tmdb_raw(910031), 'movie', 'trending', 3,
+                                None)
+    c['director'] = 'Disliked Director'
+    c['profile_directors'] = {'Disliked Director': -0.5}
+    assert fy.build_reason(c)['kind'] != 'director_affinity'
+
+
+def test_no_director_network_call_during_for_you(app, user, monkeypatch):
+    """Full flow with captured directors present: the local tagging path
+    must not dial out (socket guard) and the TMDb budget stays intact."""
+    import socket
+
+    class _NoNet(socket.socket):
+        def __init__(self, *a, **kw):
+            raise AssertionError('network socket during For You flow')
+
+    monkeypatch.setattr(socket, 'socket', _NoNet)
+    monkeypatch.setattr(socket, 'create_connection', _NoNet)
+    with app.app_context():
+        m = _media(910041, title='DirectorFlow')
+        db.session.add(m)
+        db.session.commit()
+        _capture_director(m, 'Christopher Nolan')
+        db.session.add(_profile(user.id,
+                                directors={'Christopher Nolan': 0.9}))
+        db.session.commit()
+        stub = _StubTmdb(discover={53: [_tmdb_raw(910041, genres=(53,))]})
+        _wire(stub, monkeypatch)
+        out = fy.get_for_you(user.id)
+    assert out['personalized'] is True
+    total = (len(stub.discover_calls) + len(stub.recs_calls)
+             + len(stub.trending_calls))
+    assert total <= 5                          # hard TMDb budget intact
+    item = next(i for i in out['items'] if i['tmdb_id'] == 910041)
+    assert item['reason']['kind'] == 'director_affinity'
+    assert 'Christopher Nolan' in item['reason']['text']
+
+
+def test_director_attach_skips_tv_candidates(app, user):
+    """TV has no persisted series-level director evidence — never tagged."""
+    from models import MediaItem
+    from datetime import datetime as _dt
+    with app.app_context():
+        db.session.add(_profile(user.id,
+                                directors={'Some Director': 0.8}))
+        show = MediaItem(tmdb_id=910051, media_type='tv', title='Show',
+                         genres='Drama', release_date=_dt(2019, 6, 1).date())
+        db.session.add(show)
+        db.session.commit()
+        _capture_director(show, 'Some Director')
+        c = fy._normalize_candidate(
+            _tmdb_raw(910051, media='tv'), 'tv', 'trending', 3,
+            TasteProfile.query.filter_by(user_id=user.id).one())
+        c = fy._attach_local_directors([c])[0]
+        assert c['director'] is None
+        assert c.get('directors') is None
+
+
+def test_availability_and_determinism_unchanged_by_directors(app, user):
+    """Directors participate only through the existing 0.5 weight —
+    availability probes (≤12) and tie-breaking rules are untouched."""
+    from datetime import datetime as _dt
+    today = _dt(2026, 9, 1).date()
+    c1 = fy._normalize_candidate(_tmdb_raw(910061), 'movie', 'trending', 3,
+                                 None)
+    c2 = fy._normalize_candidate(_tmdb_raw(910062), 'movie', 'trending', 3,
+                                 None)
+    c1['director'] = c2['director'] = 'Tied Director'
+    c1['profile_directors'] = c2['profile_directors'] = {
+        'Tied Director': 0.6}
+    s1 = fy.rank_candidates([c1, c2], today)
+    s2 = fy.rank_candidates([c1, c2], today)
+    assert [(c['tmdb_id'], round(s, 6)) for c, s, _ in s1] == \
+        [(c['tmdb_id'], round(s, 6)) for c, s, _ in s2]
+    # Stable tie-break on equal scores: tmdb_id ascending.
+    assert [c['tmdb_id'] for c, _, _ in s1] == [910061, 910062]

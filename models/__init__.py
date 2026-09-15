@@ -16,6 +16,7 @@ Submodules:
     tv            — TVShowProgress, TVEpisodeWatch, UpcomingEpisode
     watch         — WatchProgress
     taste_profile — TasteProfile
+    director      — Director, MediaDirector
 """
 
 # db must be imported first so all modules share the same instance
@@ -56,6 +57,7 @@ from models.tv import (                                       # noqa: F401
     UpcomingEpisode,
 )
 from models.watch import WatchProgress                        # noqa: F401
+from models.director import Director, MediaDirector          # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
 from models.notification import Notification                  # noqa: F401
 from models.smart_lists import SmartList                      # noqa: F401

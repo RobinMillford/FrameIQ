@@ -298,6 +298,19 @@ def build_reason(candidate):
             'evidence': [{'seed_title': s} for s in seeds]
             + ([{'genre': g} for g in matched]),
         }
+    # Director reason ONLY when the profile actually carries positive
+    # affinity for THIS candidate's persisted director — never fabricated
+    # from a bare name match.
+    affinity = candidate.get('profile_directors') or {}
+    if (candidate.get('director')
+            and float(affinity.get(candidate['director']) or 0.0) > 0.0):
+        return {
+            'kind': 'director_affinity',
+            'text': f"Because you liked films by {candidate['director']}",
+            'evidence': [{'director': candidate['director'],
+                          'affinity': affinity[candidate['director']]}]
+            + ([{'genre': g} for g in matched]),
+        }
     if matched:
         return {
             'kind': 'genre_affinity',
@@ -496,7 +509,7 @@ def _normalize_candidate(raw, media_type, source, source_priority,
         'watchlisted': False,
         'available': False,
         'providers': [],
-        'director': None,  # S3 reserved; persisted director data arrives later
+        'director': None,  # set locally from persisted capture (Phase 10)
     }
 
 
@@ -583,7 +596,7 @@ def _trending_candidates(profile, budget):
 
 
 def _generate_candidates(profile, local, budget):
-    """S1 genre discovery → S2 seeds → (S3 director: skipped) → S0 fallback.
+    """S1 genre discovery → S2 seeds → (S3 director: n/a) → S0 fallback.
 
     Every TMDb touch goes through budget.spend(); once the budget is
     exhausted generation stops cleanly and ranking proceeds with what
@@ -593,9 +606,11 @@ def _generate_candidates(profile, local, budget):
     candidates = _discover_candidates(profile, budget, described)
     candidates += _seed_candidates(profile, local, budget)
 
-    # ── S3: director probe — SKIPPED while director_affinity is empty ──
-    # No persisted director evidence exists (see api/taste_profile.py);
-    # making TMDb person calls to populate this phase is forbidden.
+    # ── S3: director probe — superseded by Phase 10 local tagging ──
+    # Director affinity now comes from persisted evidence (Phase 10) and
+    # candidates are tagged locally via _attach_local_directors(); there is
+    # still NO TMDb person/credits call in this engine. A separate S3
+    # discovery source can be revisited in a later phase if needed.
 
     if len(candidates) < MIN_DESIRED_RESULTS:
         candidates += _trending_candidates(profile, budget)
@@ -632,6 +647,59 @@ def _merge_candidates(candidates):
             existing['source'] = c['source']
             existing['_source_priority'] = c['_source_priority']
     return list(merged.values())
+
+
+def _attach_local_directors(candidates):
+    """Tag movie candidates with persisted director names (one batched read).
+
+    Phase 10: scripts/enrich_directors.py populates Director/MediaDirector
+    offline; this lookup is LOCAL only — a director name here can never
+    trigger a TMDb credits call. Skipped entirely when no candidate can
+    benefit (empty profile director map), so cold/no-director users keep
+    the exact previous query count and behavior. TV has no persisted
+    series-level director evidence (see models/director.py), so TV
+    candidates are never tagged.
+    """
+    want = any(
+        c['media_type'] == 'movie' and (c.get('profile_directors') or {})
+        for c in candidates)
+    if not want:
+        return candidates
+    tmdb_ids = {c['tmdb_id'] for c in candidates
+                if c['media_type'] == 'movie' and c.get('tmdb_id') is not None}
+    if not tmdb_ids:
+        return candidates
+    from models.director import Director, MediaDirector
+    item_ids = {
+        m.id for m in MediaItem.query.filter(
+            MediaItem.media_type == 'movie',
+            MediaItem.tmdb_id.in_(tmdb_ids)).with_entities(
+            MediaItem.id, MediaItem.tmdb_id).all()}
+    if not item_ids:
+        return candidates
+    rows = (db.session.query(MediaItem.tmdb_id, Director.name)
+            .join(MediaDirector, MediaDirector.media_item_id == MediaItem.id)
+            .join(Director, MediaDirector.director_id == Director.id)
+            .filter(MediaItem.id.in_(item_ids)).all())
+    names = defaultdict(list)
+    for tmdb_id, name in rows:
+        names[tmdb_id].append(name)
+    for c in candidates:
+        if c['media_type'] != 'movie':
+            continue
+        local = sorted(names.get(c['tmdb_id']) or [])
+        c['directors'] = local or None
+        # Engine contract: `director` is ONE name — the locally credited
+        # director with the strongest POSITIVE profile affinity (ties →
+        # alphabetical). None when no local evidence or no positive
+        # affinity, so scoring/diversity/reasons never act on weak or
+        # negative evidence.
+        affinity = c.get('profile_directors') or {}
+        positive = [(float(affinity.get(n) or 0.0), n) for n in local]
+        positive = [p for p in positive if p[0] > 0.0]
+        c['director'] = (min(positive, key=lambda p: (-p[0], p[1]))[1]
+                         if positive else None)
+    return candidates
 
 
 def _apply_exclusions(candidates, local):
@@ -786,6 +854,7 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
     candidates = _generate_candidates(profile, local, budget)
     candidates = _merge_candidates(candidates)
     candidates = _apply_exclusions(candidates, local)
+    candidates = _attach_local_directors(candidates)
 
     scored = rank_candidates(candidates, today)
     ranked = [c for c, _, _ in scored]
