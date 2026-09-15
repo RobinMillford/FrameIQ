@@ -1,5 +1,5 @@
 # File: routes/auth.py
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import TVShowProgress, db, User, Review
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -169,17 +169,19 @@ def profile():
     # Fetch recent reviews for the authenticated user
     recent_reviews = current_user.user_reviews.order_by(db.desc(Review.created_at)).all()
 
-    # Taste DNA — top genres derived from rated items
-    from collections import Counter
-    genre_counts = Counter()
-    for r in recent_reviews:
-        if r.media and r.media.genres:
-            for g in str(r.media.genres).split(','):
-                g = g.strip()
-                if g:
-                    genre_counts[g] += 1
-    top_genres = genre_counts.most_common(6)
-    max_count = top_genres[0][1] if top_genres else 1
+    # Taste DNA — canonical persisted TasteProfile presentation model
+    # (Feature #6 Phase 14). Replaces the old duplicated genre-Counter over
+    # recent reviews with the single canonical taste source. The client JS
+    # fetches GET /api/taste-profile for the full presentation; the server
+    # only passes the availability gate so anonymous-style cold start can
+    # render instantly without a flash of empty section.
+    from api.taste_profile import get_profile, taste_dna
+    try:
+        taste_dna_data = taste_dna(get_profile(current_user.id))
+    except Exception:
+        current_app.logger.debug("Taste DNA load failed for user %s",
+                                 current_user.id, exc_info=True)
+        taste_dna_data = None
 
     # Quick stats strip
     from models import DiaryEntry, user_watchlist, user_viewed
@@ -194,8 +196,7 @@ def profile():
     ).rowcount
 
     return render_template('profile.html', reviews=recent_reviews,
-                           taste_genres=top_genres,
-                           taste_max=max_count,
+                           taste_dna=taste_dna_data,
                            stats={'diary': diary_count,
                                   'watching': watching_count,
                                   'watchlist': wl_count,

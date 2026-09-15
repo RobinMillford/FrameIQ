@@ -1117,3 +1117,152 @@ def taste_profile_eligible(profile):
         return False
     return (titles >= FULL_PERSONALIZED_MIN_TITLES
             and confidence >= FULL_PERSONALIZED_MIN_CONFIDENCE)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Taste DNA presentation model (Feature #6, Phase 14)
+#
+# Converts the persisted profile into a human-readable presentation object
+# for GET /api/taste-profile and the profile-page Taste DNA section. Pure
+# formatting: one profile load, no computation, no network, no raw weights —
+# dimensions become bounded strength labels ("high"/"moderate"/"low") or
+# compact prose. Negative evidence is calibrated ("steer away from"), never
+# absolute ("hates"/"never watches").
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Presentation bounds (spec §18).
+DNA_TOP_GENRES = 8
+DNA_AVOID_GENRES = 5
+DNA_TOP_DIRECTORS = 5
+DNA_TOP_ERAS = 5
+
+# Canonical thresholds reused for the confidence level (spec §6): For You's
+# audited personalized gate (titles >= 5, confidence >= 0.4) is the
+# "strong" bar; below it the profile is still developing. Centralized here,
+# not in the route.
+DNA_STRONG_MIN_CONFIDENCE = 0.4   # == For You FULL_PERSONALIZED_MIN_CONFIDENCE
+DNA_STRONG_MIN_TITLES = 5         # == For You FULL_PERSONALIZED_MIN_TITLES
+DNA_DEVELOPING_MIN_CONFIDENCE = 0.2
+
+DNA_STRENGTHS = ('high', 'moderate', 'low')
+
+
+def _strength_from_weight(weight):
+    """Map a normalized signed weight to a bounded strength label (pure)."""
+    if weight >= 0.6:
+        return 'high'
+    if weight >= 0.3:
+        return 'moderate'
+    return 'low'
+
+
+def _strength_from_share(share):
+    """Map a 0..1 media-type share to a bounded strength label (pure)."""
+    if share >= 0.65:
+        return 'high'
+    if share >= 0.35:
+        return 'moderate'
+    return 'low'
+
+
+def taste_dna(profile):
+    """Presentation model for the authenticated user's own TasteProfile.
+
+    Consumes a TasteProfile (model or to_dict()) — never recomputes, never
+    touches RecommendationFeedback, never calls TMDb. Returns a compact
+    JSON-safe dict with human-readable labels; no raw floats, no negative
+    numbers, no IDs, no profile_version.
+
+    Shape (sections with no evidence are simply absent):
+        {
+          "available": true,
+          "level": "strong" | "developing" | "limited",
+          "confidence": 0.73,
+          "titles_analyzed": 42,
+          "top_genres":      [{"name": ..., "strength": high|moderate|low}],
+          "avoid_genres":    [{"name": ..., "strength": high|moderate|low}],
+          "top_directors":   [{"name": ..., "strength": ...}],
+          "eras":            [{"name": "2010s", "strength": ...}],
+          "media_preference": {"movie": ..., "tv": ...},
+          "runtime": {"min": 105, "max": 145},
+        }
+    """
+    if profile is None:
+        return None
+    data = profile.to_dict() if hasattr(profile, 'to_dict') else dict(profile)
+
+    genres = _as_float_map(data.get('genre_weights') or {})
+    if not genres:
+        return None  # nothing meaningful to present (cold/empty profile)
+
+    ranked = sorted(genres.items(), key=lambda kv: (-kv[1], kv[0]))
+    top_genres = [
+        {'name': name, 'strength': _strength_from_weight(w)}
+        for name, w in ranked if w > 0
+    ][:DNA_TOP_GENRES]
+    if not top_genres:
+        # No positive evidence at all (cold/empty, or negative-only):
+        # nothing meaningful to present — same semantics as the CineBot
+        # taste formatter. Callers present the neutral cold-start state.
+        return None
+    # Steer-away list: weakest (most negative) first. Magnitudes only —
+    # the API never emits negative numbers; wording stays calibrated.
+    avoid_genres = [
+        {'name': name, 'strength': _strength_from_weight(abs(w))}
+        for name, w in reversed(ranked) if w < 0
+    ][:DNA_AVOID_GENRES]
+
+    directors = _as_float_map(data.get('director_affinity') or {})
+    top_directors = [
+        {'name': name, 'strength': _strength_from_weight(w)}
+        for name, w in sorted(directors.items(), key=lambda kv: (-kv[1], kv[0]))
+        if w > 0
+    ][:DNA_TOP_DIRECTORS]
+
+    decades = _as_float_map(data.get('decade_weights') or {})
+    eras = [
+        {'name': name, 'strength': _strength_from_weight(w)}
+        for name, w in sorted(decades.items(), key=lambda kv: (-kv[1], kv[0]))
+        if w > 0
+    ][:DNA_TOP_ERAS]
+
+    media_pref = _as_float_map(data.get('media_type_pref') or {})
+    media_preference = {
+        name: _strength_from_share(share)
+        for name, share in sorted(media_pref.items(),
+                                  key=lambda kv: (-kv[1], kv[0]))
+    } or None
+
+    runtime_pref = data.get('runtime_pref') or {}
+    p25, p75 = runtime_pref.get('p25'), runtime_pref.get('p75')
+    runtime = None
+    if p25 and p75 and p75 > p25:
+        runtime = {'min': int(round(p25)), 'max': int(round(p75))}
+
+    confidence = float(data.get('confidence') or 0.0)
+    titles = int(data.get('distinct_title_count') or 0)
+    if titles >= DNA_STRONG_MIN_TITLES \
+            and confidence >= DNA_STRONG_MIN_CONFIDENCE:
+        level = 'strong'
+    elif confidence >= DNA_DEVELOPING_MIN_CONFIDENCE:
+        level = 'developing'
+    else:
+        level = 'limited'
+
+    response = {
+        'available': True,
+        'level': level,
+        'confidence': round(confidence, 2),
+        'titles_analyzed': titles,
+        'top_genres': top_genres,
+    }
+    # Sections with no evidence are omitted entirely (compact, spec §18).
+    for key, value in (
+            ('avoid_genres', avoid_genres),
+            ('top_directors', top_directors),
+            ('eras', eras),
+            ('media_preference', media_preference),
+            ('runtime', runtime)):
+        if value:
+            response[key] = value
+    return response
