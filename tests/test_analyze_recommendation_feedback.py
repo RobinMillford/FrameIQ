@@ -82,6 +82,18 @@ def user(app, db):
 
 
 @pytest.fixture(autouse=True)
+def _clean_feedback_before(app, db):
+    """Order-independence: suites that run before this file may leave
+    RecommendationFeedback rows behind; every test here asserts exact
+    aggregate counts, so the table is cleared before each test."""
+    with app.app_context():
+        from models import RecommendationFeedback as _rf
+        _rf.query.delete()
+        db.session.commit()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _restore_unique_index(app, db):
     """Tests that simulate the broken state (duplicates) drop the partial
     unique index; a unique index cannot be re-created over violating rows,

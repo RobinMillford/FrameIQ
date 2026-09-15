@@ -1,5 +1,5 @@
 /**
- * For You rail (Feature #6/#7 Phases 5 + 7).
+ * For You rail (Feature #6/#7 Phases 5 + 7 + 16).
  *
  * Responsibilities:
  *  1. Fill the server-rendered `[data-for-you-placeholder]` from the canonical
@@ -10,6 +10,11 @@
  *     deliver them to the existing POST /api/rec/feedback endpoint (Phase 7).
  *     Pure telemetry: invisible to the user, never blocks navigation, never
  *     retried aggressively.
+ *  3. Explicit per-card controls (Phase 16): a compact "⋯" menu with
+ *     Not interested (event=not_interested, card dismissed from the rail)
+ *     and Save (event=saved, recorded ONLY after the canonical
+ *     /add_to_watchlist persistence succeeds). No new feedback events, no
+ *     ordering changes, no recomputation, no replacement recommendations.
  *
  * Behavior contract (tested by tests/test_for_you_homepage.py and
  * tests/test_for_you_feedback.py):
@@ -69,6 +74,7 @@
     var seenImpressions = Object.create(null);  // media_type:tmdb_id → true
     var flushTimer = null;
     var observer = null;
+    var outsideCloseRegistered = false;   // one delegated close listener
 
     function csrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');
@@ -166,6 +172,9 @@
     function initClicks() {
         // Delegated listener: no per-card handlers; navigation always wins.
         container.addEventListener('click', function (e) {
+            // Explicit-control activations (Phase 16) are not card clicks —
+            // never count a menu interaction as recommendation engagement.
+            if (e.target.closest('[data-rec-actions]')) return;
             var card = e.target.closest('[data-rec-media-id]');
             if (!card) return;
             queueFeedback(buildEvent({
@@ -177,6 +186,197 @@
             }, 'click', parseInt(card.getAttribute('data-rec-position'), 10)));
             // Clicks must reach the server even if the page unloads.
             flushOnPageExit();
+        });
+    }
+
+    function itemFromCard(card) {
+        return {
+            tmdb_id: parseInt(card.getAttribute('data-rec-media-id'), 10),
+            media_type: card.getAttribute('data-rec-media-type'),
+            source: card.getAttribute('data-rec-source') || null,
+            reason: { kind: card.getAttribute('data-rec-reason-kind')
+                || null }
+        };
+    }
+
+    // ── Explicit feedback controls (Phase 16) ───────────────────────────
+
+    var SAVE_URL_BASE = '/add_to_watchlist/';   // canonical persistence
+
+    function markBusy(card) {
+        // One active not_interested / save action per card (double-click
+        // guard); the attribute is cleared when a save fails.
+        if (card.getAttribute('data-rec-action-busy')) return false;
+        card.setAttribute('data-rec-action-busy', '1');
+        return true;
+    }
+
+    function releaseBusy(card) {
+        card.removeAttribute('data-rec-action-busy');
+    }
+
+    function closeOpenMenus() {
+        var open = container.querySelectorAll(
+            '[data-rec-menu]:not([hidden])');
+        for (var i = 0; i < open.length; i++) {
+            open[i].hidden = true;
+            var card = open[i].closest('[data-rec-media-id]');
+            var trigger = card && card.querySelector('[data-rec-menu-trigger]');
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    function focusAfterRemoval(nextCard) {
+        // Keyboard focus must not land on a destroyed element: prefer the
+        // next card's link (captured BEFORE removal), else the rail itself.
+        var link = nextCard && nextCard.querySelector('a[data-rec-link]');
+        if (link) {
+            link.focus();
+            return;
+        }
+        container.focus();
+    }
+
+    function notInterested(card, item, position) {
+        if (!markBusy(card)) return;
+        // Explicit actions are higher-value than passive telemetry —
+        // flush immediately (no 2s debounce), still fire-and-forget: the
+        // user's dismissal request must never be blocked by the network.
+        queueFeedback(buildEvent(item, 'not_interested', position));
+        flushFeedback(false);
+        // UI dismissal only — no database deletion, no watchlist/diary/
+        // TasteProfile mutation, no replacement recommendation fetch.
+        var nextCard = card.nextElementSibling;
+        var parent = card.parentNode;
+        parent.removeChild(card);
+        if (!container.querySelector('[data-rec-media-id]')) {
+            hide();   // rail emptied → remove the whole section
+            return;
+        }
+        focusAfterRemoval(nextCard);
+    }
+
+    function saveCard(card, item, position) {
+        if (!markBusy(card)) return;
+        // Canonical watchlist persistence first; the saved learning event
+        // is recorded ONLY after it succeeds (never a fake save).
+        fetch(SAVE_URL_BASE + item.tmdb_id + '/' + item.media_type, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'text/html' }
+        }).then(function (res) {
+            if (!res.ok) throw new Error('save HTTP ' + res.status);
+            queueFeedback(buildEvent(item, 'saved', position));
+            flushFeedback(false);
+            markSaved(card, item);
+            releaseBusy(card);
+        }).catch(function () {
+            // Canonical save failed: no saved feedback, card stays visible,
+            // user may retry. The redirect+flash response was consumed by
+            // this fetch, so no duplicate flash is shown on this page.
+            releaseBusy(card);
+        });
+    }
+
+    function markSaved(card, item) {
+        var trigger = card.querySelector('[data-rec-menu-trigger]');
+        var menu = card.querySelector('[data-rec-menu]');
+        if (menu) menu.hidden = true;
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', 'false');
+            trigger.disabled = true;
+            trigger.textContent = '✓';
+            trigger.setAttribute('aria-label', 'Saved ' + item.title);
+            trigger.removeAttribute('data-rec-menu-trigger');
+        }
+        card.setAttribute('data-rec-saved', '1');
+    }
+
+    function buildActionMenu(item, position) {
+        var wrap = document.createElement('div');
+        wrap.className = 'absolute top-1.5 right-1.5 z-10';
+        wrap.setAttribute('data-rec-actions', '1');
+
+        var trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.setAttribute('data-rec-menu-trigger', '1');
+        trigger.setAttribute('aria-haspopup', 'menu');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-label', 'More options for ' + item.title);
+        trigger.className = 'flex h-7 w-7 items-center justify-center '
+            + 'rounded-full bg-black/60 text-white/90 '
+            + 'hover:bg-black/80 hover:text-white transition-colors '
+            + 'focus:outline-none focus-visible:ring-2 '
+            + 'focus-visible:ring-[var(--accent)]';
+        trigger.textContent = '⋯';
+
+        var menu = document.createElement('div');
+        menu.setAttribute('data-rec-menu', '1');
+        menu.setAttribute('role', 'menu');
+        menu.hidden = true;
+        menu.className = 'mt-1 w-36 overflow-hidden rounded-lg '
+            + 'bg-[var(--bg-surface)] text-left text-xs shadow-lg '
+            + 'ring-1 ring-[var(--line)]';
+
+        var ni = document.createElement('button');
+        ni.type = 'button';
+        ni.setAttribute('role', 'menuitem');
+        ni.setAttribute('data-rec-action', 'not_interested');
+        ni.className = 'block w-full px-3 py-2 text-left '
+            + 'text-[var(--text-hi)] hover:bg-[var(--bg-hover)] '
+            + 'focus:outline-none focus-visible:bg-[var(--bg-hover)]';
+        ni.textContent = 'Not interested';
+
+        var sv = document.createElement('button');
+        sv.type = 'button';
+        sv.setAttribute('role', 'menuitem');
+        sv.setAttribute('data-rec-action', 'save');
+        sv.className = 'block w-full px-3 py-2 text-left '
+            + 'text-[var(--text-hi)] hover:bg-[var(--bg-hover)] '
+            + 'focus:outline-none focus-visible:bg-[var(--bg-hover)]';
+        sv.textContent = 'Save';
+
+        menu.appendChild(ni);
+        menu.appendChild(sv);
+
+        trigger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var willOpen = menu.hidden;
+            closeOpenMenus();
+            menu.hidden = !willOpen;
+            trigger.setAttribute('aria-expanded', String(willOpen));
+        });
+        trigger.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeOpenMenus();
+                trigger.focus();
+            }
+        });
+        menu.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeOpenMenus();
+                trigger.focus();
+            }
+        });
+        ni.addEventListener('click', function () {
+            notInterested(wrap.closest('[data-rec-media-id]'),
+                item, position);
+        });
+        sv.addEventListener('click', function () {
+            saveCard(wrap.closest('[data-rec-media-id]'), item, position);
+        });
+
+        wrap.appendChild(trigger);
+        wrap.appendChild(menu);
+        return wrap;
+    }
+
+    function initActionBehavior() {
+        // Rail is a keyboard-focus fallback target after card removals.
+        container.setAttribute('tabindex', '-1');
+        if (outsideCloseRegistered) return;
+        outsideCloseRegistered = true;
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('[data-rec-actions]')) closeOpenMenus();
         });
     }
 
@@ -221,7 +421,7 @@
     function card(item, position) {
         var isMovie = item.media_type === 'movie';
         var wrap = document.createElement('div');
-        wrap.className = 'shrink-0 snap-start w-[148px] sm:w-[160px]';
+        wrap.className = 'relative shrink-0 snap-start w-[148px] sm:w-[160px]';
 
         // Minimal telemetry metadata only (no scores, no reason objects).
         wrap.setAttribute('data-rec-media-id', item.tmdb_id);
@@ -236,6 +436,7 @@
 
         var a = document.createElement('a');
         a.href = isMovie ? '/movie/' + item.tmdb_id : '/tv/' + item.tmdb_id;
+        a.setAttribute('data-rec-link', '1');
         a.className =
             'rail-card poster-glow group block shrink-0 snap-start w-full';
 
@@ -261,6 +462,7 @@
         a.appendChild(title);
         a.appendChild(reason);
         wrap.appendChild(a);
+        wrap.appendChild(buildActionMenu(item, position));
         return wrap;
     }
 
@@ -296,6 +498,7 @@
 
         initImpressions();
         initClicks();
+        initActionBehavior();
     }
 
     fetch('/api/for-you', {

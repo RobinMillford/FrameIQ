@@ -133,9 +133,11 @@ def test_impressions_only_after_render_not_page_load():
 def test_batched_post_to_canonical_endpoint():
     src = _js_code()
     assert "fetch('/api/rec/feedback'" in src
-    assert "'/api/for-you'" in src                 # the only other call
+    assert "'/api/for-you'" in src                 # the only other For You call
     assert 'JSON.stringify({ events: batch })' in src   # events[] format
-    assert src.count('fetch(') == 2                # for-you + feedback only
+    # Three fetches: For You rail + feedback flush + the Phase 16 canonical
+    # save (verified below). Still exactly ONE feedback client/endpoint.
+    assert src.count('fetch(') == 3
 
 
 def test_batch_size_is_bounded():
@@ -331,7 +333,7 @@ def test_rendering_responsibilities_unchanged():
     """The Phase 5 contract (single fetch, hide-on-cold-start, canonical
     URLs, reason verbatim) still holds after the telemetry extension."""
     src = _js_code()
-    assert src.count('fetch(') == 2
+    assert src.count("fetch('/api/for-you'") == 1
     assert 'personalized !== true' in src
     assert "'/movie/' + item.tmdb_id" in src
     assert "'/tv/' + item.tmdb_id" in src
