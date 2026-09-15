@@ -223,13 +223,65 @@ def test_missing_profile_returns_cold_start(app, user):
 
 
 def test_low_signal_hedged_mode(app, user, monkeypatch):
+    """Below-gate profiles are NEVER personalized: hedged mode yields
+    personalized=False + items=[] (generic trending content must not be
+    rendered as For You recommendations — production false-
+    personalization fix)."""
     with app.app_context():
         db.session.add(_profile(user.id, confidence=0.1, titles=2, signals=3))
         db.session.commit()
+        stub = _wire(_StubTmdb(
+            trending=[_tmdb_raw(4000 + n) for n in range(1, 12)]),
+            monkeypatch)
+        out = fy.get_for_you(user.id)
+    assert out['personalized'] is False
+    assert out['mode'] == 'hedged'
+    assert out['reason_state'] == 'exploring_preferences'
+    assert out['items'] == []
+    assert stub.trending_calls == []  # no generic candidates generated
+    assert out['confidence'] == 0.1  # real profile value, not zeroed
+
+
+def test_one_signal_user_not_personalized(app, user, monkeypatch):
+    """~1 signal / 1 title (the exact production bug shape): hedged/
+    few_signals, personalized=False, items=[], zero TMDb calls."""
+    with app.app_context():
+        db.session.add(_profile(user.id, confidence=0.0, titles=1,
+                                signals=1))
+        db.session.commit()
+        stub = _wire(_StubTmdb(
+            trending=[_tmdb_raw(4000 + n) for n in range(1, 12)]),
+            monkeypatch)
+        out = fy.get_for_you(user.id)
+    assert out['personalized'] is False
+    assert out['mode'] == 'hedged'
+    assert out['reason_state'] == 'few_signals'
+    assert out['items'] == []
+    assert (stub.discover_calls + stub.recs_calls
+            + stub.trending_calls) == []
+
+
+def test_four_titles_below_gate_not_personalized(app, user, monkeypatch):
+    """4 distinct titles (one below the audited gate of 5): even with
+    positive signals and decent confidence, personalized=False."""
+    with app.app_context():
+        db.session.add(_profile(user.id, confidence=0.5, titles=4))
+        db.session.commit()
         _wire(_StubTmdb(), monkeypatch)
         out = fy.get_for_you(user.id)
-    assert out['personalized'] is True
-    assert out['mode'] == 'hedged'
+    assert out['personalized'] is False
+    assert out['items'] == []
+
+
+def test_confidence_below_gate_not_personalized(app, user, monkeypatch):
+    """5+ titles but confidence 0.39: still below the audited gate."""
+    with app.app_context():
+        db.session.add(_profile(user.id, confidence=0.39, titles=8))
+        db.session.commit()
+        _wire(_StubTmdb(), monkeypatch)
+        out = fy.get_for_you(user.id)
+    assert out['personalized'] is False
+    assert out['items'] == []
 
 
 def test_full_personalized_threshold(app, user, monkeypatch):
