@@ -1,4 +1,4 @@
-# Nightly Taste Profile Recomputation (Feature #6, Phase 9)
+# Nightly Taste Profiles + Director Enrichment (Feature #6, Phases 9–11)
 #
 # Scheduler: GitHub Actions cron (UTC only — do not assume the UI shows
 # local time). Schedule: 19:30 UTC daily = 01:30 AM Bangladesh Standard
@@ -8,17 +8,24 @@
 # happens inside the existing production web container. There is no cron
 # in the container, no systemd timer, no Celery/APScheduler, no Render
 # cron, and no background/detached execution — the SSH session WAITS for
-# the script and the workflow receives its real exit code (0 = success,
+# each script and the workflow receives its real exit code (0 = success,
 # 1 = user failures, 2 = fatal error; both 1 and 2 fail this workflow).
+#
+# Command order (Phase 11): bounded director enrichment runs BEFORE
+# taste recomputation so newly captured director evidence participates
+# in that night's profiles; verification runs only after a successful
+# recomputation. enrich_directors.py is the ONLY nightly step allowed to
+# reach TMDb (through the existing cached fetch_movie_details path); the
+# compute/verify scripts remain local-data only by design.
 #
 # Concurrency: one group for scheduled AND manual runs. Overlapping runs
 # are QUEUED (cancel-in-progress: false) — a second invocation never
-# kills an in-flight recomputation halfway through.
+# kills an in-flight run halfway through.
 #
 # Security: reuses the existing deployment secrets (VPS_HOST / VPS_USER /
 # SSH_PRIVATE_KEY). No secrets are echoed, and no new credentials are
-# introduced. No migrations, no db.create_all(), no external API calls:
-# the compute/verify scripts are local-data only by design.
+# introduced. Schema changes (e.g. the director-capture tables) remain a
+# separate operator action and are NOT run from here.
 
 name: Nightly Taste Profiles
 
@@ -38,11 +45,34 @@ concurrency:
 jobs:
   recompute-verify:
     runs-on: ubuntu-latest
-    # Generous ceiling: the SSH command itself is capped at 30m below.
+    # Generous ceiling: each SSH command is capped at 30m below.
     timeout-minutes: 45
 
     steps:
+      - name: Enrich director credits (bounded)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Bounded by MAX_MEDIA_ITEMS=100 inside the script (one cached
+          # TMDb credits request each) — worst case is minutes, safely
+          # under the 30m command timeout; enrichment is incremental and
+          # restartable, so the existing timeout budget holds.
+          command_timeout: 30m
+          # REQUIRED: without this the action CONTINUES after a failed
+          # command, which would let recomputation run after a failed
+          # enrichment. With it, a non-zero script exit aborts the step
+          # and fails the workflow (exit codes are never swallowed).
+          script_stop: true
+          script: |
+            cd /home/deployer/FrameIQ
+            echo "[WORKFLOW] web service status:"
+            docker compose ps web
+            docker compose exec -T web python scripts/enrich_directors.py
+
       - name: Recompute taste profiles
+        # Default step semantics: runs ONLY if enrichment succeeded.
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -51,15 +81,9 @@ jobs:
           # Default command timeout is 10m — too short for a nightly batch
           # over a growing user base. 30m is safely above expected runtime.
           command_timeout: 30m
-          # REQUIRED: without this the action CONTINUES after a failed
-          # command, which would let verification run after a failed
-          # recomputation. With it, a non-zero script exit aborts the step
-          # and fails the workflow (exit codes are never swallowed).
           script_stop: true
           script: |
             cd /home/deployer/FrameIQ
-            echo "[WORKFLOW] web service status:"
-            docker compose ps web
             docker compose exec -T web python scripts/compute_taste_profiles.py
 
       - name: Verify feedback pipeline
