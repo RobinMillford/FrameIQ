@@ -122,9 +122,43 @@ def _window_dates(days):
 # Aggregate queries (SQL GROUP BY only — never row-level dumps; <= 12 total)
 # ════════════════════════════════════════════════════════════════════════════
 
-def _count_case(column, value):
-    """Portable conditional-count aggregate (SQLite + PostgreSQL)."""
-    return _db.func.sum(_db.case((column == value, 1), else_=0))
+def _count_case(column_or_predicate, value=None):
+    """Portable conditional-count aggregate (SQLite + PostgreSQL).
+
+    Two forms:
+
+      _count_case(RF.event, 'impression')   -> counts event = 'impression'
+      _count_case(RF.created_at.is_(None))  -> counts a boolean predicate
+
+    Boolean predicates MUST be passed directly. Wrapping them as
+    ``predicate == 1`` renders ``(boolean) = 1`` in SQL, which PostgreSQL
+    rejects with ``operator does not exist: boolean = integer`` (SQLite
+    silently accepts it — the reason production failed while tests
+    passed). CASE takes the predicate as-is: case((pred, 1), else_=0).
+    """
+    predicate = (column_or_predicate == value if value is not None
+                 else column_or_predicate)
+    return _db.func.sum(_db.case((predicate, 1), else_=0))
+
+
+def _quality_entities():
+    """Data-quality conditional counts (statement 10's select entities).
+
+    Every expression is a boolean predicate handed to CASE directly —
+    invalid event/surface/media_type (NOT IN), invalid media_id
+    (<= 0 OR NULL), and NULL created_at — so the compiled SQL is
+    type-correct on PostgreSQL as well as SQLite.
+    """
+    RF = RecommendationFeedback
+    return (
+        _count_case(~RF.event.in_(RF_EVENTS)).label('bad_event'),
+        _count_case(~RF.surface.in_(RF_SURFACES)).label('bad_surface'),
+        _count_case(~RF.media_type.in_(RF_MEDIA_TYPES))
+        .label('bad_media_type'),
+        _count_case((RF.media_id <= 0) | (RF.media_id.is_(None)))
+        .label('bad_media_id'),
+        _count_case(RF.created_at.is_(None)).label('null_created_at'),
+    )
 
 
 def collect(days):
@@ -223,16 +257,7 @@ def collect(days):
         .scalar() or 0)
 
     # 10 — data-quality counts (one statement, conditional aggregates)
-    quality = RF.query.with_entities(
-        _count_case(~RF.event.in_(RF_EVENTS), 1).label('bad_event'),
-        _count_case(~RF.surface.in_(RF_SURFACES), 1)
-        .label('bad_surface'),
-        _count_case(~RF.media_type.in_(RF_MEDIA_TYPES), 1)
-        .label('bad_media_type'),
-        _count_case((RF.media_id <= 0) | (RF.media_id.is_(None)), 1)
-        .label('bad_media_id'),
-        _count_case(RF.created_at.is_(None), 1).label('null_created_at'),
-    ).first()
+    quality = RF.query.with_entities(*_quality_entities()).first()
     agg['quality'] = {
         'invalid_events': quality[0] or 0,
         'invalid_surfaces': quality[1] or 0,

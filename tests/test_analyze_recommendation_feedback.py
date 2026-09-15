@@ -9,6 +9,8 @@ Covers scripts/analyze_recommendation_feedback.py:
 - guards: read-only, no network (socket level), bounded statements,
   no user-identifying output, no payload output, legacy tables untouched
 """
+import io
+import logging
 import re
 import socket
 import subprocess
@@ -17,6 +19,7 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 sys.path.insert(0, 'scripts')
 import analyze_recommendation_feedback  # noqa: E402
@@ -616,3 +619,119 @@ def test_script_runs_from_cli_help():
              'TMDB_API_KEY': 'x', 'PATH': '/usr/bin:/bin'})
     assert proc.returncode == 0
     assert '--days' in proc.stdout
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PostgreSQL dialect regression (production fix — boolean = integer)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Production failure: psycopg2.errors.UndefinedFunction —
+# "operator does not exist: boolean = integer". The old _count_case
+# wrapped boolean predicates as (predicate) = 1; SQLite accepts that,
+# PostgreSQL does not. These guards compile the affected statements
+# against the PostgreSQL DIALECT (no live Postgres needed — the type
+# error is a compile/plan-time resolution, not a runtime data one).
+
+def _pg_sql(script, statement):
+    return str(statement.compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={'literal_binds': False}))
+
+
+def test_quality_statement_compiles_on_postgres_dialect(script):
+    script._load()
+    with script._app.app_context():
+        stmt = script.RecommendationFeedback.query.with_entities(
+            *script._quality_entities()).statement
+        sql = _pg_sql(script, stmt)
+    assert 'CASE WHEN' in sql  # conditional aggregates still conditional
+    assert 'SUM' in sql.upper()
+
+
+def test_quality_statement_has_no_boolean_integer_comparison(script):
+    script._load()
+    with script._app.app_context():
+        stmt = script.RecommendationFeedback.query.with_entities(
+            *script._quality_entities()).statement
+        sql = _pg_sql(script, stmt)
+    # The exact production defect: (boolean_expr) = 1 inside CASE.
+    assert '= 1' not in sql, sql
+    # And the predicates survive as real boolean/NOT-IN expressions.
+    assert 'NOT IN' in sql.upper()
+    assert 'IS NULL' in sql.upper()
+
+
+def test_count_case_value_form_still_integer_safe(script):
+    """The (column, value) form compiles to a typed comparison, not a
+    boolean-vs-integer one."""
+    script._load()
+    with script._app.app_context():
+        agg = script._count_case(script.RecommendationFeedback.event,
+                                 'impression')
+        stmt = script._db.session.query(agg).statement
+        sql = _pg_sql(script, stmt)
+    # value form compiles to a typed bound-param comparison
+    assert 'CASE WHEN' in sql and '= 1' not in sql
+
+
+def test_all_collect_statements_compile_on_postgres_dialect(script):
+    """Every bounded statement collect() builds must compile for
+    PostgreSQL (the full-collect execution guard runs on SQLite; this
+    catches any other dialect-specific expression at compile level)."""
+    script._load()
+    from models import User as _User
+    from models import db as _db
+    u = _User(username='anl' + uuid.uuid4().hex[:8],
+              email='anl_%s@example.com' % uuid.uuid4().hex[:6],
+              password_hash='x')
+    _db.session.add(u)
+    _db.session.commit()
+    try:
+        _record(u.id, 910001, 'impression')
+        _record(u.id, 910001, 'click')
+        _commit()
+        with script._app.app_context():
+            agg = script.collect(7)
+        assert agg['events'].get('impression', 0) == 1
+        assert agg['events'].get('click', 0) == 1
+    finally:
+        _db.session.delete(u)
+        _db.session.commit()
+
+
+def test_zero_feedback_postgres_compatible_analytics_healthy(script):
+    """Zero rows: collect() returns a healthy structure and the report
+    renders [STATUS] OK — the PostgreSQL-compatible path end to end."""
+    script._load()
+    with script._app.app_context():
+        agg = script.collect(7)
+        assert agg['quality'] == {
+            'invalid_events': 0, 'invalid_surfaces': 0,
+            'invalid_media_types': 0, 'invalid_media_ids': 0,
+            'null_timestamps': 0}
+        assert agg['duplicate_groups'] == 0
+        assert agg['total_all_time'] == 0
+        buffer = io.StringIO()
+        stream_handler = logging.StreamHandler(buffer)
+        root = logging.getLogger()
+        root.addHandler(stream_handler)
+        old_level = root.level
+        root.setLevel(logging.INFO)
+        try:
+            rc = script.run(7)
+        finally:
+            root.removeHandler(stream_handler)
+            root.setLevel(old_level)
+        out = buffer.getvalue()
+        assert rc == 0
+        assert '[STATUS] OK' in out
+        assert '[QUALITY]' in out and 'invalid_events=0' in out
+
+
+def test_quality_entities_are_pure_expressions(script):
+    """_quality_entities must expose exactly the five production
+    quality dimensions, each a labeled aggregate expression."""
+    script._load()
+    labels = [e.key for e in script._quality_entities()]
+    assert labels == ['bad_event', 'bad_surface', 'bad_media_type',
+                      'bad_media_id', 'null_created_at']

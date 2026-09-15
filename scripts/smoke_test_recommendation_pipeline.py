@@ -184,7 +184,16 @@ def _check_workflow():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(base, WORKFLOW_FILE)
     if not os.path.isfile(path):
-        return False, '%s missing' % WORKFLOW_FILE
+        # Production/runtime images contain neither the repository nor
+        # its CI metadata (.github/ is intentionally NOT copied into the
+        # image). A missing workflow file there is EXPECTED — not a
+        # pipeline failure — because the workflow contract (schedule,
+        # concurrency, ordering, failure propagation) is enforced by
+        # repository CI (tests/test_taste_profile_nightly_workflow.py)
+        # on every push. Never let repository-only metadata produce
+        # [STATUS] NOT READY in a runtime deployment.
+        return True, ('not inspectable in runtime image — workflow '
+                      'contract validated by repository CI')
     with open(path, encoding='utf-8') as f:
         yml = f.read()
     missing = [tok for tok in WORKFLOW_REQUIREMENTS if tok not in yml]
