@@ -54,7 +54,10 @@ def test_missing_column_is_detected(app):
             db.session.commit()
             db.create_all()
     assert report["ok"] is False
-    assert report["missing_columns"] == {"media_item": ["runtime"]}
+    # Legacy media_item lacks both the runtime column and (since Phase 10)
+    # the director-capture enrichment marker column.
+    assert report["missing_columns"] == {
+        "media_item": ["directors_enriched_at", "runtime"]}
 
 
 def test_missing_column_raises_startup_error(app, monkeypatch):

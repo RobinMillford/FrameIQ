@@ -15,6 +15,8 @@ Submodules:
     social        — DiaryEntry, Tag, UserMediaTag, MediaLike, MediaComment
     tv            — TVShowProgress, TVEpisodeWatch, UpcomingEpisode
     watch         — WatchProgress
+    taste_profile — TasteProfile
+    director      — Director, MediaDirector
 """
 
 # db must be imported first so all modules share the same instance
@@ -55,10 +57,13 @@ from models.tv import (                                       # noqa: F401
     UpcomingEpisode,
 )
 from models.watch import WatchProgress                        # noqa: F401
+from models.director import Director, MediaDirector          # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
 from models.notification import Notification                  # noqa: F401
 from models.smart_lists import SmartList                      # noqa: F401
 from models.streaming import UserStreamingService             # noqa: F401
+from models.taste_profile import TasteProfile                 # noqa: F401
+from models.recommendation_feedback import RecommendationFeedback  # noqa: F401
 from models.chat import (                                      # noqa: F401
     ChatConversation,
     ChatMessage,
@@ -78,5 +83,7 @@ __all__ = [
     'TVShowProgress', 'TVEpisodeWatch', 'UpcomingEpisode',
     'WatchProgress',
     'UserStreamingService',
+    'TasteProfile',
+    'RecommendationFeedback',
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
 ]

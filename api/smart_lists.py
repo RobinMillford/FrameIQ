@@ -73,6 +73,18 @@ _VALID_SCOPES = set(SCOPES)
 # Priority ordering used for the 'priority' sort and validation.
 PRIORITY_ORDER = {'high': 0, 'medium': 1, 'low': 2}
 
+# Opt-in taste filter (Feature #6 Phase 12): the ONLY taste source is the
+# canonical persisted TasteProfile — never RecommendationFeedback directly,
+# never a recomputation, never TMDb. When the flag is absent/false the
+# engine performs ZERO TasteProfile work (ordinary lists are untouched).
+TASTE_FILTERS = {
+    'matches_my_taste': lambda v: v is True,
+}
+
+
+def _raise_bool(name):
+    raise ValueError(f'{name} must be a boolean (true/false)')
+
 
 def _validate_choice(name, value, allowed, label):
     """Validate an enum-ish filter value; returns the canonical value."""
@@ -137,6 +149,9 @@ def _validate_filters(filters):
             'services', v, ('my_services', 'none'), '"my_services" or "none"'),
         'service_id': lambda v: _validate_number(
             'service_id', v, 1, 10**9, cast=int),
+        'matches_my_taste': lambda v: (
+            v if v is True or v is False
+            else (_raise_bool('matches_my_taste'))),
     }
 
     clean = {}
@@ -290,6 +305,45 @@ def _user_viewed_items(user_id):
             .all())
 
 
+def _taste_match_batch(rows, smart_list):
+    """'matches_my_taste' filter — opt-in, profile-driven, bounded.
+
+    Architecture (spec §14): ONE get_profile(user_id) load, ONE batched
+    local metadata pass (MediaItem runtime/decade come from the already-
+    materialized rows; director names ride the existing batched helper),
+    then pure per-candidate scoring in Python. Cold-start users (no
+    profile, confidence < 0.4, or < 5 distinct titles) match NOTHING —
+    the filter stays deterministic and never falls back to trending or
+    popularity. Runs AFTER availability, so taste work only happens on
+    the already-bounded survivor set. The existing sort is preserved:
+    filtering determines eligibility, never order (spec §15).
+    """
+    from api.taste_profile import (get_profile, taste_match_score,
+                                   taste_match_inputs, taste_profile_eligible,
+                                   TASTE_MATCH_THRESHOLD, decade_from_release_date,
+                                   _director_names_map)
+
+    profile = get_profile(smart_list.user_id)
+    if profile is None or not taste_profile_eligible(profile):
+        return []
+
+    inputs = taste_match_inputs(profile)
+    directors = _director_names_map([row[0] for row in rows])
+    matched = []
+    for row in rows:
+        media = row[0]
+        score = taste_match_score(inputs, {
+            'genres': (media.genres or '').split(',') if media.genres else [],
+            'directors': directors.get(media.id) or [],
+            'decade': decade_from_release_date(media.release_date),
+            'media_type': media.media_type,
+            'runtime': media.runtime,
+        })
+        if score >= TASTE_MATCH_THRESHOLD:
+            matched.append(row)
+    return matched
+
+
 def _apply_availability(smart_list, filters, rows, page_size):
     """'On my services' / specific-service filter — bounded, cached, batched.
 
@@ -432,6 +486,7 @@ def rule_summary(smart_list):
         'tv_status': lambda v: v.replace('_', ' ').title(),
         'services': lambda v: 'On My Services' if v == 'my_services' else None,
         'service_id': lambda v: f'Provider #{v}',
+        'matches_my_taste': lambda v: 'Matches My Taste' if v else None,
     }
     labels = [scope_labels.get(smart_list.scope, smart_list.scope)]
     for key, formatter in filter_labels.items():
@@ -473,6 +528,8 @@ def evaluate_smart_list(smart_list, page=1, per_page=24):
         rows = rows.all()
 
     rows = _apply_availability(smart_list, filters, rows, per_page)
+    if filters.get('matches_my_taste'):
+        rows = _taste_match_batch(rows, smart_list)
     rows = _apply_sort(rows, smart_list, filters)
 
     total = len(rows)

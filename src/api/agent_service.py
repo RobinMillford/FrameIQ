@@ -3,6 +3,9 @@ Agent service layer — orchestrates the LangGraph workflow.
 
 Key improvements vs. original:
 - _build_user_context() injects personalisation from watch history / ratings.
+- Long-term taste now comes from the canonical persisted TasteProfile
+  (api/taste_profile.py — Feature #6 Phase 13); recent ratings, TV tracking,
+  watchlist size and continue-watching remain as CURRENT-context signals.
 - initial state includes user_context on every invocation.
 - Streaming generator scoping bug fixed (messages variable captured correctly).
 - session_id always derived from user ID, never from IP.
@@ -24,12 +27,168 @@ logger = logging.getLogger(__name__)
 
 # ── Personalisation ───────────────────────────────────────────────────────────
 
+def _taste_profile_lines(summary) -> list:
+    """Bounded signal lines from a describe_profile() summary (pure)."""
+    lines = ["- strongest genres: " + ", ".join(
+        g['genre'] for g in summary['top_positive_genres'])]
+
+    negatives = summary['top_negative_genres']
+    if negatives:
+        lines.append("- genres they tend to steer away from: "
+                     + ", ".join(g['genre'] for g in negatives))
+
+    directors = summary['director_affinity'] or {}
+    if directors:
+        top_dirs = sorted(directors.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        lines.append("- favored directors: "
+                     + ", ".join(name for name, _ in top_dirs))
+
+    decades = summary['top_decades']
+    if decades:
+        lines.append("- preferred eras: " + ", ".join(
+            d['decade'] for d in decades))
+
+    runtime = summary['runtime_pref'] or {}
+    p25, p75 = runtime.get('p25'), runtime.get('p75')
+    if p25 and p75 and p75 > p25:
+        lines.append(f"- runtime preference: about {p25:.0f}-{p75:.0f} min")
+
+    media_pref = summary['media_type_pref'] or {}
+    if media_pref:
+        parts = [f"{name} ({share:.0%})"
+                 for name, share in sorted(media_pref.items(),
+                                           key=lambda kv: (-kv[1], kv[0]))]
+        lines.append("- media preference: " + ", ".join(parts))
+    return lines
+
+
+def _format_taste_profile(profile) -> Optional[str]:
+    """Deterministic, bounded taste block from the canonical TasteProfile.
+
+    Pure formatting — no DB, no network, no LLM. Uses describe_profile()
+    (the canonical analysis helper) so no second aggregation lives here.
+    Wording is calibrated: negative evidence is phrased as a tendency, not
+    an absolute; limited-confidence profiles are explicitly labelled as
+    hints. Returns None for missing/empty profiles (cold-start users get
+    NO taste section at all — CineBot must never claim a profile exists).
+    """
+    if profile is None:
+        return None
+    try:
+        from api.taste_profile import describe_profile
+        from api.for_you import FULL_PERSONALIZED_MIN_CONFIDENCE
+
+        summary = describe_profile(profile)
+        if not summary['top_positive_genres']:
+            return None  # nothing meaningful to say about long-term taste
+
+        lines = _taste_profile_lines(summary)
+
+        confidence = summary['confidence'] or 0.0
+        titles = summary['distinct_title_count'] or 0
+        if confidence >= FULL_PERSONALIZED_MIN_CONFIDENCE:
+            lines.append(
+                f"- taste confidence: strong (based on {titles} titles)")
+        else:
+            lines.append(
+                "- taste confidence: limited evidence — treat these as "
+                "hints, not certainties")
+
+        return "[TASTE PROFILE]\n" + "\n".join(lines) + "\n[/TASTE PROFILE]"
+    except Exception as e:
+        logger.debug("Could not format taste profile: %s", e)
+        return None
+
+
+def _chat_memory_section(user_id: int) -> list:
+    """Remembered chat preferences (current context, not a taste model)."""
+    from models import UserChatMemory
+
+    memory = UserChatMemory.query.filter_by(user_id=user_id).first()
+    if memory and memory.content:
+        return [
+            "Long-term preferences remembered from chat:\n" + memory.content
+        ]
+    return []
+
+
+def _recent_ratings_section(user_id: int) -> list:
+    """Recent ratings — recent events, deliberately not a taste model."""
+    from models import Review
+
+    reviews = (
+        Review.query.filter_by(user_id=user_id)
+        .order_by(Review.created_at.desc()).limit(10).all()
+    )
+    if not reviews:
+        return []
+    lines = []
+    for r in reviews:
+        try:
+            title = r.media.title if r.media else "Unknown"
+            score = f"{r.rating * 2:.1f}/10" if r.rating else "unrated"
+            lines.append(f"  - {title} ({r.media_type}): {score}")
+        except Exception:
+            continue
+    return ["Recent ratings (use to personalise):\n" + "\n".join(lines)]
+
+
+def _tv_tracking_section(user_id: int) -> list:
+    """TV shows currently being tracked (current context)."""
+    from models import TVShowProgress
+
+    tracking = (
+        TVShowProgress.query.filter_by(user_id=user_id)
+        .filter(TVShowProgress.status.in_(["watching", "plan_to_watch"]))
+        .limit(8).all()
+    )
+    if not tracking:
+        return []
+    lines = []
+    for t in tracking:
+        pct = t.calculate_progress_percentage()
+        lines.append(
+            f"  - show_id {t.show_id}: {t.watched_episodes}/"
+            f"{t.total_episodes} eps ({pct}%) — {t.status}"
+        )
+    return ["TV shows they are tracking:\n" + "\n".join(lines)]
+
+
+def _watch_progress_section(user_id: int) -> list:
+    """Continue-watching progress (current context)."""
+    from models import WatchProgress
+
+    progress = (
+        WatchProgress.query.filter_by(user_id=user_id)
+        .order_by(WatchProgress.updated_at.desc()).limit(5).all()
+    )
+    if not progress:
+        return []
+    lines = []
+    for p in progress:
+        label = p.title or f"{p.media_type} {p.tmdb_id}"
+        lines.append(f"  - {label}: {p.progress_pct}% watched")
+    return [
+        "Recently streamed (partially watched):\n" + "\n".join(lines)
+    ]
+
+
 def _build_user_context(session_id: str) -> str:
     """
-    Build a personalisation profile from the user's FrameIQ activity.
+    Build a personalisation context from the user's FrameIQ data.
 
-    Gathers: recent ratings, favourite genres (derived from rated items),
-    TV shows currently being tracked, watchlist size, and diary recency.
+    Two clearly separated layers:
+
+    LONG-TERM TASTE — the canonical persisted TasteProfile
+    (api/taste_profile.py, computed nightly). Loaded at most once per
+    context build via get_profile(); never recomputed here, never read
+    from RecommendationFeedback directly.
+
+    CURRENT CONTEXT — recent ratings, TV tracking, watchlist size,
+    continue-watching progress and remembered chat preferences. These are
+    recent-state signals, not a second taste model (Phase 13 removed the
+    old duplicate genre-Counter aggregation).
+
     Returns an empty string if the user has no history or on any error.
     """
     if not session_id.startswith("user_"):
@@ -44,82 +203,30 @@ def _build_user_context(session_id: str) -> str:
         if not has_app_context():
             return ""
 
-        from collections import Counter
-        from models import (
-            db, Review, WatchProgress, TVShowProgress, user_watchlist,
-            UserChatMemory,
-        )
+        from models import db, user_watchlist
 
         sections = []
 
-        memory = UserChatMemory.query.filter_by(user_id=user_id).first()
-        if memory and memory.content:
-            sections.append("Long-term preferences remembered from chat:\n" + memory.content)
+        sections.extend(_chat_memory_section(user_id))
 
-        # ── Recent ratings ──
-        reviews = (
-            Review.query.filter_by(user_id=user_id)
-            .order_by(Review.created_at.desc()).limit(10).all()
-        )
-        genre_counts: Counter = Counter()
-        if reviews:
-            lines = []
-            for r in reviews:
-                try:
-                    title = r.media.title if r.media else "Unknown"
-                    score = f"{r.rating * 2:.1f}/10" if r.rating else "unrated"
-                    lines.append(f"  - {title} ({r.media_type}): {score}")
-                    if r.media and r.media.genres:
-                        for g in str(r.media.genres).split(","):
-                            g = g.strip()
-                            if g:
-                                genre_counts[g] += 1
-                except Exception:
-                    continue
-            sections.append("Recent ratings (use to personalise):\n" + "\n".join(lines))
+        # ── Long-term taste (canonical persisted TasteProfile) ──
+        from api.taste_profile import get_profile
+        taste_block = _format_taste_profile(get_profile(user_id))
+        if taste_block:
+            sections.append(taste_block)
 
-        # ── Favourite genres ──
-        if genre_counts:
-            top = ", ".join(g for g, _ in genre_counts.most_common(4))
-            sections.append(f"Favourite genres (from their ratings): {top}")
+        # ── Current context (recent events, not a taste model) ──
+        sections.extend(_recent_ratings_section(user_id))
+        sections.extend(_tv_tracking_section(user_id))
 
-        # ── Currently watching (TV tracking) ──
-        tracking = (
-            TVShowProgress.query.filter_by(user_id=user_id)
-            .filter(TVShowProgress.status.in_(["watching", "plan_to_watch"]))
-            .limit(8).all()
-        )
-        if tracking:
-            lines = []
-            for t in tracking:
-                pct = t.calculate_progress_percentage()
-                lines.append(
-                    f"  - show_id {t.show_id}: {t.watched_episodes}/"
-                    f"{t.total_episodes} eps ({pct}%) — {t.status}"
-                )
-            sections.append(
-                "TV shows they are tracking:\n" + "\n".join(lines)
-            )
-
-        # ── Watchlist size ──
-        wl_count = db.session.execute(
-            user_watchlist.select().where(user_watchlist.c.user_id == user_id)
-        ).rowcount
+        # ── Watchlist size (count query: SELECT .rowcount is unreliable) ──
+        wl_count = db.session.scalar(
+            db.select(db.func.count()).select_from(user_watchlist)
+            .where(user_watchlist.c.user_id == user_id))
         if wl_count:
             sections.append(f"Watchlist: {wl_count} titles saved.")
 
-        # ── Continue-watching (in-progress streams) ──
-        progress = (
-            WatchProgress.query.filter_by(user_id=user_id)
-            .order_by(WatchProgress.updated_at.desc()).limit(5).all()
-        )
-        if progress:
-            lines = [
-                f"  - {p.title or p.media_type + ' ' + str(p.tmdb_id)}: "
-                f"{p.progress_pct}% watched"
-                for p in progress
-            ]
-            sections.append("Recently streamed (partially watched):\n" + "\n".join(lines))
+        sections.extend(_watch_progress_section(user_id))
 
         if not sections:
             return ""

@@ -1,0 +1,21 @@
+{# For You rail inner placeholder (Feature #6/#7 Phase 5).
+
+   Rendered inside the homepage rails loop for authenticated users only.
+   The server renders ONLY this shell — the cards come from the canonical
+   GET /api/for-you endpoint via static/js/for-you.js, so homepage
+   rendering never blocks on the recommendation engine.
+
+   Cold-start / error / empty result → for-you.js hides the whole section
+   (the closest <section> around the [data-for-you-placeholder] rail) and
+   the existing rails remain untouched. The rail id keeps the standard
+   rail-{key} convention so the homepage scroll arrows work unchanged. #}
+<div class="rail" id="rail-for_you" data-for-you-placeholder>
+    {# Loading skeletons — same .loading pattern as the rest of the site.
+        Replaced in-place on a personalized response; removed with the
+        section on cold-start/error. #}
+    {% for _ in range(6) %}
+    <div class="shrink-0 snap-start w-[148px] sm:w-[160px]">
+        <div class="loading rounded-xl bg-[var(--bg-surface)] ring-1 ring-[var(--line)] aspect-[2/3]"></div>
+    </div>
+    {% endfor %}
+</div>

@@ -16,8 +16,17 @@ class MediaItem(db.Model):
     # Nullable — only populated for titles hydrated after this column existed.
     runtime = db.Column(db.Integer)
 
+    # Director-capture status (Feature #6 Phase 10). NULL = not yet
+    # enriched; a timestamp = enrichment ran (a run finding no director
+    # still sets it, so "enriched and empty" is distinguishable). Batch
+    # scripts/enrich_directors.py is the only writer.
+    directors_enriched_at = db.Column(db.DateTime)
+
     def __init__(self, **kwargs):
         super(MediaItem, self).__init__(**kwargs)
+
+    directors = db.relationship(
+        'MediaDirector', back_populates='media_item', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<MediaItem {self.title}>'

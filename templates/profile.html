@@ -176,27 +176,51 @@
                             </div>
                         </div>
                         
-                        <!-- Taste DNA -->
-                        {% if taste_genres %}
-                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
+                        <!-- Taste DNA (canonical TasteProfile presentation;
+                             rendered client-side from GET /api/taste-profile) -->
+                        <div id="taste-dna-section"
+                             class="bg-gray-700 rounded-lg p-6 mb-6 hidden"
+                             data-initial-state="{{ 'cold_start' if not taste_dna else 'available' }}">
                             <h3 class="text-xl font-semibold mb-1 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Taste DNA</h3>
-                            <p class="font-slate text-[10px] text-[var(--text-low)] mb-4">derived from your ratings</p>
-                            <div class="space-y-3">
-                                {% for genre, count in taste_genres %}
-                                <div>
-                                    <div class="flex justify-between text-xs mb-1">
-                                        <span class="text-[var(--text-hi)] font-medium">{{ genre }}</span>
-                                        <span class="font-slate text-[var(--text-low)]">{{ count }}</span>
+                            <p id="taste-dna-level" class="font-slate text-[10px] text-[var(--text-low)] mb-4"></p>
+
+                            <!-- Cold start -->
+                            <div id="taste-dna-coldstart" class="hidden">
+                                <p class="text-sm text-[var(--text-hi)]">Taste DNA is still learning.</p>
+                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">Rate or log a few more titles to build your profile.</p>
+                            </div>
+
+                            <!-- Content -->
+                            <div id="taste-dna-content" class="hidden">
+                                <dl class="space-y-4">
+                                    <div id="taste-dna-genres-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Strongest genres</dt>
+                                        <dd><ul id="taste-dna-genres" class="flex flex-wrap gap-2"></ul></dd>
                                     </div>
-                                    <div class="h-2 rounded-full bg-black/40 overflow-hidden">
-                                        <div class="h-full rounded-full"
-                                             style="width: {{ (count / taste_max * 100)|round }}%; background: linear-gradient(90deg, var(--accent), #fff);"></div>
+                                    <div id="taste-dna-avoid-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Tends to steer away from</dt>
+                                        <dd><ul id="taste-dna-avoid" class="flex flex-wrap gap-2"></ul></dd>
                                     </div>
-                                </div>
-                                {% endfor %}
+                                    <div id="taste-dna-directors-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Favorite directors</dt>
+                                        <dd><ul id="taste-dna-directors" class="flex flex-wrap gap-2"></ul></dd>
+                                    </div>
+                                    <div id="taste-dna-eras-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Favorite eras</dt>
+                                        <dd><ul id="taste-dna-eras" class="flex flex-wrap gap-2"></ul></dd>
+                                    </div>
+                                    <div id="taste-dna-media-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Watching preference</dt>
+                                        <dd><p id="taste-dna-media" class="text-sm text-[var(--text-hi)]"></p></dd>
+                                    </div>
+                                    <div id="taste-dna-runtime-block" class="hidden">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime preference</dt>
+                                        <dd><p id="taste-dna-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
+                                    </div>
+                                </dl>
+                                <p id="taste-dna-basis" class="font-slate text-[10px] text-[var(--text-low)] mt-4"></p>
                             </div>
                         </div>
-                        {% endif %}
 
                         <!-- Quick stats strip -->
                         <div class="bg-gray-700 rounded-lg p-6 mb-6">
@@ -419,5 +443,6 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/taste-dna.js') }}"></script>
 </body>
 </html>

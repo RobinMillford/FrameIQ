@@ -136,6 +136,8 @@
         setVal('sl-runtime', filters.runtime || '');
         setVal('sl-services', filters.services || '');
         setVal('sl-min-rating', filters.min_rating || '');
+        var mt = document.getElementById('sl-matches-taste');
+        if (mt) mt.checked = filters.matches_my_taste === true;
         modal.classList.remove('hidden');
         modal.classList.add('flex');
     }
@@ -164,6 +166,8 @@
         if (sv) nextFilters.services = sv;
         var mr = getVal('sl-min-rating');
         if (mr) nextFilters.min_rating = parseFloat(mr);
+        var mt = document.getElementById('sl-matches-taste');
+        if (mt && mt.checked) nextFilters.matches_my_taste = true;
 
         var payload = {
             name: name,
