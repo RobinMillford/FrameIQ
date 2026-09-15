@@ -217,6 +217,31 @@ make db-shell  # psql into the production DB
 make migrate   # create_all() for new tables
 ```
 
+#### Schema-changing migrations (column/index changes)
+
+The startup schema guard REQUIRES schema parity with the declared models
+and will fail Gunicorn workers if the database is behind — that guard is
+intentional and must not be weakened. New TABLES are created automatically
+at startup (`db.create_all()`); COLUMN/index changes are not, so run the
+matching `migrates/` script BEFORE starting the new web image:
+
+```bash
+git pull origin main
+docker compose build web
+docker compose run --rm --no-deps web python migrates/<migration>.py
+docker compose up -d
+docker compose exec web python -m utils.schema_guard
+```
+
+`docker compose run --rm --no-deps` executes the migration against the
+shared database in a one-off container (removed on exit, no port bindings,
+no dependency restarts) — the migration scripts set `SKIP_SCHEMA_GUARD=1`
+themselves, so the guard (enforced at application startup via
+`ensure_schema_compatible()`) stays active for normal application runs
+and never runs migrations for you. Never start `web` before its required
+schema exists; the guard failing fast is the system protecting you from a
+half-migrated deploy.
+
 Chat memory (`instance/chat_memory.db`, WAL mode) persists on the `chat_memory`
 volume across restarts and rebuilds.
 

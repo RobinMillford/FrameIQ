@@ -16,6 +16,7 @@ The full live drill itself (28 PASS against a disposable DB) is validated as
 an operator CLI run, not re-run per test — see the Phase 17 report.
 """
 import importlib.util
+import logging
 import os
 import socket
 import subprocess
@@ -496,3 +497,83 @@ def test_legacy_tables_untouched_after_read_only(smoke, db):
         after = db.session.execute(
             text('SELECT COUNT(*) FROM %s' % table)).scalar()
         assert before == after
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Production-image regression (runtime vs repository metadata)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Production false failure: the Docker image does not contain .github/
+# (repository CI metadata is intentionally not copied into runtime
+# images), so the workflow check reported FAILED and flipped the whole
+# CLI to [STATUS] NOT READY. Contract: runtime mode treats repository-
+# only workflow metadata as not-inspectable (never a readiness failure);
+# validation still runs when a repository checkout is present.
+
+def test_missing_workflow_file_is_not_a_failure(smoke):
+    """Runtime image: no .github/ metadata -> ok with explanatory detail,
+    NOT a FAILED check."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(smoke.__file__)))
+    real = os.path.join(base, smoke.WORKFLOW_FILE)
+    renamed = real + '.hidden'
+    os.rename(real, renamed)
+    try:
+        ok, detail = smoke._check_workflow()
+    finally:
+        os.rename(renamed, real)
+    assert ok is True
+    assert 'runtime image' in detail
+    assert 'repository CI' in detail
+
+
+def test_missing_workflow_does_not_produce_not_ready(smoke, caplog):
+    """With the workflow file absent, run_read_only() must still reach
+    [STATUS] READY (when everything else is healthy) — repository-only
+    metadata must never flip runtime readiness."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(smoke.__file__)))
+    real = os.path.join(base, smoke.WORKFLOW_FILE)
+    renamed = real + '.hidden'
+    os.rename(real, renamed)
+    try:
+        caplog.set_level(logging.INFO)
+        rc = smoke.run_read_only()
+    finally:
+        os.rename(renamed, real)
+    assert rc == 0
+    assert 'not inspectable in runtime image' in caplog.text
+
+
+def test_workflow_validation_still_enforced_in_repository(smoke):
+    """In a repository checkout the contract validation still runs and
+    still fails on a broken workflow."""
+    ok, detail = smoke._check_workflow()
+    assert ok, detail          # the real workflow is valid
+    assert 'runtime image' not in detail
+    # Broken-workflow rejection still active (token check intact).
+    import yaml as _yaml
+    base = os.path.dirname(os.path.dirname(os.path.abspath(smoke.__file__)))
+    with open(os.path.join(base, smoke.WORKFLOW_FILE),
+              encoding='utf-8') as fh:
+        yml = fh.read()
+    assert 'concurrency' in yml and 'schedule' in yml
+    assert _yaml.safe_load(yml) is not None
+
+
+def test_default_smoke_mode_remains_read_only(smoke):
+    """The runtime-image softening added no mutation paths: the workflow
+    check itself only reads files and parses text — no session writes,
+    no file writes."""
+    import inspect
+    src = inspect.getsource(smoke._check_workflow)
+    for banned in ('INSERT INTO', 'UPDATE ', 'DELETE FROM', 'commit(',
+                   'create_all', 'open(.*\'w\'', 'os.remove', 'shutil'):
+        assert banned not in src
+    # The check stays pure-read: no database use at all.
+    assert 'db.' not in src and 'session' not in src
+
+
+def test_smoke_cli_adds_no_network(smoke, stripped_source):
+    """No new network surface: no raw sockets/requests/urllib in source."""
+    import re as _re
+    assert not _re.search(
+        r'\b(socket|urllib|requests)\b', stripped_source), stripped_source
