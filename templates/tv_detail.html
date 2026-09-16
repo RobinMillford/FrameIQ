@@ -836,7 +836,7 @@
                         <option value="rating_high">Highest Rated</option>
                     </select>
                     {% if current_user.is_authenticated %}
-                    <a href="#write-review" class="write-review-btn">
+                    <a href="#write-review" id="write-review" class="write-review-btn">
                         <i class="fas fa-pen"></i> Write Review
                     </a>
                     {% endif %}
@@ -1153,165 +1153,36 @@
                 });
             }
 
-            // Load user reviews
-            async function loadUserReviews() {
-                const grid = document.getElementById('user-reviews-grid');
-                try {
-                    const response = await fetch('/api/media/tv/{{ show.id }}/reviews');
-                    const data = await response.json();
-                    if (response.ok) {
-                        document.getElementById('user-review-count').textContent = data.total;
-                        if (data.reviews.length === 0) {
-                            grid.innerHTML = '<div class="col-span-full text-center py-12 text-[var(--text-mid)]"><p>No user reviews yet. Be the first!</p></div>';
-                        } else {
-                            grid.innerHTML = data.reviews.map(r => createReviewCard(r)).join('');
-                            attachLikeListeners();
-                            attachCommentListeners();
+            // Review-list extras (independent guarded initializers).
+            // Review loading/display is owned by review-manager.js, which
+            // targets #reviews-list; here we only keep the count badge in
+            // sync and initialize follow buttons on dynamically rendered
+            // review cards — without duplicating that fetch.
+            function initReviewFollowButtons() {
+                if (typeof FollowButton === 'undefined') return;
+                const scope = document.getElementById('reviews-list');
+                if (!scope) return;
+                scope.querySelectorAll('[data-follow-button]').forEach(button => {
+                    const userId = parseInt(button.dataset.userId, 10);
+                    if (userId) new FollowButton(userId, button);
+                });
+            }
+
+            function showReviewsCount() {
+                const countBadge = document.getElementById('user-review-count');
+                if (!countBadge) return;
+                fetch('/api/media/tv/{{ show.id }}/reviews')
+                    .then(r => (r.ok ? r.json() : null))
+                    .then(data => {
+                        if (data && typeof data.total !== 'undefined') {
+                            countBadge.textContent = data.total;
                         }
-                    }
+                    })
+                    .catch(() => {});
             }
 
-            function createReviewCard(review) {
-                const date = new Date(review.created_at).toLocaleDateString();
-                const stars = '★'.repeat(Math.round(review.rating)) + '☆'.repeat(5 - Math.round(review.rating));
-                const isLiked = review.is_liked_by_user;
-                
-                return `
-                    <div class="glass-effect rounded-lg p-6 flex flex-col h-full /40">
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="flex items-center">
-                                <img src="${review.user.profile_picture || '/static/images/default_avatar.svg'}" class="w-10 h-10 rounded-full mr-3 border border-[var(--line-hi)]">
-                                <div>
-                                    <h4 class="font-bold text-gray-100">${review.user.username}</h4>
-                                    <div class="flex items-center text-xs text-[var(--text-mid)]">
-                                        <span class="text-yellow-400 mr-2">${stars}</span>
-                                        <span>${date}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <p class="text-gray-300 text-sm mb-6 flex-grow">${review.content || '<em>Rated without review</em>'}</p>
-                        <div class="flex items-center space-x-6 pt-4 border-t border-gray-700/50">
-                            <button class="like-btn flex items-center space-x-2 text-xs ${isLiked ? 'text-red-400' : 'text-[var(--text-mid)] hover:text-red-400'}" data-id="${review.id}">
-                                <i class="fas fa-heart"></i>
-                                <span class="like-count">${review.likes_count}</span>
-                            </button>
-                            <button class="comment-toggle flex items-center space-x-2 text-xs text-[var(--text-mid)] hover:text-[var(--accent)]" data-id="${review.id}">
-                                <i class="fas fa-comment"></i>
-                                <span>${review.comments_count} Comments</span>
-                            </button>
-                        </div>
-                        <div id="comments-section-${review.id}" class="hidden mt-4 pt-4 border-t border-gray-700/30">
-                            <div class="flex space-x-2 mb-4">
-                                <input type="text" id="comment-input-${review.id}" placeholder="Add a comment..." class="flex-1  border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[var(--accent)]">
-                                <button class="submit-comment bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-[10px] px-3 py-1.5 rounded-lg" data-id="${review.id}">Post</button>
-                            </div>
-                            <div id="comments-list-${review.id}" class="space-y-3"></div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            function attachLikeListeners() {
-                document.querySelectorAll('.like-btn').forEach(btn => {
-                    btn.addEventListener('click', async () => {
-                        const id = btn.dataset.id;
-                        try {
-                            const res = await fetch(`/api/reviews/${id}/like`, { method: 'POST' });
-                            const data = await res.json();
-                            if (res.ok) {
-                                btn.querySelector('.like-count').textContent = data.likes_count;
-                                btn.classList.toggle('text-red-400', data.is_liked);
-                                btn.classList.toggle('text-[var(--text-mid)]', !data.is_liked);
-                            }
-                        } catch(e) {}
-                    });
-                });
-            }
-
-            function attachCommentListeners() {
-                document.querySelectorAll('.comment-toggle').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const id = btn.dataset.id;
-                        const section = document.getElementById(`comments-section-${id}`);
-                        section.classList.toggle('hidden');
-                        if (!section.classList.contains('hidden')) loadComments(id);
-                    });
-                });
-                document.querySelectorAll('.submit-comment').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const id = btn.dataset.id;
-                        const input = document.getElementById(`comment-input-${id}`);
-                        submitNewComment(id, input.value, null);
-                        input.value = '';
-                    });
-                });
-            }
-
-            async function loadComments(reviewId) {
-                const list = document.getElementById(`comments-list-${reviewId}`);
-                try {
-                    const res = await fetch(`/api/reviews/${reviewId}/comments`);
-                    const data = await res.json();
-                    if (res.ok) {
-                        list.innerHTML = renderThread(data.comments, reviewId);
-                        attachReplyActions(reviewId);
-                    }
-                } catch(e) {}
-            }
-
-            function renderThread(comments, reviewId, parentId = null, depth = 0) {
-                return comments.filter(c => c.parent_id === parentId).map(c => `
-                    <div class="comment ${depth > 0 ? 'ml-4 border-l border-gray-700 pl-3' : ''}">
-                        <div class="flex items-start space-x-2">
-                            <img src="${c.user.profile_picture || '/static/images/default_avatar.svg'}" class="w-5 h-5 rounded-full mt-0.5">
-                            <div class="flex-1">
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-[10px] font-bold text-[var(--accent-hi)]">${c.user.username}</span>
-                                    <span class="text-[8px] text-[var(--text-mid)]">${new Date(c.created_at).toLocaleDateString()}</span>
-                                </div>
-                                <p class="text-[11px] text-gray-300">${c.content}</p>
-                                <button class="reply-btn text-[9px] text-[var(--text-mid)] hover:text-[var(--accent)] mt-1" data-id="${c.id}">Reply</button>
-                                <div id="reply-form-${c.id}" class="hidden mt-2 flex space-x-2">
-                                    <input type="text" class="flex-1  border border-gray-700 rounded px-2 py-0.5 text-[10px] text-white focus:outline-none" placeholder="Reply...">
-                                    <button class="post-reply bg-[var(--accent)] px-2 py-0.5 rounded text-[10px]" data-pid="${c.id}" data-rid="${reviewId}">Post</button>
-                                </div>
-                                ${renderThread(comments, reviewId, c.id, depth + 1)}
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            }
-
-            function attachReplyActions(reviewId) {
-                document.querySelectorAll('.reply-btn').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        document.getElementById(`reply-form-${btn.dataset.id}`).classList.toggle('hidden');
-                    });
-                });
-                document.querySelectorAll('.post-reply').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const pid = btn.dataset.pid;
-                        const rid = btn.dataset.rid;
-                        const input = btn.previousElementSibling;
-                        submitNewComment(rid, input.value, pid);
-                    });
-                });
-            }
-
-            async function submitNewComment(reviewId, content, parentId) {
-                if (!content.trim()) return;
-                try {
-                    const res = await fetch(`/api/reviews/${reviewId}/comments`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content, parent_id: parentId })
-                    });
-                    if (res.ok) loadComments(reviewId);
-                } catch(e) {}
-            }
-
-            loadUserReviews();
+            showReviewsCount();
+            document.addEventListener('reviews:rendered', initReviewFollowButtons);
         });
         
         // TV Show Data for modals

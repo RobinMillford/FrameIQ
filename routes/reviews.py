@@ -16,6 +16,22 @@ logger = logging.getLogger(__name__)
 reviews = Blueprint('reviews', __name__)
 
 
+def _rating_or_error(value):
+    """Parse a client-supplied rating.
+
+    Returns (rating, None) on success, or (None, (response, status)) when
+    the value is non-numeric or outside the 0.5–5.0 scale — so malformed
+    input is rejected as 400 by the caller instead of surfacing as a 500.
+    """
+    try:
+        rating = float(value)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error': 'Rating must be a number'}), 400)
+    if rating < 0.5 or rating > 5.0:
+        return None, (jsonify({'error': 'Rating must be between 0.5 and 5.0'}), 400)
+    return rating, None
+
+
 @reviews.route('/api/reviews', methods=['POST'])
 @login_required
 def create_review():
@@ -27,10 +43,10 @@ def create_review():
         if not data.get('media_id') or not data.get('media_type') or not data.get('rating'):
             return jsonify({'error': 'Missing required fields'}), 400
         
-        # Validate rating range
-        rating = float(data['rating'])
-        if rating < 0.5 or rating > 5.0:
-            return jsonify({'error': 'Rating must be between 0.5 and 5.0'}), 400
+        # Validate rating range (reject non-numeric input as 400, not 500)
+        rating, error = _rating_or_error(data['rating'])
+        if error:
+            return error
         
         # Check if media exists, create if not
         media = MediaItem.query.filter_by(
