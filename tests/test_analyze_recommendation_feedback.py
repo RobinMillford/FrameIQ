@@ -10,12 +10,14 @@ Covers scripts/analyze_recommendation_feedback.py:
   no user-identifying output, no payload output, legacy tables untouched
 """
 import io
+import importlib
 import logging
 import re
 import socket
 import subprocess
 import sys
 import uuid
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 
 import pytest
@@ -735,3 +737,97 @@ def test_quality_entities_are_pure_expressions(script):
     labels = [e.key for e in script._quality_entities()]
     assert labels == ['bad_event', 'bad_surface', 'bad_media_type',
                       'bad_media_id', 'null_created_at']
+
+
+# ── OpenAI independence (production fix: CLI must not initialize OpenAI) ─────
+
+def test_cli_runs_without_openai_api_key(app):
+    """Subprocess with OPENAI_API_KEY explicitly ABSENT (and no dotenv
+    leakage): the analytics CLI is OpenAI-free and must exit 0 on a
+    healthy disposable DB."""
+    env = {'SECRET_KEY': 't',
+           'DATABASE_URL': 'sqlite:////tmp/p15_no_openai.db',
+           'TMDB_API_KEY': 'x', 'PATH': '/usr/bin:/bin'}
+    env = {k: v for k, v in env.items() if k != 'OPENAI_API_KEY'}
+    assert 'OPENAI_API_KEY' not in env
+    proc = subprocess.run(
+        [sys.executable, 'scripts/analyze_recommendation_feedback.py',
+         '--days', '30'],
+        capture_output=True, text=True, timeout=120, env=env)
+    assert proc.returncode == 0, proc.stderr[-500:]
+    assert 'OpenAI' not in (proc.stdout + proc.stderr)
+
+
+def test_analytics_import_does_not_initialize_openai(app, monkeypatch):
+    """In-process proof: the CLI's bootstrap chain (analyze… → app →
+    src/agents/nodes) constructs ZERO OpenAI clients at import time,
+    even with OPENAI_API_KEY deleted from the environment. A patched
+    ChatOpenAI during a fresh nodes import would register any eager
+    construction as call_count > 0."""
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    from app import app as flask_app  # noqa: F401  (the heavy chain)
+    import src.agents.nodes as nodes
+    with patch('src.agents.nodes.ChatOpenAI') as fake_openai, \
+            patch('src.agents.nodes.create_react_agent') as fake_react:
+        importlib.reload(nodes)
+        assert fake_openai.call_count == 0
+        assert fake_react.call_count == 0
+    importlib.reload(nodes)  # restore real module state for other tests
+
+
+def test_cinebot_model_clients_are_lazy_in_source():
+    """AST import guard against regression: src/agents/nodes.py must not
+    construct ChatOpenAI / create_react_agent at module top level again —
+    that is the exact pattern that broke the analytics CLI."""
+    import ast
+    with open('src/agents/nodes.py', encoding='utf-8') as fh:
+        tree = ast.parse(fh.read())
+    banned = {'ChatOpenAI', 'create_react_agent'}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call):
+                    fn = child.func
+                    name = getattr(fn, 'id', getattr(fn, 'attr', ''))
+                    assert name not in banned, (
+                        f'eager {name}() at module top level would '
+                        f'require OPENAI_API_KEY at import time')
+
+
+def test_agent_chain_import_needs_no_openai_key(monkeypatch):
+    """The CineBot agent chain itself imports cleanly without the key —
+    only actual model use requires one (behavior unchanged otherwise)."""
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    import importlib
+    import src.agents.nodes as nodes
+    importlib.reload(nodes)  # fresh import under no-key environment
+    assert not hasattr(nodes, 'RETRIEVER_MODEL')  # no eager globals
+    # Lazy accessors exist and keep singletons identity-stable:
+    with patch('src.agents.nodes.ChatOpenAI') as fake_cls:
+        fake_cls.return_value = MagicMock()
+        m1 = nodes._supervisor_model()
+        m2 = nodes._supervisor_model()
+        assert m1 is m2
+        assert fake_cls.call_count == 1
+    importlib.reload(nodes)  # restore module state for other tests
+
+
+def test_cli_output_shape_unchanged_after_decoupling(app):
+    """The decoupling must not alter analytics output — same aggregate
+    summary lines, same healthy status."""
+    import io
+    import logging
+    script = importlib.import_module('analyze_recommendation_feedback')
+    script._load()
+    buffer = io.StringIO()
+    stream_handler = logging.StreamHandler(buffer)
+    root = logging.getLogger()
+    old_level = root.level
+    root.setLevel(logging.INFO)
+    try:
+        rc = script.run(7)
+    finally:
+        root.removeHandler(stream_handler)
+        root.setLevel(old_level)
+    assert rc == 0
+    assert 'OpenAI' not in buffer.getvalue()

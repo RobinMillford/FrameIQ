@@ -36,30 +36,72 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 # gpt-4.1-mini : tool calling + supervisor routing — reliable structured output
 # gpt-5-mini   : chat — newer gen, high quality prose
 # (enricher title extraction uses gpt-5-nano via api/chatbot.py)
+#
+# Lazy singletons — the ChatOpenAI clients are built on FIRST USE, not at
+# module import. Module-level construction made `from app import app` (which
+# transitively imports routes/chat → src/agents) fail with OpenAIError when
+# OPENAI_API_KEY is unset, breaking unrelated OpenAI-free entrypoints such
+# as scripts/analyze_recommendation_feedback.py. Chat behavior is
+# unchanged: each client is still constructed exactly once per process.
 
-RETRIEVER_MODEL = ChatOpenAI(
-    model="gpt-4.1-mini",
-    api_key=OPENAI_API_KEY,
-    temperature=0,
-)
 
-# Tags let astream_events distinguish final-response tokens from internal
-# model calls (retriever tool decisions, enricher extraction).
-CHAT_MODEL = ChatOpenAI(
-    model="gpt-5-mini",
-    api_key=OPENAI_API_KEY,
-    temperature=0.7,
-    tags=["final_response"],
-)
+def _retriever_model():
+    """The retriever's ChatOpenAI (built once, on first use)."""
+    global _RETRIEVER_MODEL
+    if _RETRIEVER_MODEL is None:
+        _RETRIEVER_MODEL = ChatOpenAI(
+            model="gpt-4.1-mini",
+            api_key=OPENAI_API_KEY,
+            temperature=0,
+        )
+    return _RETRIEVER_MODEL
 
-SUPERVISOR_MODEL = ChatOpenAI(
-    model="gpt-4.1-mini",
-    api_key=OPENAI_API_KEY,
-    temperature=0,
-)
+
+def _chat_model():
+    """The chat node's ChatOpenAI (built once, on first use).
+
+    Tags let astream_events distinguish final-response tokens from internal
+    model calls (retriever tool decisions, enricher extraction).
+    """
+    global _CHAT_MODEL
+    if _CHAT_MODEL is None:
+        _CHAT_MODEL = ChatOpenAI(
+            model="gpt-5-mini",
+            api_key=OPENAI_API_KEY,
+            temperature=0.7,
+            tags=["final_response"],
+        )
+    return _CHAT_MODEL
+
+
+def _supervisor_model():
+    """The supervisor's ChatOpenAI (built once, on first use)."""
+    global _SUPERVISOR_MODEL
+    if _SUPERVISOR_MODEL is None:
+        _SUPERVISOR_MODEL = ChatOpenAI(
+            model="gpt-4.1-mini",
+            api_key=OPENAI_API_KEY,
+            temperature=0,
+        )
+    return _SUPERVISOR_MODEL
+
+
+_RETRIEVER_MODEL = None
+_CHAT_MODEL = None
+_SUPERVISOR_MODEL = None
 
 # Module-level singleton — built once, reused across all requests.
-_RETRIEVER_AGENT = create_react_agent(RETRIEVER_MODEL, RETRIEVER_TOOLS)
+_RETRIEVER_AGENT = None
+
+
+def _retriever_agent():
+    """The ReAct retriever agent (built once, on first use)."""
+    global _RETRIEVER_AGENT
+    if _RETRIEVER_AGENT is None:
+        _RETRIEVER_AGENT = create_react_agent(
+            _retriever_model(), RETRIEVER_TOOLS)
+    return _RETRIEVER_AGENT
+
 
 # Shared HTTP session for TMDb calls (connection pooling).
 _TMDB_SESSION = requests.Session()
@@ -120,7 +162,8 @@ _SUPERVISOR_CHAIN = None  # lazy singleton
 def _get_supervisor_chain():
     global _SUPERVISOR_CHAIN
     if _SUPERVISOR_CHAIN is None:
-        _SUPERVISOR_CHAIN = SUPERVISOR_MODEL.with_structured_output(_RouteDecision)
+        _SUPERVISOR_CHAIN = (
+            _supervisor_model().with_structured_output(_RouteDecision))
     return _SUPERVISOR_CHAIN
 
 
@@ -268,7 +311,7 @@ def retriever_node(state: GraphState) -> GraphState:
     _CURRENT_USER_ID.set(user_id)
 
     system_prompt = _build_retriever_system(user_context, entities)
-    result = _RETRIEVER_AGENT.invoke(
+    result = _retriever_agent().invoke(
         {"messages": [SystemMessage(content=system_prompt),
                       *_trim_messages(messages)]}
     )
@@ -318,7 +361,7 @@ def chat_node(state: GraphState) -> GraphState:
     messages = state["messages"]
     user_context = state.get("user_context") or ""
 
-    response = CHAT_MODEL.invoke(
+    response = _chat_model().invoke(
         [SystemMessage(content=_build_chat_system(user_context)),
          *_trim_messages(messages)]
     )
