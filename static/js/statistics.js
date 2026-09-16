@@ -188,6 +188,43 @@
         show('statistics-heatmap-block');
     }
 
+    function renderSeasonQuality(seasons) {
+        // Phase 7: bounded neutral rows — "Show S1 · avg 4.3 (8 rated)".
+        // Descriptive display ordering only (§11): never framed as a
+        // quality judgment or preference. Server ordering, server
+        // values, textContent everywhere; accessible via the aria-label
+        // on each row.
+        var list = el('statistics-season-quality');
+        var block = el('statistics-season-quality-block');
+        if (!list || !block) {
+            return;
+        }
+        while (list.firstChild) {
+            list.removeChild(list.firstChild);
+        }
+        seasons.forEach(function (season) {
+            var li = document.createElement('li');
+            li.className = 'flex items-center gap-2 text-xs';
+            var name = document.createElement('span');
+            name.className = 'text-[var(--text-hi)] w-28 shrink-0 truncate';
+            name.textContent = season.show_name;
+            name.title = season.show_name;
+            var meta = document.createElement('span');
+            meta.className = 'font-slate text-[10px] text-[var(--text-low)]';
+            meta.textContent = 'S' + season.season_number +
+                ' \u00b7 avg ' + season.average_rating +
+                ' (' + season.rating_count + ' rated)';
+            li.setAttribute('aria-label',
+                season.show_name + ' season ' + season.season_number +
+                ': average rating ' + season.average_rating +
+                ' from ' + season.rating_count + ' rated episodes');
+            li.appendChild(name);
+            li.appendChild(meta);
+            list.appendChild(li);
+        });
+        block.classList.remove('hidden');
+    }
+
     function render(data) {
         var summary = data;
         setText('statistics-watch-events', String(summary.total_watch_events));
@@ -229,10 +266,17 @@
         } else {
             // §24: no actor persistence exists yet — neutral note, no
             // fabricated people and no placeholder actors wording.
-            // §24: when persistence is absent the API returns [] and the
-            // UI shows the neutral block below — never a fake name.
             show('statistics-actors-empty');
             show('statistics-actors-block');
+        }
+
+        // Phase 7: season quality — the server provides the show name,
+        // season number, rating count, average, and the full ten-bucket
+        // distribution. All values are rendered verbatim (no averaging,
+        // ranking, or rating math here). Hidden when the list is empty.
+        if (Array.isArray(summary.season_quality) &&
+                summary.season_quality.length) {
+            renderSeasonQuality(summary.season_quality);
         }
 
         var media = summary.media_type_distribution || {};

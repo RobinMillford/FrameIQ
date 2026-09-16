@@ -85,15 +85,18 @@ from models.base import db
 from models.director import Director, MediaDirector
 from models.media import MediaItem
 from models.social import DiaryEntry
+from models.tv import TVEpisodeWatch
 
 __all__ = [
     "MAX_LIFETIME_MONTHS",
     "TOP_GENRES",
     "TOP_PEOPLE_LIMIT",
+    "TOP_SEASON_STATS_LIMIT",
     "aggregate_genres",
     "average_rating",
     "build_daily_watch_counts",
     "build_people_statistics",
+    "build_season_ratings",
     "calendar_year_bounds",
     "get_statistics",
     "hours_watched",
@@ -113,6 +116,11 @@ TOP_GENRES = 10
 # per category (directors, actors), applied after deterministic
 # aggregation — never a full lifetime people dump (§9).
 TOP_PEOPLE_LIMIT = 10
+
+# Season-quality statistics (Feature #8 Phase 7) return a fixed bounded
+# top-N of rated seasons, applied after deterministic aggregation —
+# never a full rated-episode dump (§11).
+TOP_SEASON_STATS_LIMIT = 10
 
 _MIN_YEAR = 1900
 _RATING_BUCKETS = tuple(f"{0.5 * i:.1f}" for i in range(1, 11))  # 0.5..5.0
@@ -349,6 +357,102 @@ def build_people_statistics(rows, limit=TOP_PEOPLE_LIMIT):
     ]
 
 
+def _season_quality_rows(user_id, lower, upper):
+    """Grouped (show_name, season_number, rating) rated-episode scalars.
+
+    The eighth bounded statement (§8–§9): TVEpisodeWatch JOIN MediaItem
+    ON show_id == tmdb_id, filtered by the canonical user + watched_date
+    window and rated episodes only, grouped in SQL. The returned rows
+    are per-rated-episode (season_number, rating) pairs keyed by the
+    MediaItem display name; the pure helper aggregates them. Repeated
+    ratings for the same episode are distinct rating events (§17's
+    one-episode rule applies to completion, never to rating counts).
+    MediaItem IDs join only and never leave this module. Lightweight
+    scalar rows — no ORM hydration, no per-show queries.
+
+    NOTE: the join key is TMDb identity because TVEpisodeWatch.show_id
+    stores the TMDb show ID by design (models/tv.py); MediaItem.tmdb_id
+    is UNIQUE, so no fan-out is possible.
+    """
+    return (
+        _tv_windowed(
+            db.session.query(
+                MediaItem.title,
+                TVEpisodeWatch.season_number,
+                TVEpisodeWatch.rating,
+            )
+            .select_from(TVEpisodeWatch)
+            .join(MediaItem, TVEpisodeWatch.show_id == MediaItem.tmdb_id)
+            .filter(TVEpisodeWatch.user_id == user_id)
+            .filter(TVEpisodeWatch.rating.isnot(None))
+            .order_by(TVEpisodeWatch.watched_date.asc()),
+            lower, upper,
+        )
+        .all()
+    )
+
+
+def build_season_ratings(rows, limit=TOP_SEASON_STATS_LIMIT):
+    """Aggregate grouped season-rating rows into the bounded series.
+
+    PURE helper (Feature #8 Phase 7): no DB access, no Flask, no
+    network, deterministic. ``rows`` is an explicit iterable of
+    ``(show_name, season_number, rating)`` scalars — one per rated
+    episode — exactly what the service's grouped SQL returns, so the
+    helper folds lightweight rows without ever seeing ORM graphs.
+
+    Only actually-rated episodes contribute; unrated rows never arrive
+    (the service filters NULLs) and an episode with no rating is
+    excluded from rating aggregation, never inferred (§12). Output is
+    bounded and deterministic: rating_count DESC → average_rating DESC
+    → show_name ASC → season_number ASC (§11 — a display ordering, not
+    a "best seasons" judgment).
+
+    Returns ``[{show_name, season_number, rating_count,
+    average_rating, rating_distribution}, ...]``; empty input → [].
+    No IDs of any kind are carried.
+    """
+    aggregated = {}
+    for row in rows or []:
+        try:
+            show_name, season_number, rating = row
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(show_name, str) or not show_name:
+            continue  # never fabricate "Unknown Show" (§17 spirit)
+        if not isinstance(season_number, int) or isinstance(
+                season_number, bool):
+            continue
+        if rating is None:
+            continue  # unrated episodes never contribute (§12)
+        try:
+            rating = float(rating)
+        except (TypeError, ValueError):
+            continue  # invalid scale values are ignored, not crashed on
+        key = (show_name, season_number)
+        entry = aggregated.setdefault(
+            key, {"name": show_name, "season": season_number,
+                  "ratings": []})
+        entry["ratings"].append(rating)
+    seasons = []
+    for entry in aggregated.values():
+        ratings = entry["ratings"]
+        seasons.append({
+            "show_name": entry["name"],
+            "season_number": entry["season"],
+            "rating_count": len(ratings),
+            "average_rating": average_rating(ratings),
+            "rating_distribution": rating_distribution(ratings),
+        })
+    seasons.sort(key=lambda s: (
+        -s["rating_count"],
+        -(s["average_rating"] or 0.0),
+        s["show_name"].casefold(), s["show_name"],
+        s["season_number"],
+    ))
+    return seasons[:limit]
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Service
 # ════════════════════════════════════════════════════════════════════════════
@@ -397,11 +501,25 @@ def _windowed(query, lower, upper):
     return query
 
 
+def _tv_windowed(query, lower, upper):
+    """Apply the same half-open window to a TVEpisodeWatch query.
+
+    TVEpisodeWatch carries its own watched_date column with identical
+    Date semantics (routes/tv_tracking.py persists it the same way),
+    so the canonical calendar filtering applies unchanged (§4/§19).
+    """
+    if lower is not None:
+        query = query.filter(TVEpisodeWatch.watched_date >= lower)
+    if upper is not None:
+        query = query.filter(TVEpisodeWatch.watched_date < upper)
+    return query
+
+
 def get_statistics(user_id, start_date=None, end_date=None, *,
                    year=None, lifetime=False):
     """Compute the canonical statistics presentation model for a user.
 
-    Exactly 6 bounded SQL statements regardless of history size.
+    Exactly 8 bounded SQL statements regardless of history size.
     Returns a compact, deterministic, JSON-ready dict of aggregate
     statistics — never ORM rows, never database IDs. A user with no
     watch events in the window gets the full neutral zero-shape
@@ -536,6 +654,16 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         _director_rows(user_id, lower, upper))
     actors = []  # no persisted actor relationship exists (§3/§16)
 
+    # ── Season quality (see _season_quality_rows: 8th bounded query) ──
+    # Persisted episode-level user ratings only (§8–§12):
+    # TVEpisodeWatch.rating (0.5–5.0, model CHECK) grouped by the
+    # show's MediaItem title + season number. No external ratings, no
+    # TasteProfile, no completion inference — see the completion note
+    # above (no per-season episode catalog exists, so a denominator
+    # cannot be defended).
+    season_quality = build_season_ratings(
+        _season_quality_rows(user_id, lower, upper))
+
     return {
         "total_watch_events": total_events,
         "distinct_titles": distinct_titles,
@@ -561,6 +689,7 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
             (row["count"] for row in daily_activity), default=0),
         "directors": directors,
         "actors": actors,
+        "season_quality": season_quality,
     }
 
 

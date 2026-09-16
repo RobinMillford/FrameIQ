@@ -481,7 +481,9 @@ def test_zero_additional_db_queries_beyond_service(user, app):
                 build_year_in_review(user.id, 2026)
         finally:
             event.remove(_db.engine, 'before_cursor_execute', _count)
-    assert len(statements) == 7   # the canonical service's 7 statements
+    assert len(statements) == 8   # the canonical service's 8 statements
+    # Phase 5=6 → 6=7 → 7=8: one bounded statement per derived series,
+    # pinned deliberately (§21) — never loosened to a loose ceiling.
 
 
 def test_invalid_year_never_touches_database(user, app):

@@ -213,7 +213,7 @@ def test_output_contract_exact_names(user):
         "rating_distribution", "rewatch_count", "rewatch_rate",
         "top_genres", "monthly_watch_counts", "media_type_distribution",
         "daily_activity", "active_watch_days", "max_daily_watch_events",
-        "directors", "actors",
+        "directors", "actors", "season_quality",
     }
 
 
@@ -656,7 +656,7 @@ def test_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) <= 7, statements
+    assert len(statements) <= 8, statements
 
 
 def test_no_n_plus_one_across_many_titles(user):
@@ -922,7 +922,7 @@ def test_bounded_query_count_with_daily_activity(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) == 7, statements
+    assert len(statements) == 8, statements
 
 
 def test_daily_helper_pure_and_graceful():
@@ -1329,8 +1329,9 @@ def test_people_stats_helper_pure():
 
 
 def test_people_stats_bounded_query_count(user):
-    # §14/§20/§26: exactly 7 statements (6 prior + 1 director GROUP BY);
-    # the count must not scale with people/titles/events.
+    # §14/§20/§26: exactly 8 statements (Phase 2–5 base 6 + director
+    # GROUP BY + Phase 7 season-quality read); the count must not scale
+    # with people/titles/events/seasons.
     from sqlalchemy import event as sa_event
     d = _director("Q Dir", 1301)
     m = _media("Q Dir Movie", runtime=90)
@@ -1348,7 +1349,7 @@ def test_people_stats_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) == 7, statements
+    assert len(statements) == 8, statements
 
 
 def test_people_stats_no_n_plus_one_across_many_directors(user):
@@ -1447,3 +1448,239 @@ def test_ui_people_one_fetch_still():
     js = _statistics_js_code()
     assert js.count("fetch(url,") == 1
     assert "setInterval" not in js
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Feature #8 Phase 7 — season quality (persisted episode ratings only)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _show(name):
+    """A TV MediaItem whose tmdb_id backs TVEpisodeWatch.show_id."""
+    return _media(name, runtime=45, media_type="tv")
+
+
+def _episode(user, show, season, episode, watched, rating=None):
+    row = TVEpisodeWatch(
+        user_id=user.id, show_id=show.tmdb_id,
+        season_number=season, episode_number=episode,
+        watched_date=watched, rating=rating,
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def test_season_quality_single_rated_season(user):
+    show = _show("Audit Show")
+    _episode(user, show, 1, 1, date(2026, 2, 1), rating=4.0)
+    _episode(user, show, 1, 2, date(2026, 2, 8), rating=5.0)
+    s = get_statistics(user.id, year=2026)
+    assert len(s["season_quality"]) == 1
+    row = s["season_quality"][0]
+    assert row["show_name"] == "Audit Show"
+    assert row["season_number"] == 1
+    assert row["rating_count"] == 2
+    assert row["average_rating"] == 4.5
+
+
+def test_season_quality_unrated_episodes_excluded(user):
+    show = _show("Partial Ratings")
+    _episode(user, show, 2, 1, date(2026, 3, 1), rating=3.5)
+    _episode(user, show, 2, 2, date(2026, 3, 2))          # unrated
+    _episode(user, show, 2, 3, date(2026, 3, 3), rating=4.5)
+    s = get_statistics(user.id, year=2026)
+    assert len(s["season_quality"]) == 1
+    assert s["season_quality"][0]["rating_count"] == 2
+    assert s["season_quality"][0]["average_rating"] == 4.0
+
+
+def test_season_quality_full_ten_bucket_distribution(user):
+    show = _show("Buckets")
+    for ep, rating in ((1, 4.5), (2, 5.0), (3, 4.5)):
+        _episode(user, show, 1, ep, date(2026, 4, 1), rating=rating)
+    dist = get_statistics(user.id, year=2026)[
+        "season_quality"][0]["rating_distribution"]
+    assert len(dist) == 10                     # fixed buckets, zeros kept
+    assert dist["4.5"] == 2 and dist["5.0"] == 1
+    assert dist["0.5"] == 0 and dist["1.0"] == 0
+
+
+def test_season_quality_multiple_seasons_and_shows(user):
+    a, b = _show("Show A"), _show("Show B")
+    _episode(user, a, 1, 1, date(2026, 1, 5), rating=4.0)
+    _episode(user, a, 2, 1, date(2026, 1, 6), rating=3.0)
+    _episode(user, b, 1, 1, date(2026, 1, 7), rating=5.0)
+    rows = get_statistics(user.id, year=2026)["season_quality"]
+    # count tie (1 each) → average DESC: Show B 5.0, A S1 4.0, A S2 3.0
+    assert [(r["show_name"], r["season_number"]) for r in rows] == [
+        ("Show B", 1), ("Show A", 1), ("Show A", 2)]
+
+
+def test_season_quality_deterministic_ordering_and_ties(user):
+    # count DESC → average DESC → show_name ASC (case-consistent) →
+    # season_number ASC (§11 — display ordering, not a quality judgment)
+    zeta, alpha = _show("Zeta"), _show("alpha")
+    other = _show("Mid")
+    for ep in (1, 2, 3):                       # Zeta S1: 3 ratings, avg 4.5
+        _episode(user, zeta, 1, ep, date(2026, 5, 1), rating=4.5)
+    for ep in (1, 2, 3):                       # alpha S2: 3 ratings, avg 4.0
+        _episode(user, alpha, 2, ep, date(2026, 5, 2), rating=4.0)
+    _episode(user, other, 1, 1, date(2026, 5, 3), rating=5.0)  # 1 rating
+    rows = get_statistics(user.id, year=2026)["season_quality"]
+    assert [(r["show_name"], r["season_number"]) for r in rows] == [
+        ("Zeta", 1), ("alpha", 2), ("Mid", 1)]
+    # same count + average → name tie-break; then season number
+    lo, hi = _show("Tie A"), _show("Tie B")
+    _episode(user, lo, 2, 1, date(2026, 6, 1), rating=4.0)
+    _episode(user, hi, 1, 1, date(2026, 6, 2), rating=4.0)
+    _episode(user, lo, 1, 1, date(2026, 6, 3), rating=4.0)
+    rows = [r for r in get_statistics(user.id, year=2026)["season_quality"]
+            if r["show_name"].startswith("Tie")]
+    assert [(r["show_name"], r["season_number"]) for r in rows] == [
+        ("Tie A", 1), ("Tie A", 2), ("Tie B", 1)]
+
+
+def test_season_quality_top_limit(user):
+    for i in range(12):
+        show = _show(f"Limit Show {i:02d}")
+        _episode(user, show, 1, 1, date(2026, 7, 1), rating=3.0)
+    rows = get_statistics(user.id, year=2026)["season_quality"]
+    assert len(rows) == 10                     # TOP_SEASON_STATS_LIMIT
+    # deterministic cap: highest rating_count (all tie) → name ASC keeps
+    # the first ten shows alphabetically
+    assert rows[0]["show_name"] == "Limit Show 00"
+    assert rows[-1]["show_name"] == "Limit Show 09"
+
+
+def test_season_quality_year_and_lifetime_windows(user):
+    show = _show("Window Show")
+    _episode(user, show, 1, 1, date(2025, 12, 31), rating=3.0)
+    _episode(user, show, 1, 2, date(2026, 1, 1), rating=5.0)
+    year_rows = get_statistics(user.id, year=2026)["season_quality"]
+    assert len(year_rows) == 1 and year_rows[0]["rating_count"] == 1
+    lifetime_rows = get_statistics(user.id, lifetime=True)["season_quality"]
+    assert len(lifetime_rows) == 1 and lifetime_rows[0]["rating_count"] == 2
+
+
+def test_season_quality_watched_date_authoritative(user):
+    # §32: watched_date drives the window; created_at never does. The
+    # 2025-dated row stays out of the 2026 window regardless of when the
+    # row was created within this test.
+    show = _show("Date Source")
+    _episode(user, show, 1, 1, date(2025, 12, 31), rating=5.0)
+    _episode(user, show, 1, 2, date(2026, 1, 1), rating=4.0)
+    rows = get_statistics(user.id, year=2026)["season_quality"]
+    assert rows[0]["rating_count"] == 1
+    assert rows[0]["rating_distribution"]["4.0"] == 1
+
+
+def test_season_quality_no_ids_in_rows(user):
+    show = _show("Privacy Show")
+    _episode(user, show, 1, 1, date(2026, 2, 1), rating=4.0)
+    rows = get_statistics(user.id, year=2026)["season_quality"]
+    for row in rows:
+        assert set(row.keys()) == {
+            "show_name", "season_number", "rating_count",
+            "average_rating", "rating_distribution"}
+        for key in row:
+            assert "id" not in key.lower()
+
+
+def test_season_quality_helper_pure():
+    from api.statistics import build_season_ratings as build
+    assert build(None) == [] and build([]) == []
+    rows = [("A", 1, 4.0), ("A", 1, 5.0), ("B", 1, 5.0)]
+    assert build(rows) == [
+        {"show_name": "A", "season_number": 1, "rating_count": 2,
+         "average_rating": 4.5,
+         "rating_distribution": build(
+             [("A", 1, 4.0), ("A", 1, 5.0)])[0]["rating_distribution"]},
+        {"show_name": "B", "season_number": 1, "rating_count": 1,
+         "average_rating": 5.0,
+         "rating_distribution": build(
+             [("B", 1, 5.0)])[0]["rating_distribution"]},
+    ]
+    # unusable rows skipped: unnamed shows, non-int seasons, missing or
+    # invalid ratings — never fabricated, never crashed on
+    assert build([(None, 1, 4.0), ("", 1, 4.0), ("A", "1", 4.0),
+                  ("A", 1, None), ("A", 1, "x"), ("A", True, 4.0),
+                  ("Ok", 1, 4.0)]) == [
+        {"show_name": "Ok", "season_number": 1, "rating_count": 1,
+         "average_rating": 4.0,
+         "rating_distribution": build(
+             [("Ok", 1, 4.0)])[0]["rating_distribution"]}]
+    assert build([("A", 1, 4.0)], limit=1) == build([("A", 1, 4.0)])
+
+
+def test_season_quality_deterministic_output(user):
+    show = _show("Det Show")
+    _episode(user, show, 1, 1, date(2026, 3, 1), rating=4.0)
+    _episode(user, show, 1, 2, date(2026, 3, 2), rating=5.0)
+    import json as _json
+    a = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    b = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    assert a == b
+
+
+def test_season_quality_missing_media_item_degrades(user):
+    # Episodes whose show has NO MediaItem row (tmdb_id mismatch):
+    # no season contribution — never a fabricated show name — and the
+    # event itself is not dropped from any global statistic.
+    orphan = TVEpisodeWatch(
+        user_id=user.id, show_id=987654321, season_number=1,
+        episode_number=1, watched_date=date(2026, 4, 1), rating=4.0)
+    db.session.add(orphan)
+    db.session.commit()
+    s = get_statistics(user.id, year=2026)
+    assert s["season_quality"] == []
+
+
+def test_season_quality_does_not_alter_global_totals(user):
+    # §29/§33: people/season aggregation is supplementary. Snapshot the
+    # global series with DiaryEntry only, then add rated episode
+    # watches and confirm nothing global moved.
+    m = _media("Global Movie", runtime=90)
+    _diary(user, m, date(2026, 8, 1), rating=4.0)
+    before = get_statistics(user.id, year=2026)
+    show = _show("Side Show")
+    _episode(user, show, 1, 1, date(2026, 8, 2), rating=5.0)
+    _episode(user, show, 1, 2, date(2026, 8, 3), rating=4.0)
+    after = get_statistics(user.id, year=2026)
+    for field in ("total_watch_events", "distinct_titles", "movies_watched",
+                  "tv_watch_events", "total_hours_watched", "average_rating",
+                  "rating_count", "rewatch_count", "active_watch_days",
+                  "max_daily_watch_events"):
+        assert before[field] == after[field], field
+    assert before["monthly_watch_counts"] == after["monthly_watch_counts"]
+    assert before["daily_activity"] == after["daily_activity"]
+    # …but the season series now reflects the episode ratings
+    assert len(after["season_quality"]) == 1
+    assert after["season_quality"][0]["rating_count"] == 2
+
+
+def test_tv_completion_unavailable_no_field(user):
+    # §2 audit verdict: no per-season episode catalog is persisted
+    # (TVShowProgress.total_episodes is a show-level TMDb snapshot;
+    # UpcomingEpisode is a purged ≤60-day window), so NO defensible
+    # completion denominator exists. A truthful absence beats an
+    # invented percentage: the field must never appear.
+    show = _show("No Denominator")
+    _episode(user, show, 1, 1, date(2026, 2, 1), rating=4.0)
+    s = get_statistics(user.id, year=2026)
+    assert "tv_completion" not in s
+    assert "completion_rate" not in s
+    import api.statistics as mod
+    source = open(mod.__file__, encoding="utf-8").read()
+    assert "tv_completion" not in source
+    assert "completion_rate" not in source
+    for forbidden in ("calculate_completion_rate",
+                      "aggregate_season_ratings",
+                      "normalize_season_quality_rows"):
+        assert forbidden not in source
+
+
+def test_actor_statistics_remain_unavailable(user):
+    # Phase 6 semantics unchanged (§18): actors stay [] until persisted
+    # cast data exists; no completion- or season-side change touches it.
+    s = get_statistics(user.id, year=2026)
+    assert s["actors"] == []
