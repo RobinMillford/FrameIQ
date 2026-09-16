@@ -130,6 +130,35 @@
         show('statistics-monthly-block');
     }
 
+    function renderHeatmap(dailyActivity, activeDays, maxEvents) {
+        var grid = el('statistics-heatmap');
+        grid.textContent = '';
+        dailyActivity.forEach(function (row) {
+            // One semantic list item per active day. Understandable
+            // without color: the count is always rendered as text and
+            // the accessible name carries the full fact (§14).
+            var cell = document.createElement('span');
+            cell.setAttribute('role', 'listitem');
+            var intensity = maxEvents > 0
+                ? Math.min(4, Math.ceil(row.count / maxEvents * 4))
+                : 1;
+            cell.className = 'heatmap-cell heatmap-l' + intensity +
+                ' w-3 h-3 rounded-sm shrink-0';
+            cell.textContent = String(row.count);
+            cell.title = row.date + ': ' + row.count +
+                (row.count === 1 ? ' watch' : ' watches');
+            cell.setAttribute('aria-label',
+                row.date + ': ' + row.count +
+                (row.count === 1 ? ' watch' : ' watches'));
+            grid.appendChild(cell);
+        });
+        setText('statistics-heatmap-summary',
+            activeDays + (activeDays === 1 ? ' active day' : ' active days') +
+            ' \u00b7 busiest day: ' + maxEvents +
+            (maxEvents === 1 ? ' watch' : ' watches'));
+        show('statistics-heatmap-block');
+    }
+
     function render(data) {
         var summary = data;
         setText('statistics-watch-events', String(summary.total_watch_events));
@@ -152,6 +181,12 @@
 
         if (summary.monthly_watch_counts && summary.monthly_watch_counts.length) {
             renderMonthly(summary.monthly_watch_counts);
+        }
+
+        if (Array.isArray(summary.daily_activity) &&
+                summary.daily_activity.length) {
+            renderHeatmap(summary.daily_activity,
+                summary.active_watch_days, summary.max_daily_watch_events);
         }
 
         var media = summary.media_type_distribution || {};

@@ -212,6 +212,7 @@ def test_output_contract_exact_names(user):
         "runtime_missing_events", "average_rating", "rating_count",
         "rating_distribution", "rewatch_count", "rewatch_rate",
         "top_genres", "monthly_watch_counts", "media_type_distribution",
+        "daily_activity", "active_watch_days", "max_daily_watch_events",
     }
 
 
@@ -654,7 +655,7 @@ def test_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) <= 5, statements
+    assert len(statements) <= 6, statements
 
 
 def test_no_n_plus_one_across_many_titles(user):
@@ -741,3 +742,293 @@ def test_malformed_genre_string_graceful(user):
     s = get_statistics(user.id, year=2026)
     names = [g["name"] for g in s["top_genres"]]
     assert names == ["Drama", "Sci-Fi"]  # empties dropped, order kept
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Feature #8 Phase 5 — watch heatmap + daily activity (§3–§22)
+# ════════════════════════════════════════════════════════════════════════════
+
+def test_daily_activity_empty(user):
+    s = get_statistics(user.id, year=2026)
+    assert s["daily_activity"] == []
+    assert s["active_watch_days"] == 0
+    assert s["max_daily_watch_events"] == 0
+
+
+def test_daily_activity_single_watch_single_day(user):
+    m = _media("One Day", runtime=90)
+    _diary(user, m, date(2026, 1, 3))
+    s = get_statistics(user.id, year=2026)
+    assert s["daily_activity"] == [{"date": "2026-01-03", "count": 1}]
+    assert s["active_watch_days"] == 1
+    assert s["max_daily_watch_events"] == 1
+
+
+def test_daily_activity_multiple_events_same_day(user):
+    m = _media("Same Day", runtime=90)
+    _diary(user, m, date(2026, 4, 10))
+    _diary(user, m, date(2026, 4, 10))
+    _diary(user, m, date(2026, 4, 10))
+    s = get_statistics(user.id, year=2026)
+    assert s["daily_activity"] == [{"date": "2026-04-10", "count": 3}]
+    assert s["max_daily_watch_events"] == 3
+
+
+def test_daily_activity_multiple_dates_ascending(user):
+    m = _media("Spread", runtime=90)
+    _diary(user, m, date(2026, 3, 5))
+    _diary(user, m, date(2026, 1, 20))
+    _diary(user, m, date(2026, 12, 31))
+    s = get_statistics(user.id, year=2026)
+    dates = [row["date"] for row in s["daily_activity"]]
+    assert dates == sorted(dates) == [
+        "2026-01-20", "2026-03-05", "2026-12-31"]
+
+
+def test_daily_activity_rewatch_counts_as_event(user):
+    m = _media("Rewatch Day", runtime=90)
+    _diary(user, m, date(2026, 6, 6))
+    _diary(user, m, date(2026, 6, 6), is_rewatch=True)
+    s = get_statistics(user.id, year=2026)
+    assert s["daily_activity"] == [{"date": "2026-06-06", "count": 2}]
+
+
+def test_daily_activity_duplicate_title_events_separate(user):
+    # Two DiaryEntry rows for the same title on different days are two
+    # events on two days (title identity never merges watch days).
+    m = _media("Title Twice", runtime=90)
+    _diary(user, m, date(2026, 2, 1))
+    _diary(user, m, date(2026, 2, 2))
+    s = get_statistics(user.id, year=2026)
+    assert s["daily_activity"] == [
+        {"date": "2026-02-01", "count": 1},
+        {"date": "2026-02-02", "count": 1},
+    ]
+    assert s["active_watch_days"] == 2
+
+
+def test_active_watch_days_unique_dates(user):
+    m = _media("Active Days", runtime=90)
+    _diary(user, m, date(2026, 5, 1))
+    _diary(user, m, date(2026, 5, 1))
+    _diary(user, m, date(2026, 5, 2))
+    _diary(user, m, date(2026, 5, 3))
+    s = get_statistics(user.id, year=2026)
+    assert s["active_watch_days"] == 3   # 4 events across 3 days
+
+
+def test_max_daily_watch_events(user):
+    m = _media("Max Day", runtime=90)
+    for _ in range(4):
+        _diary(user, m, date(2026, 7, 7))
+    _diary(user, m, date(2026, 7, 8))
+    s = get_statistics(user.id, year=2026)
+    assert s["max_daily_watch_events"] == 4
+    assert s["active_watch_days"] == 2
+
+
+def test_daily_activity_calendar_year_filtering(user):
+    m = _media("Filter", runtime=90)
+    _diary(user, m, date(2025, 12, 31))
+    _diary(user, m, date(2026, 1, 1))
+    s2026 = get_statistics(user.id, year=2026)
+    assert [row["date"] for row in s2026["daily_activity"]] == ["2026-01-01"]
+    s2025 = get_statistics(user.id, year=2025)
+    assert [row["date"] for row in s2025["daily_activity"]] == ["2025-12-31"]
+
+
+def test_daily_activity_lifetime_bounded_to_real_dates(user):
+    # Lifetime emits only dates that have events — no zero-filled
+    # infinite calendar (§4).
+    m = _media("Life", runtime=90)
+    _diary(user, m, date(2020, 2, 29))   # leap day
+    _diary(user, m, date(2026, 9, 1))
+    s = get_statistics(user.id, lifetime=True)
+    assert [row["date"] for row in s["daily_activity"]] == [
+        "2020-02-29", "2026-09-01"]
+
+
+def test_watched_date_authoritative_not_created_at(user):
+    # The activity date comes from watched_date alone; created_at is
+    # never consulted (§4/§22 — insert a row whose created_at disagrees).
+    from sqlalchemy import text as _text
+    from models.base import db as _db
+    m = _media("Date Truth", runtime=90)
+    _diary(user, m, date(2026, 3, 15))
+    _db.session.execute(_text(
+        "UPDATE diary_entry SET created_at = '2019-01-01 00:00:00' "
+        "WHERE user_id = :uid"), {"uid": user.id})
+    _db.session.commit()
+    s = get_statistics(user.id, year=2026)
+    assert [row["date"] for row in s["daily_activity"]] == ["2026-03-15"]
+
+
+def test_monthly_and_daily_reconcile_with_total_events(user):
+    m = _media("Reconcile", runtime=90)
+    tv = _media("Reconcile TV", runtime=45, media_type="tv")
+    _diary(user, m, date(2026, 1, 3))
+    _diary(user, m, date(2026, 1, 3))
+    _diary(user, m, date(2026, 1, 8))
+    _diary(user, tv, date(2026, 2, 20))
+    _diary(user, tv, date(2026, 2, 20), is_rewatch=True)
+    _diary(user, m, date(2026, 11, 30))
+    s = get_statistics(user.id, year=2026)
+    daily_sum = sum(row["count"] for row in s["daily_activity"])
+    monthly_sum = sum(row["count"] for row in s["monthly_watch_counts"])
+    assert daily_sum == s["total_watch_events"] == 6
+    assert monthly_sum == s["total_watch_events"] == 6   # §11 invariant
+
+
+def test_daily_activity_no_ids_or_orm_objects(user):
+    m = _media("No Ids", runtime=90)
+    _diary(user, m, date(2026, 8, 9))
+    s = get_statistics(user.id, year=2026)
+    import json as _json
+    blob = _json.dumps(s)
+    assert '"_id"' not in blob and '"id"' not in blob   # no id-named keys
+    for row in s["daily_activity"]:
+        assert set(row.keys()) == {"date", "count"}
+
+
+def test_daily_activity_deterministic(user):
+    m = _media("Det", runtime=90)
+    _diary(user, m, date(2026, 9, 2))
+    _diary(user, m, date(2026, 9, 1))
+    _diary(user, m, date(2026, 9, 2))
+    import json as _json
+    first = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    second = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    assert first == second
+
+
+def test_bounded_query_count_with_daily_activity(user):
+    # §20 — the invariant: one service call → a small fixed number of
+    # SQL statements → no per-event queries. The Phase 2 architecture
+    # pins exactly 6 (event/rating/media/monthly aggregates, genre
+    # projection, daily GROUP BY); the daily extension adds exactly one.
+    from sqlalchemy import event as sa_event
+    m = _media("Q Daily", runtime=90)
+    for _ in range(5):
+        _diary(user, m, date(2026, 9, 1))
+    uid = user.id  # read BEFORE the listener: commit expiry would add a
+    statements = []  # refresh SELECT that is not the service's doing
+
+    def _record(conn, cursor, statement, *args, **kwargs):
+        statements.append(statement)
+
+    sa_event.listen(db.engine, "before_cursor_execute", _record)
+    try:
+        get_statistics(uid, year=2026)
+    finally:
+        sa_event.remove(db.engine, "before_cursor_execute", _record)
+    assert len(statements) == 6, statements
+
+
+def test_daily_helper_pure_and_graceful():
+    # Direct pure-helper coverage (§6): explicit input, no DB, empty
+    # input, ISO strings, pair form, None/blank skipping.
+    from datetime import date as _date
+    from api.statistics import build_daily_watch_counts as build
+
+    assert build(None) == []
+    assert build([]) == []
+    assert build([_date(2026, 1, 3), _date(2026, 1, 3)]) == [
+        {"date": "2026-01-03", "count": 2}]
+    assert build(["2026-03-01", "2026-02-01"]) == [
+        {"date": "2026-02-01", "count": 1},
+        {"date": "2026-03-01", "count": 1}]
+    assert build([(_date(2026, 1, 3), 2), (_date(2026, 1, 8), 1)]) == [
+        {"date": "2026-01-03", "count": 2},
+        {"date": "2026-01-08", "count": 1}]
+    assert build([None, "", "   ", _date(2026, 2, 2)]) == [
+        {"date": "2026-02-02", "count": 1}]
+
+
+def test_daily_helper_no_database_or_flask():
+    # The helper is importable and callable without app/DB context.
+    import sys
+    from api.statistics import build_daily_watch_counts as build
+    assert "flask" not in sys.modules or build([]) == []
+    assert build(["2026-01-01"]) == [{"date": "2026-01-01", "count": 1}]
+
+
+# ── API surface for the new fields ──────────────────────────────────────────
+
+@pytest.fixture
+def stats_user(app):
+    from models import User
+    username = "statu" + uuid.uuid4().hex[:6]
+    u = User(username=username, email=f"{username}@example.com",
+             email_verified=True)
+    u.set_password("TestPass1")
+    db.session.add(u)
+    db.session.commit()
+    with app.app_context():
+        yield u
+
+
+@pytest.fixture
+def auth_client(client, stats_user):
+    client.post("/login", data={
+        "username": stats_user.username, "password": "TestPass1"})
+    return client
+
+
+def test_api_exposes_heatmap_fields(auth_client, stats_user, app):
+    with app.app_context():
+        m = _media("API Heat", runtime=90)
+        _diary(stats_user, m, date(2026, 5, 5))
+        _diary(stats_user, m, date(2026, 5, 5))
+        data = auth_client.get("/api/statistics?year=2026").get_json()
+    assert data["daily_activity"] == [{"date": "2026-05-05", "count": 2}]
+    assert data["active_watch_days"] == 1
+    assert data["max_daily_watch_events"] == 2
+
+
+def test_api_heatmap_empty_state(auth_client, stats_user):
+    data = auth_client.get("/api/statistics?year=2026").get_json()
+    assert data["daily_activity"] == []
+    assert data["active_watch_days"] == 0
+    assert data["max_daily_watch_events"] == 0
+
+
+# ── Profile UI source guards ────────────────────────────────────────────────
+
+def _statistics_js_code():
+    """JS source with block comments stripped (prose mentions of banned
+    APIs must not trip the guards — only real code matches)."""
+    import re as _re
+    return _re.sub(r"/\*.*?\*/", "",
+                   open("static/js/statistics.js",
+                        encoding="utf-8").read(), flags=_re.S)
+
+
+def test_ui_heatmap_uses_api_data_no_recompute():
+    js = _statistics_js_code()
+    # Heatmap consumes the server fields; no date arithmetic/recounting.
+    assert "daily_activity" in js
+    assert "getMonth" not in js and "getFullYear" not in js
+    assert "Date.now" not in js
+
+
+def test_ui_heatmap_no_polling_no_extra_fetch():
+    js = _statistics_js_code()
+    assert "setInterval" not in js
+    # One fetch construction total — heatmap rides the existing request.
+    assert js.count("fetch(url,") == 1
+
+
+def test_ui_heatmap_accessible_without_color():
+    js = _statistics_js_code()
+    assert "aria-label" in js
+    assert "listitem" in js
+    assert "textContent" in js          # counts rendered as text
+    assert "innerHTML" not in js        # §14 XSS rule
+
+
+def test_ui_heatmap_template_targets_exist():
+    js = open("static/js/statistics.js", encoding="utf-8").read()
+    template = open("templates/profile.html", encoding="utf-8").read()
+    for target in ("statistics-heatmap", "statistics-heatmap-summary",
+                   "statistics-heatmap-block"):
+        assert target in js and f'id="{target}"' in template

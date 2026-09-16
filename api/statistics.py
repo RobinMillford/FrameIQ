@@ -5,7 +5,7 @@ Derives everything from the canonical watch history:
 
     DiaryEntry (authoritative watch-event log)  ×  MediaItem (metadata)
         ↓  get_statistics(user_id, year=... | lifetime=True | dates)
-    4 bounded SQL aggregates  →  deterministic presentation dict
+    6 bounded SQL aggregates  →  deterministic presentation dict
 
 ═══════════════════════════════════════════════════════════════════════
 AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — intentionally left
@@ -68,8 +68,10 @@ Design invariants:
   RECOMMENDATION-INDEPENDENT — never imports or queries for_you,
   taste_profile, RecommendationFeedback, lists, watchlist, wishlist,
   likes, or Continue Watching (a start is not a completed watch).
-  BOUNDED — exactly 4 SQL statements per call regardless of history
-  size; no N+1; lifetime monthly output capped at MAX_LIFETIME_MONTHS.
+  BOUNDED — a small fixed set of SQL statements per call regardless of
+  history size (6: event/rating/media/monthly aggregates, the genre
+  projection, and the daily-activity GROUP BY); no N+1; lifetime
+  monthly output capped at MAX_LIFETIME_MONTHS.
   PURE CORE — helpers are deterministic with no DB/network access.
   ISOLATION — the service receives user_id explicitly and queries only
   that user; presentation contains no IDs or ORM rows.
@@ -87,6 +89,7 @@ __all__ = [
     "TOP_GENRES",
     "aggregate_genres",
     "average_rating",
+    "build_daily_watch_counts",
     "calendar_year_bounds",
     "get_statistics",
     "hours_watched",
@@ -227,6 +230,70 @@ def media_type_distribution(counts):
     return out
 
 
+def build_daily_watch_counts(watched_dates):
+    """Aggregate watch events per calendar day into the heatmap series.
+
+    PURE helper (Feature #8 Phase 5): no DB access, no Flask, no
+    network, deterministic. ``watched_dates`` is an explicit iterable
+    whose items are either a calendar date-like value (date, or an
+    ISO 'YYYY-MM-DD' string) or a lightweight ``(date_like, count)``
+    pair — so the service can pass grouped SQL rows directly without
+    per-event materialization. A rewatch is simply another item for
+    its date; multiple events on one date count separately and then
+    collapse into that date's total. None/blank entries are skipped.
+
+    Returns ``[{"date": "YYYY-MM-DD", "count": n}, ...]`` containing
+    ONLY dates with at least one event, ascending by date, duplicates
+    never repeated. Empty input → [].
+    """
+    counts = {}
+    for item in watched_dates or []:
+        if item is None:
+            continue
+        raw, count = _coerce_daily_item(item)
+        if raw is None:
+            continue
+        label = _daily_label(raw)
+        if label is None:
+            continue
+        counts[label] = counts.get(label, 0) + int(count or 0)
+    return [
+        {"date": label, "count": counts[label]}
+        for label in sorted(counts)
+        if counts[label] > 0
+    ]
+
+
+def _coerce_daily_item(item):
+    """Normalize one helper input into (date_like, count).
+
+    Accepts a date-like value (count 1), an ISO date string (count 1),
+    or a sequence-like ``(date_like, count)`` pair — including a
+    lightweight SQL Row from the grouped projection (Row is tuple-like
+    but not a tuple subclass, so this is duck-typed, not isinstance'd).
+    Unusable input → (None, 0), which the caller skips.
+    """
+    if isinstance(item, str) or hasattr(item, "year"):
+        return item, 1
+    try:
+        if len(item) != 2:
+            return None, 0
+        return item[0], item[1]
+    except (TypeError, ValueError):
+        return None, 0
+
+
+def _daily_label(raw):
+    """Calendar date-like value → ISO 'YYYY-MM-DD' (None if unusable)."""
+    if isinstance(raw, str):
+        label = raw.strip()
+        return label or None
+    try:
+        return f"{raw.year:04d}-{raw.month:02d}-{raw.day:02d}"
+    except AttributeError:
+        return None
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Service
 # ════════════════════════════════════════════════════════════════════════════
@@ -279,7 +346,7 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
                    year=None, lifetime=False):
     """Compute the canonical statistics presentation model for a user.
 
-    Exactly 4 bounded SQL statements regardless of history size.
+    Exactly 6 bounded SQL statements regardless of history size.
     Returns a compact, deterministic, JSON-ready dict of aggregate
     statistics — never ORM rows, never database IDs. A user with no
     watch events in the window gets the full neutral zero-shape
@@ -389,6 +456,17 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
     for row in top_genres:
         row["titles"] = title_genres.get(row["name"], 0)
 
+    # ── Daily activity (see _daily_projection: 6th bounded query) ─────
+    # SQL-side GROUP BY watched_date (§8) — only the date column and a
+    # count are materialized, never per-event ORM rows. Rewatches are
+    # simply additional events for their date. Rows fold through the
+    # pure helper for the deterministic series and the derived
+    # active-day metrics. ``watched_date`` is NOT NULL by model
+    # constraint, so a HAVING-free grouped read is complete; the helper
+    # still skips any unexpected NULL defensively.
+    daily_activity = build_daily_watch_counts(
+        _daily_projection(user_id, lower, upper))
+
     return {
         "total_watch_events": total_events,
         "distinct_titles": distinct_titles,
@@ -408,7 +486,35 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         "monthly_watch_counts": monthly,
         "media_type_distribution": media_type_distribution(
             {t: c for t, c in type_rows}),
+        "daily_activity": daily_activity,
+        "active_watch_days": len(daily_activity),
+        "max_daily_watch_events": max(
+            (row["count"] for row in daily_activity), default=0),
     }
+
+
+def _daily_projection(user_id, lower, upper):
+    """Grouped (watched_date, event_count) rows for the daily series.
+
+    The sixth bounded statement: a single SQL-side GROUP BY over the
+    requested window (§8) — equivalent to
+    ``SELECT watched_date, COUNT(*) … GROUP BY watched_date
+    ORDER BY watched_date``. Returns lightweight grouped rows; no
+    per-event ORM hydration ever happens. Ascending date order comes
+    from ORDER BY; the helper re-sorts defensively for determinism.
+    """
+    return (
+        _windowed(
+            db.session.query(
+                DiaryEntry.watched_date,
+                func.count(DiaryEntry.id),
+            ).filter(DiaryEntry.user_id == user_id),
+            lower, upper,
+        )
+        .group_by(DiaryEntry.watched_date)
+        .order_by(DiaryEntry.watched_date.asc())
+        .all()
+    )
 
 
 def _genre_projection(user_id, lower, upper):

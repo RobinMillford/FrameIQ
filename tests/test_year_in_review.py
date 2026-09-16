@@ -481,7 +481,7 @@ def test_zero_additional_db_queries_beyond_service(user, app):
                 build_year_in_review(user.id, 2026)
         finally:
             event.remove(_db.engine, 'before_cursor_execute', _count)
-    assert len(statements) == 5   # the canonical service's 5 statements
+    assert len(statements) == 6   # the canonical service's 6 statements
 
 
 def test_invalid_year_never_touches_database(user, app):
