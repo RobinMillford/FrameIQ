@@ -762,7 +762,15 @@ def _apply_availability_bonus(candidates, user_region, selected_provider_ids):
 # ════════════════════════════════════════════════════════════════════════════
 
 def _classify(profile):
-    """(mode, reason) from the persisted profile — never recomputes."""
+    """(mode, reason) from the persisted profile — never recomputes.
+
+    Mode contract (Phase: false-personalization fix): 'full' is the ONLY
+    mode that may return personalized=True + items. 'hedged' and 'cold'
+    are below the audited personalization gate and MUST yield
+    personalized=False + items=[] — generic trending candidates are never
+    rendered as For You recommendations (existing generic homepage rails
+    already cover trending/popular content).
+    """
     if profile is None:
         return 'cold', 'no_taste_profile_yet'
     described = describe_profile(profile)
@@ -841,9 +849,22 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
     if cached is not None:
         return cached
 
-    if mode == 'cold':
-        result = {'personalized': False, 'mode': mode, 'confidence': 0.0,
-                  'reason_state': reason_state, 'items': []}
+    if mode != 'full':
+        # Below the audited personalization gate (missing/empty profile,
+        # zero signals, distinct titles < 5, or confidence < 0.4): never
+        # claim personalization and never return generic trending
+        # candidates — that is what produced the production bug where a
+        # one-signal user received 'Popular right now' cards labeled
+        # personalized=true. The homepage JS hides the whole For You
+        # section on personalized=false.
+        result = {
+            'personalized': False,
+            'mode': mode,
+            'confidence': (describe_profile(profile)['confidence']
+                           if profile is not None else 0.0),
+            'reason_state': reason_state,
+            'items': [],
+        }
         _cache_put(cache_key, result)
         return result
 
@@ -868,7 +889,10 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
     selected = apply_diversity(scored, limit=limit)
     items = [_item(c) for c in selected]
     result = {
-        'personalized': True,
+        # Only 'full' reaches this branch (the early return above handles
+        # cold/hedged) — personalized=True is therefore gate-verified, not
+        # asserted unconditionally.
+        'personalized': mode == 'full',
         'mode': mode,
         'confidence': describe_profile(profile)['confidence'],
         'reason_state': reason_state,

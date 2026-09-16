@@ -748,7 +748,7 @@
                         <option value="rating_high">Highest Rated</option>
                     </select>
                     {% if current_user.is_authenticated %}
-                    <a href="#write-review" class="write-review-btn">
+                    <a href="#write-review" id="write-review" class="write-review-btn">
                         <i class="fas fa-pen"></i> Write Review
                     </a>
                     {% endif %}
@@ -805,7 +805,7 @@
     <!-- Trailer Modal -->
         {% include "partials/modal_trailer.html" %}
 
-    <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
+    <!-- follow-button.js loads once via base.html -->
     <script src="{{ url_for('static', filename='js/tag-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/likes-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/media-comments.js') }}"></script>
@@ -903,26 +903,30 @@
             }
             
             
-            // Mobile menu
+            // Mobile menu (optional element — this page uses the new base
+            // chrome which has no #mobile-menu-button; its absence must not
+            // abort initialization of unrelated features like the review form)
             const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
-            mobileMenu.innerHTML = `
-                <div class="container mx-auto px-4 py-4">
-                    <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
-                        <a href="/movies" class="text-white hover:text-[var(--accent)]">Movies</a>
-                        <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
-                        <a href="/news" class="text-white hover:text-[var(--accent)]">News</a>
-                        <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
+            if (mobileMenuButton) {
+                const mobileMenu = document.createElement('div');
+                mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
+                mobileMenu.innerHTML = `
+                    <div class="container mx-auto px-4 py-4">
+                        <div class="flex flex-col space-y-4">
+                            <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
+                            <a href="/movies" class="text-white hover:text-[var(--accent)]">Movies</a>
+                            <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
+                            <a href="/news" class="text-white hover:text-[var(--accent)]">News</a>
+                            <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
+                        </div>
                     </div>
-                </div>
-            `;
-            document.body.appendChild(mobileMenu);
+                `;
+                document.body.appendChild(mobileMenu);
 
-            mobileMenuButton.addEventListener('click', () => {
-                mobileMenu.classList.toggle('hidden');
-            });
+                mobileMenuButton.addEventListener('click', () => {
+                    mobileMenu.classList.toggle('hidden');
+                });
+            }
 
             // Trending backdrops rotation (using server-provided data)
             // Note: This is handled by the server-side template, but we need to handle it in JavaScript
@@ -1133,386 +1137,36 @@
                 }
             }
 
-            // ===== USER REVIEWS LOADING & DISPLAY =====
-            
-            // Tab switching
-            const userReviewsTab = document.getElementById('user-reviews-tab');
-            const tmdbReviewsTab = document.getElementById('tmdb-reviews-tab');
-            const userReviewsContent = document.getElementById('user-reviews-content');
-            const tmdbReviewsContent = document.getElementById('tmdb-reviews-content');
-            
-            if (userReviewsTab && tmdbReviewsTab) {
-                userReviewsTab.addEventListener('click', () => {
-                    userReviewsTab.classList.add('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
-                    userReviewsTab.classList.remove('text-[var(--text-mid)]');
-                    tmdbReviewsTab.classList.remove('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
-                    tmdbReviewsTab.classList.add('text-[var(--text-mid)]');
-                    
-                    userReviewsContent.classList.remove('hidden');
-                    tmdbReviewsContent.classList.add('hidden');
-                });
-                
-                tmdbReviewsTab.addEventListener('click', () => {
-                    tmdbReviewsTab.classList.add('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
-                    tmdbReviewsTab.classList.remove('text-[var(--text-mid)]');
-                    userReviewsTab.classList.remove('text-[var(--accent)]', 'border-b-2', 'border-[var(--accent)]');
-                    userReviewsTab.classList.add('text-[var(--text-mid)]');
-                    
-                    tmdbReviewsContent.classList.remove('hidden');
-                    userReviewsContent.classList.add('hidden');
+            // Review-list extras (independent guarded initializers).
+            // Review loading/display is owned by review-manager.js, which
+            // targets #reviews-list; here we only keep the count badge in
+            // sync and initialize follow buttons on dynamically rendered
+            // review cards — without duplicating that fetch.
+            function initReviewFollowButtons() {
+                if (typeof FollowButton === 'undefined') return;
+                const scope = document.getElementById('reviews-list');
+                if (!scope) return;
+                scope.querySelectorAll('[data-follow-button]').forEach(button => {
+                    const userId = parseInt(button.dataset.userId, 10);
+                    if (userId) new FollowButton(userId, button);
                 });
             }
-            
-            // Load user reviews
-            async function loadUserReviews() {
-                const userReviewsGrid = document.getElementById('user-reviews-grid');
-                const userReviewCount = document.getElementById('user-review-count');
-                
-                try {
-                    const response = await fetch(`/api/media/movie/${MOVIE_DATA.id}/reviews`);
-                    const data = await response.json();
-                    
-                    if (response.ok && data.reviews) {
-                        userReviewCount.textContent = data.total;
-                        
-                        if (data.reviews.length === 0) {
-                            userReviewsGrid.innerHTML = `
-                                <div class="col-span-full text-center py-12">
-                                    <i class="fas fa-comment-slash text-4xl text-[var(--text-mid)] mb-4"></i>
-                                    <p class="text-[var(--text-mid)]">No user reviews yet. Be the first to review!</p>
-                                </div>
-                            `;
-                        } else {
-                            userReviewsGrid.innerHTML = data.reviews.map(review => createReviewCard(review)).join('');
-                            
-                            // Attach event listeners to like buttons
-                            attachLikeButtonListeners();
-                            
-                            // Attach comment listeners
-                            attachCommentListeners();
-                            
-                            // Initialize follow buttons
-                            if (typeof FollowButton !== 'undefined') {
-                                const newFollowButtons = userReviewsGrid.querySelectorAll('[data-follow-button]');
-                                newFollowButtons.forEach(button => {
-                                    const userId = parseInt(button.dataset.userId);
-                                    if (userId) {
-                                        new FollowButton(userId, button);
-                                    }
-                                });
-                            }
+
+            function showReviewsCount() {
+                const countBadge = document.getElementById('user-review-count');
+                if (!countBadge) return;
+                fetch(`/api/media/movie/${MOVIE_DATA.id}/reviews`)
+                    .then(r => (r.ok ? r.json() : null))
+                    .then(data => {
+                        if (data && typeof data.total !== 'undefined') {
+                            countBadge.textContent = data.total;
                         }
-                    }
-                } catch (error) {
-                    userReviewsGrid.innerHTML = `
-                        <div class="col-span-full text-center py-12">
-                            <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
-                            <p class="text-[var(--text-mid)]">Failed to load reviews. Please try again later.</p>
-                        </div>
-                    `;
-                }
-            }
-            
-            function createReviewCard(review) {
-                const isOwnReview = CURRENT_USER.isAuthenticated && review.user.id === CURRENT_USER.id;
-                const isLiked = review.is_liked_by_user || false;
-                
-                // Create star rating display
-                const fullStars = Math.floor(review.rating);
-                const hasHalfStar = review.rating % 1 >= 0.5;
-                let starsHTML = '';
-                
-                for (let i = 0; i < fullStars; i++) {
-                    starsHTML += '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>';
-                }
-                if (hasHalfStar) {
-                    starsHTML += '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><defs><linearGradient id="half"><stop offset="50%" stop-color="currentColor"/><stop offset="50%" stop-color="transparent"/></linearGradient></defs><path fill="url(#half)" d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>';
-                }
-                
-                const date = new Date(review.created_at);
-                const formattedDate = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-                
-                return `
-                    <div class="glass-effect rounded-lg p-6 review-card" data-review-id="${review.id}">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex items-center">
-                                <a href="/user/${review.user.id}">
-                                    <img src="${review.user.profile_picture || '/static/images/default_avatar.svg' + review.user.username.charAt(0)}" 
-                                         alt="${review.user.username}" 
-                                         class="w-10 h-10 rounded-full mr-4 hover:opacity-80 transition-opacity" 
-                                         onerror="this.src='/static/images/default_avatar.svg'">
-                                </a>
-                                <div>
-                                    <div class="flex items-center gap-2">
-                                        <a href="/user/${review.user.id}" class="hover:text-[var(--accent)] transition-colors">
-                                            <h3 class="font-semibold">${review.user.username}</h3>
-                                        </a>
-                                        ${!review.is_author_self ? `
-                                            <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-2 py-0.5 rounded transition-all" 
-                                                    data-follow-button 
-                                                    data-user-id="${review.user.id}" 
-                                                    data-following="${review.is_following_author}"
-                                                    data-authenticated="${CURRENT_USER.isAuthenticated}">
-                                                ${review.is_following_author ? '<i class="fas fa-user-check mr-1"></i> Following' : '<i class="fas fa-user-plus mr-1"></i> Follow'}
-                                            </button>
-                                        ` : ''}
-                                    </div>
-                                    <div class="flex items-center">
-                                        <div class="flex text-yellow-400 mr-2">
-                                            ${starsHTML}
-                                        </div>
-                                        <span class="text-yellow-400 font-semibold mr-2">${review.rating.toFixed(1)}</span>
-                                        <span class="text-[var(--text-mid)] text-sm">${formattedDate}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            ${isOwnReview ? `
-                                <div class="flex space-x-2">
-                                    <button class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
-                                        <i class="fas fa-edit"></i> Edit
-                                    </button>
-                                    <button class="text-red-400 hover:text-red-300 text-sm">
-                                        <i class="fas fa-trash"></i> Delete
-                                    </button>
-                                </div>
-                            ` : ''}
-                        </div>
-                        ${review.contains_spoilers ? '<div class="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded px-3 py-1 text-yellow-400 text-sm mb-3 inline-block"><i class="fas fa-exclamation-triangle mr-1"></i> Contains Spoilers</div>' : ''}
-                        <p class="text-gray-300 mb-4">${review.content || '<em class="text-[var(--text-mid)]">No written review</em>'}</p>
-                        <div class="flex items-center space-x-6 pt-4 border-t border-gray-700">
-                            <button class="like-button flex items-center space-x-2 text-[var(--text-mid)] hover:text-red-400 transition-colors ${isLiked ? 'text-red-400' : ''}" 
-                                    data-review-id="${review.id}" 
-                                    data-liked="${isLiked}">
-                                <i class="fas fa-heart"></i>
-                                <span class="like-count">${review.likes_count}</span>
-                            </button>
-                            <button class="comment-toggle flex items-center space-x-2 text-[var(--text-mid)] hover:text-[var(--accent)] transition-colors" 
-                                    data-review-id="${review.id}">
-                                <i class="fas fa-comment"></i>
-                                <span>${review.comments_count} Comments</span>
-                            </button>
-                        </div>
-                        
-                        <!-- Comments Section (Hidden by default) -->
-                        <div id="comments-section-${review.id}" class="hidden mt-6 pt-4 border-t border-gray-800">
-                            <div class="mb-6">
-                                <textarea id="comment-input-${review.id}" 
-                                          class="w-full  border border-gray-700 rounded-lg p-3 text-sm text-gray-200 focus:outline-none focus:border-[var(--accent)] transition-colors" 
-                                          placeholder="Write a comment..." rows="2"></textarea>
-                                <div class="flex justify-end mt-2">
-                                    <button class="submit-comment bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors" 
-                                            data-review-id="${review.id}">Post Comment</button>
-                                </div>
-                            </div>
-                            <div id="comments-list-${review.id}" class="space-y-4">
-                                <!-- Comments will be loaded here -->
-                                <div class="text-center py-4">
-                                    <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-[var(--accent)] rounded-full" role="status"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            function attachLikeButtonListeners() {
-                const likeButtons = document.querySelectorAll('.like-button');
-                
-                likeButtons.forEach(button => {
-                    button.addEventListener('click', async function() {
-                        if (!CURRENT_USER.isAuthenticated) {
-                            alert('Please login to like reviews');
-                            return;
-                        }
-                        
-                        const reviewId = this.dataset.reviewId;
-                        const isLiked = this.dataset.liked === 'true';
-                        
-                        try {
-                            const response = await fetch(`/api/reviews/${reviewId}/like`, {
-                                method: 'POST'
-                            });
-                            
-                            const data = await response.json();
-                            
-                            if (response.ok) {
-                                // Update button state
-                                this.dataset.liked = data.is_liked;
-                                const likeCount = this.querySelector('.like-count');
-                                likeCount.textContent = data.likes_count;
-                                
-                                if (data.is_liked) {
-                                    this.classList.add('text-red-400');
-                                } else {
-                                    this.classList.remove('text-red-400');
-                                }
-                            }
-                        } catch (error) {
-                        }
-                    });
-                });
+                    })
+                    .catch(() => {});
             }
 
-            // ===== THREADED COMMENTS LOGIC =====
-
-            function attachCommentListeners() {
-                // Toggle comment section
-                document.querySelectorAll('.comment-toggle').forEach(button => {
-                    button.addEventListener('click', function() {
-                        const reviewId = this.dataset.reviewId;
-                        const section = document.getElementById(`comments-section-${reviewId}`);
-                        const isHidden = section.classList.contains('hidden');
-                        
-                        if (isHidden) {
-                            section.classList.remove('hidden');
-                            loadComments(reviewId);
-                        } else {
-                            section.classList.add('hidden');
-                        }
-                    });
-                });
-
-                // Submit top-level comment
-                document.querySelectorAll('.submit-comment').forEach(button => {
-                    button.addEventListener('click', function() {
-                        const reviewId = this.dataset.reviewId;
-                        const input = document.getElementById(`comment-input-${reviewId}`);
-                        submitComment(reviewId, null, input.value);
-                    });
-                });
-            }
-
-            async function loadComments(reviewId) {
-                const list = document.getElementById(`comments-list-${reviewId}`);
-                
-                try {
-                    const response = await fetch(`/api/reviews/${reviewId}/comments`);
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        if (data.comments.length === 0) {
-                            list.innerHTML = '<p class="text-[var(--text-mid)] text-sm text-center py-2">No comments yet. Start the conversation!</p>';
-                        } else {
-                            list.innerHTML = renderCommentTree(data.comments, reviewId);
-                            attachReplyListeners(reviewId);
-                        }
-                    }
-                } catch (error) {
-                    list.innerHTML = '<p class="text-red-400 text-sm text-center py-2">Failed to load comments.</p>';
-                }
-            }
-
-            function renderCommentTree(comments, reviewId, parentId = null, depth = 0) {
-                const filtered = comments.filter(c => c.parent_id === parentId);
-                if (filtered.length === 0) return '';
-
-                return filtered.map(comment => {
-                    const date = new Date(comment.created_at);
-                    const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    
-                    return `
-                        <div class="comment-item ${depth > 0 ? 'ml-6 mt-4 border-l-2 border-gray-800 pl-4' : ''}" id="comment-${comment.id}">
-                            <div class="flex items-start space-x-3">
-                                <img src="${comment.user.profile_picture || '/static/images/default_avatar.svg' + comment.user.username.charAt(0)}" 
-                                     class="w-7 h-7 rounded-full" onerror="this.src='/static/images/default_avatar.svg'">
-                                <div class="flex-1">
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-[var(--accent)] text-xs font-semibold">${comment.user.username}</span>
-                                        <span class="text-[var(--text-mid)] text-[10px]">${formattedDate}</span>
-                                    </div>
-                                    <p class="text-gray-300 text-sm mt-1">${comment.content}</p>
-                                    <div class="flex items-center space-x-3 mt-2">
-                                        <button class="reply-toggle text-[var(--text-mid)] hover:text-[var(--accent)] text-[10px] font-medium transition-colors" 
-                                                data-comment-id="${comment.id}" data-review-id="${reviewId}">
-                                            Reply
-                                        </button>
-                                    </div>
-                                    <!-- Inline Reply Form -->
-                                    <div id="reply-form-${comment.id}" class="hidden mt-3">
-                                        <textarea class="reply-input-${comment.id} w-full  border border-gray-700 rounded p-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--accent)]" 
-                                                  placeholder="Reply to ${comment.user.username}..." rows="2"></textarea>
-                                        <div class="flex space-x-2 mt-2">
-                                            <button class="submit-reply bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-[10px] px-3 py-1 rounded" 
-                                                    data-comment-id="${comment.id}" data-review-id="${reviewId}">Post Reply</button>
-                                            <button class="cancel-reply text-[var(--text-mid)] hover:text-gray-300 text-[10px] px-3 py-1" 
-                                                    data-comment-id="${comment.id}">Cancel</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="replies-container">
-                                ${renderCommentTree(comments, reviewId, comment.id, depth + 1)}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            function attachReplyListeners(reviewId) {
-                // Show reply form
-                document.querySelectorAll(`#comments-list-${reviewId} .reply-toggle`).forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        {% if not current_user.is_authenticated %}
-                        alert('Please login to reply');
-                        return;
-                        {% endif %}
-                        const commentId = this.dataset.commentId;
-                        document.getElementById(`reply-form-${commentId}`).classList.remove('hidden');
-                    });
-                });
-
-                // Cancel reply
-                document.querySelectorAll(`#comments-list-${reviewId} .cancel-reply`).forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const commentId = this.dataset.commentId;
-                        document.getElementById(`reply-form-${commentId}`).classList.add('hidden');
-                    });
-                });
-
-                // Submit reply
-                document.querySelectorAll(`#comments-list-${reviewId} .submit-reply`).forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const commentId = this.dataset.commentId;
-                        const reviewId = this.dataset.reviewId;
-                        const content = document.querySelector(`.reply-input-${commentId}`).value;
-                        submitComment(reviewId, commentId, content);
-                    });
-                });
-            }
-
-            async function submitComment(reviewId, parentId, content) {
-                if (!content.trim()) return;
-
-                {% if not current_user.is_authenticated %}
-                alert('Please login to comment');
-                return;
-                {% endif %}
-
-                try {
-                    const response = await fetch(`/api/reviews/${reviewId}/comments`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content, parent_id: parentId })
-                    });
-
-                    if (response.ok) {
-                        // Refresh comments list
-                        loadComments(reviewId);
-                        
-                        // Clear input
-                        if (!parentId) {
-                            document.getElementById(`comment-input-${reviewId}`).value = '';
-                        }
-                    } else {
-                        const data = await response.json();
-                        alert(data.error || 'Failed to post comment');
-                    }
-                } catch (error) {
-                }
-            }
-            
-            // Load reviews on page load
-            loadUserReviews();
+            showReviewsCount();
+            document.addEventListener('reviews:rendered', initReviewFollowButtons);
         });
         
         // Diary Modal Functions

@@ -169,6 +169,9 @@ class ReviewManager {
                 }
 
                 this.hasMore = data.has_next;
+                // Notify page-level initializers (e.g. follow buttons on
+                // dynamically rendered review cards) that cards exist now.
+                document.dispatchEvent(new CustomEvent('reviews:rendered'));
             } else {
                 container.innerHTML = '<div class="error-message">Failed to load reviews</div>';
             }
@@ -283,15 +286,15 @@ class ReviewManager {
         const rewatchBadge = review.rewatch ? '<span class="rewatch-badge">🔁 Rewatch</span>' : '';
         const spoilerWarning = review.contains_spoilers ? '<span class="spoiler-badge">⚠️ Spoilers</span>' : '';
 
-        // User section
+        // User section (all user-controlled fields escaped — see escapeHtml)
         const userSection = `
             <div class="review-header">
                 <div class="review-user-info">
-                    <img src="${review.user.profile_picture || '/static/images/default-avatar.png'}" 
-                         alt="${review.user.username}" 
+                    <img src="${this.escapeHtml(review.user.profile_picture || '/static/images/default-avatar.png')}"
+                         alt="${this.escapeHtml(review.user.username)}"
                          class="review-user-avatar">
                     <div class="review-user-details">
-                        <a href="/user/${review.user.id}" class="review-username">${review.user.username}</a>
+                        <a href="/user/${review.user.id}" class="review-username">${this.escapeHtml(review.user.username)}</a>
                         <span class="review-date">${formattedDate}${isEdited ? ' (edited)' : ''}</span>
                     </div>
                 </div>
@@ -304,9 +307,9 @@ class ReviewManager {
             <div class="review-media-info">
                 <a href="/${review.media.media_type}/${review.media.id}">
                     <img src="https://image.tmdb.org/t/p/w92${review.media.poster_path}" 
-                         alt="${review.media.title}" 
+                         alt="${this.escapeHtml(review.media.title)}"
                          class="review-media-poster">
-                    <span class="review-media-title">${review.media.title}</span>
+                    <span class="review-media-title">${this.escapeHtml(review.media.title)}</span>
                 </a>
             </div>
         ` : '';
