@@ -65,4 +65,10 @@ def api_for_you():
                      current_user.id, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
-    return jsonify(result)
+    # Per-user personalized payload: never allow browser/CDN caching to
+    # replay a stale personalized response to a now-ineligible user (the
+    # engine's in-process cache is profile-version keyed; this closes the
+    # HTTP-layer path).
+    response = jsonify(result)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
