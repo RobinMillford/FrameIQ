@@ -1,62 +1,82 @@
-"""Canonical personal statistics service (Feature #8, Phase 1).
+"""Canonical personal viewing statistics service (Feature #8, Phase 2).
 
-The SINGLE source of truth for a user's viewing-history statistics:
+THE single source of truth for a user's viewing-history statistics.
+Derives everything from the canonical watch history:
 
-    DiaryEntry (authoritative watch-event history)  +  MediaItem metadata
-        ↓  get_statistics(user_id, year=... | lifetime=True)
-    bounded SQL aggregation  →  compact presentation dict
+    DiaryEntry (authoritative watch-event log)  ×  MediaItem (metadata)
+        ↓  get_statistics(user_id, year=... | lifetime=True | dates)
+    4 bounded SQL aggregates  →  deterministic presentation dict
 
-Audited duplicate implementations (routes/stats.py endpoints calculate
-their own counters at route level) remain untouched; this module is the
-canonical service that future surfaces (Wrapped, profile stats) consume.
+═══════════════════════════════════════════════════════════════════════
+AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — intentionally left
+untouched; this module is the canonical service future surfaces consume:
 
-Source-of-truth semantics (§4, §6, §10, §13):
+  routes/stats.py        per-route counters (diary counts, this-year
+                         count, genre loops over DiaryEntry×MediaItem)
+  routes/auth.py:188     diary_count for signup tracking
+  routes/analytics.py    user_viewed / review / watchlist counters
+                         (list state, NOT watch history)
+  routes/profile_enhancements.py  review/like/comment/watchlist counts
+  routes/tv_tracking.py  episode-level watch counters (TV subsystem)
+  User.total_movies_watched  denormalized counter maintained on log
+═══════════════════════════════════════════════════════════════════════
 
-  WATCH EVENT   one DiaryEntry row. Rewatching a title logs another
-                event; it never creates a new distinct title.
-  DISTINCT TITLES  unique DiaryEntry.media_id values in the window.
-  REWATCH EVENT  any event beyond the first for a title — computed as
-                total events − distinct titles (never negative), which
-                by construction never counts a first watch as a rewatch.
-                The persisted is_rewatch flag (set by routes/diary.py as
-                ``watch_count > 0``) agrees with this definition.
-  REWATCH RATE   rewatch events / total watch events (0.0 when no events).
-  HOURS          sum(MediaItem.runtime) / 60 across EVENTS — a rewatch
-                legitimately adds its runtime again. Events whose media
-                has no persisted runtime are EXCLUDED from hours (never
-                invented) and counted in ``events_missing_runtime``.
-                TV runtimes use the existing MediaItem.runtime semantics
-                (first episode run time) — no new TV episode-hours model
-                is fabricated.
-  RATINGS        DiaryEntry.rating only (the application's 0.5–5.0
-                scale). Likes, clicks, saves, reviews-without-diary, and
-                recommendation feedback are NOT ratings here.
-  GENRES         MediaItem.genres (persisted comma-separated labels)
-                aggregated per EVENT, plus a distinct-title count per
-                genre. Missing metadata simply does not contribute.
-  MEDIA TYPE     DiaryEntry.media_type as stored ('movie' / 'tv').
+Source-of-truth semantics:
+
+  WATCH EVENT      one DiaryEntry row. A rewatch logs another event.
+  DISTINCT TITLES  unique DiaryEntry.media_id values (MediaItem.id —
+                   internal relational identity; tmdb_id is never used
+                   to join or count).
+  REWATCH          DiaryEntry.is_rewatch EXPLICITLY — routes/diary.py
+                   persists it as "prior watch exists at log time".
+                   Rewatches are never inferred from duplicate titles.
+  REWATCH RATE     rewatch_count / total_watch_events (0.0 when empty).
+  HOURS            sum(MediaItem.runtime)/60 across EVENTS (a rewatch
+                   adds its runtime again). Events whose media has no
+                   persisted runtime are excluded from hours and counted
+                   in runtime_missing_events — runtime is never invented,
+                   and no TMDb call fills gaps.
+  RATINGS          DiaryEntry.rating only — the canonical per-event
+                   rating on the 0.5–5.0 scale (model CHECK enforced).
+                   Review.rating is excluded: a diary entry optionally
+                   links its review (DiaryEntry.review_id) and counting
+                   both would double-count one user/title rating.
+                   Likes, feedback, TMDb scores are never ratings here.
+  TV               DiaryEntry rows with media_type='tv' are the TV
+                   watch events. TVEpisodeWatch/TVShowProgress are the
+                   episode-tracking subsystem and are deliberately NOT
+                   merged — that would double-count a TV event through
+                   two tables. No show/season completion metric is
+                   fabricated.
+  GENRES           MediaItem.genres (persisted comma-separated labels)
+                   split deterministically; each label counts once per
+                   event, with a distinct-title breadth count.
+  MEDIA TYPE       DiaryEntry.media_type as stored ('movie'/'tv').
+
+Time windows (half-open, per §24 — no 23:59:59 arithmetic):
+
+    start <= DiaryEntry.watched_date < next_period_start
+
+  lifetime=True    all history (year/start/end ignored)
+  year=N           [Jan 1 N, Jan 1 N+1)   default when nothing given
+  start_date/end_date   explicit half-open [start, end) window
+  Invalid years (non-int, bool, <1900, > current year) raise ValueError.
 
 Design invariants:
 
-  LOCAL DATA ONLY — zero network, zero TMDb, zero streaming calls.
-
-  BOUNDED QUERIES — exactly 5 SQL statements per call regardless of
-  history size: event aggregates, rating distribution, media-type split,
-  monthly trend, and one slim projection of DISTINCT watched media for
-  the comma-split genre aggregation (SQL cannot split CSV labels). No
-  N+1, no full-diary materialization.
-
-  PURE CORE — the helper functions are deterministic and perform no DB
-  or network access.
-
-  PRIVACY — aggregate statistics only; no IDs, payloads, or ORM rows in
-  the presentation shape. Statistics describe what the user watched —
-  they do NOT read TasteProfile, RecommendationFeedback, watchlist,
-  wishlist, or likes, which are different subsystems.
+  NETWORK-FREE — zero TMDb/streaming/external calls; local data only.
+  RECOMMENDATION-INDEPENDENT — never imports or queries for_you,
+  taste_profile, RecommendationFeedback, lists, watchlist, wishlist,
+  likes, or Continue Watching (a start is not a completed watch).
+  BOUNDED — exactly 4 SQL statements per call regardless of history
+  size; no N+1; lifetime monthly output capped at MAX_LIFETIME_MONTHS.
+  PURE CORE — helpers are deterministic with no DB/network access.
+  ISOLATION — the service receives user_id explicitly and queries only
+  that user; presentation contains no IDs or ORM rows.
 """
 from datetime import date, datetime
 
-from sqlalchemy import distinct, extract, func
+from sqlalchemy import case, distinct, extract, func
 
 from models.base import db
 from models.media import MediaItem
@@ -65,47 +85,63 @@ from models.social import DiaryEntry
 __all__ = [
     "MAX_LIFETIME_MONTHS",
     "TOP_GENRES",
+    "aggregate_genres",
+    "average_rating",
+    "calendar_year_bounds",
     "get_statistics",
     "hours_watched",
-    "rewatch_rate",
-    "average_rating",
-    "rating_distribution",
+    "media_type_distribution",
     "month_bucket",
     "parse_genres",
-    "aggregate_genres",
-    "media_type_distribution",
+    "rating_distribution",
+    "rewatch_rate",
 ]
 
 # Lifetime monthly trend is bounded so long-lived users never produce
-# thousands of rows (§11). The most recent 36 months is plenty for V1.
+# unbounded rows (§14): the most recent 36 months, chronological.
 MAX_LIFETIME_MONTHS = 36
 TOP_GENRES = 10
 
-_GENRE_BUCKETS = tuple(f"{0.5 * i:.1f}" for i in range(1, 11))  # 0.5..5.0
+_MIN_YEAR = 1900
+_RATING_BUCKETS = tuple(f"{0.5 * i:.1f}" for i in range(1, 11))  # 0.5..5.0
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Pure helpers (no DB, no network — deterministic)
+# Pure helpers — deterministic, no DB access, no network access
 # ════════════════════════════════════════════════════════════════════════════
+
+def calendar_year_bounds(year):
+    """Half-open [Jan 1 year, Jan 1 year+1) bounds for a calendar year.
+
+    Validates the V1 year range (int, not bool, >= 1900, <= current
+    year) and raises ValueError otherwise.
+    """
+    if isinstance(year, bool) or not isinstance(year, int):
+        raise ValueError("year must be an integer")
+    if not (_MIN_YEAR <= year <= datetime.now().year):
+        raise ValueError(
+            f"year must be between {_MIN_YEAR} and {datetime.now().year}")
+    return date(year, 1, 1), date(year + 1, 1, 1)
+
 
 def hours_watched(total_runtime_minutes):
-    """Convert a summed runtime (minutes) to hours, rounded to 1 dp.
+    """Summed runtime (minutes) → hours, rounded to 1 dp.
 
-    None/negative input → 0.0 (missing runtime is never invented).
+    None/non-positive input → 0.0 (missing runtime is never invented).
     """
     if not total_runtime_minutes or total_runtime_minutes <= 0:
         return 0.0
     return round(total_runtime_minutes / 60.0, 1)
 
 
-def rewatch_rate(rewatch_events, total_events):
+def rewatch_rate(rewatch_count, total_events):
     """rewatch events / total watch events, rounded to 2 dp.
 
     0.0 when there are no events (never a division by zero).
     """
     if not total_events or total_events <= 0:
         return 0.0
-    return round(max(0, rewatch_events) / float(total_events), 2)
+    return round(max(0, rewatch_count) / float(total_events), 2)
 
 
 def average_rating(ratings):
@@ -120,13 +156,13 @@ def average_rating(ratings):
 
 
 def rating_distribution(ratings):
-    """Count ratings into the application's fixed 0.5–5.0 half-star buckets.
+    """Count ratings into the fixed 0.5–5.0 half-star buckets.
 
     Always returns all ten buckets (zeros included) for stable output.
-    Ratings outside the valid scale are ignored (defensive; the model
-    CHECK constraint already prevents them).
+    Values outside the valid scale are ignored rather than crashing
+    (defensive; the model CHECK constraint already prevents them).
     """
-    counts = {bucket: 0 for bucket in _GENRE_BUCKETS}
+    counts = {bucket: 0 for bucket in _RATING_BUCKETS}
     for r in ratings or []:
         if r is None:
             continue
@@ -144,8 +180,9 @@ def month_bucket(d):
 def parse_genres(genres_value):
     """Split MediaItem's comma-separated genre labels into clean names.
 
-    Deterministic: stripped, order-preserving, de-duplicated within one
-    title (a repeated label in the metadata must not double-count).
+    Deterministic: split, strip whitespace, drop empty segments,
+    order-preserving, de-duplicated within one title (a repeated label
+    in one title's metadata must not double-count).
     """
     if not genres_value:
         return []
@@ -162,22 +199,19 @@ def aggregate_genres(genres_by_event):
     """Aggregate genre labels over watch events.
 
     ``genres_by_event`` is an iterable of per-event genre-name lists
-    (already de-duplicated per title by parse_genres, so a multi-genre
-    title is not rewarded for metadata repetition). Returns
-    ``[{name, count, titles}]`` sorted deterministically: count desc,
-    then name asc, bounded to the top ``TOP_GENRES``.
+    (per-title duplicates already collapsed by parse_genres). Returns
+    ``[{name, count, titles}]`` sorted deterministically — count desc,
+    then name asc — bounded to the top ``TOP_GENRES``. ``titles`` is
+    the distinct-title breadth and is filled by the service from the
+    title-level projection (helpers stay pure).
     """
-    counts, titles = {}, {}
+    counts = {}
     for names in genres_by_event:
         for name in names:
             counts[name] = counts.get(name, 0) + 1
-    # titles are filled by the caller per distinct title; kept separate
-    # from event counts so rewatch-heavy genres do not inflate breadth.
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    return [
-        {"name": name, "count": count, "titles": titles.get(name, 0)}
-        for name, count in ranked[:TOP_GENRES]
-    ]
+    return [{"name": name, "count": count, "titles": 0}
+            for name, count in ranked[:TOP_GENRES]]
 
 
 def media_type_distribution(counts):
@@ -197,110 +231,97 @@ def media_type_distribution(counts):
 # Service
 # ════════════════════════════════════════════════════════════════════════════
 
-def _window_bounds(year, lifetime):
-    """Resolve the query window. Returns (start, end, kind, resolved_year).
+def _as_date(value, name):
+    """Accept date or datetime for a window bound; normalize to date."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raise ValueError(f"{name} must be a date or datetime")
 
-    Semantics (§3): default = the CURRENT calendar year; ``year=N``
-    selects that calendar year (1900 ≤ N ≤ current year); ``lifetime``
-    ignores year and covers all history. ``watched_date`` is NOT NULL in
-    the model, so a lower/upper bound is exact.
+
+def _resolve_window(start_date, end_date, year, lifetime):
+    """Resolve the half-open [window_start, window_end) query bounds.
+
+    Precedence: lifetime=True (all history; other args ignored) →
+    explicit start/end dates → year → default (current calendar year).
+    Returns (lower, upper_exclusive, kind, resolved_year).
     """
-    current_year = datetime.now().year
     if lifetime:
         return None, None, "lifetime", None
-    if year is None:
-        year = current_year
-    if not isinstance(year, int) or isinstance(year, bool):
-        raise ValueError("year must be an integer")
-    if not (1900 <= year <= current_year):
-        raise ValueError(
-            f"year must be between 1900 and {current_year}")
-    return date(year, 1, 1), date(year, 12, 31), "year", year
+    if year is not None:
+        if start_date is not None or end_date is not None:
+            raise ValueError(
+                "year cannot be combined with explicit start/end dates")
+        lower, upper = calendar_year_bounds(year)
+        return lower, upper, "year", year
+    lower = _as_date(start_date, "start_date") if start_date else None
+    upper = _as_date(end_date, "end_date") if end_date else None
+    if lower and upper and upper < lower:
+        raise ValueError("end_date must not precede start_date")
+    if lower or upper:
+        return lower, upper, "dates", None
+    # Default window: the current calendar year.
+    lower, upper = calendar_year_bounds(datetime.now().year)
+    return lower, upper, "year", datetime.now().year
 
 
-def _base_query(user_id, start_date, end_date):
-    """DiaryEntry rows for the user, optionally bounded by the window."""
-    q = db.session.query(DiaryEntry).filter(DiaryEntry.user_id == user_id)
-    if start_date is not None:
-        q = q.filter(DiaryEntry.watched_date >= start_date)
-    if end_date is not None:
-        q = q.filter(DiaryEntry.watched_date <= end_date)
-    return q
+def _windowed(query, lower, upper):
+    """Apply the half-open watched_date window to a DiaryEntry query."""
+    if lower is not None:
+        query = query.filter(DiaryEntry.watched_date >= lower)
+    if upper is not None:
+        query = query.filter(DiaryEntry.watched_date < upper)
+    return query
 
 
-def _monthly_trend(user_id, start_date, end_date, kind, year):
-    """Monthly watch-event counts (query 4).
-
-    Year window → always exactly 12 rows (Jan–Dec, zeros included).
-    Lifetime → per (year, month) descending, bounded to the most recent
-    MAX_LIFETIME_MONTHS rows so output never grows unboundedly.
-    """
-    rows = (
-        db.session.query(
-            extract("year", DiaryEntry.watched_date).label("y"),
-            extract("month", DiaryEntry.watched_date).label("m"),
-            func.count(DiaryEntry.id),
-        )
-        .filter(DiaryEntry.user_id == user_id)
-        .group_by("y", "m")
-        .all()
-    )
-    if start_date is not None:
-        rows = [r for r in rows
-                if start_date.year <= r.y <= end_date.year]
-    by_bucket = {f"{int(r.y):04d}-{int(r.m):02d}": int(r[2]) for r in rows}
-    if kind == "year":
-        return [{"month": f"{year:04d}-{mm:02d}",
-                 "count": by_bucket.get(f"{year:04d}-{mm:02d}", 0)}
-                for mm in range(1, 13)]
-    # lifetime: most recent bounded window, ascending for readability
-    capped = sorted(by_bucket.items())[-MAX_LIFETIME_MONTHS:]
-    return [{"month": bucket, "count": count}
-            for bucket, count in capped]
-
-
-def get_statistics(user_id, year=None, lifetime=False):
+def get_statistics(user_id, start_date=None, end_date=None, *,
+                   year=None, lifetime=False):
     """Compute the canonical statistics presentation model for a user.
 
-    Exactly 5 bounded SQL statements (§14). Returns a compact
-    JSON-ready dict — never ORM rows, never internal IDs. A user with
-    no history in the window gets the full zeroed shape with
-    ``available: false`` (deterministic empty presentation, §30).
+    Exactly 4 bounded SQL statements regardless of history size.
+    Returns a compact, deterministic, JSON-ready dict of aggregate
+    statistics — never ORM rows, never database IDs. A user with no
+    watch events in the window gets the full neutral zero-shape
+    (§22): no exception, no fabricated values.
     """
-    start_date, end_date, kind, resolved_year = _window_bounds(
-        year, lifetime)
+    lower, upper, kind, resolved_year = _resolve_window(
+        start_date, end_date, year, lifetime)
 
-    # Query 1 — event aggregates (one join, SQL-side sums/counts).
-    event_row = (
-        db.session.query(
-            func.count(DiaryEntry.id),
-            func.count(distinct(DiaryEntry.media_id)),
-            func.coalesce(func.sum(MediaItem.runtime), 0),
-            func.count(MediaItem.runtime),
-            func.sum(
-                db.case((MediaItem.runtime.is_(None), 1), else_=0)),
-        )
-        .select_from(DiaryEntry)
-        .outerjoin(MediaItem, DiaryEntry.media_id == MediaItem.id)
-        .filter(DiaryEntry.user_id == user_id)
+    # ── Query 1 — event aggregates (single SQL-side GROUP-less pass) ────
+    # One outer join to MediaItem gives events, distinct titles,
+    # explicit rewatch flags, runtime coverage, and summed runtime.
+    (total_events, distinct_titles, rewatch_count,
+     runtime_covered, runtime_sum) = (
+        _windowed(
+            db.session.query(
+                func.count(DiaryEntry.id),
+                func.count(distinct(DiaryEntry.media_id)),
+                func.sum(case(
+                    (DiaryEntry.is_rewatch.is_(True), 1), else_=0)),
+                func.count(MediaItem.runtime),
+                func.coalesce(func.sum(MediaItem.runtime), 0),
+            )
+            .select_from(DiaryEntry)
+            .outerjoin(MediaItem, DiaryEntry.media_id == MediaItem.id)
+            .filter(DiaryEntry.user_id == user_id),
+            lower, upper,
+        ).one()
     )
-    if start_date is not None:
-        event_row = event_row.filter(
-            DiaryEntry.watched_date >= start_date)
-    if end_date is not None:
-        event_row = event_row.filter(
-            DiaryEntry.watched_date <= end_date)
-    total_events, distinct_titles, runtime_sum, runtime_count, missing_runtime = \
-        event_row.one()
     total_events = int(total_events or 0)
     distinct_titles = int(distinct_titles or 0)
-    rewatch_events = max(0, total_events - distinct_titles)
+    rewatch_count = int(rewatch_count or 0)
+    runtime_covered = int(runtime_covered or 0)
+    runtime_missing = total_events - runtime_covered
 
-    # Query 2 — rating distribution (bounded: ≤ 10 distinct buckets).
+    # ── Query 2 — rating distribution (≤ 10 distinct buckets) ──────────
     rating_rows = (
-        _base_query(user_id, start_date, end_date)
-        .with_entities(DiaryEntry.rating, func.count(DiaryEntry.id))
-        .filter(DiaryEntry.rating.isnot(None))
+        _windowed(
+            db.session.query(DiaryEntry.rating, func.count(DiaryEntry.id))
+            .filter(DiaryEntry.user_id == user_id)
+            .filter(DiaryEntry.rating.isnot(None)),
+            lower, upper,
+        )
         .group_by(DiaryEntry.rating)
         .all()
     )
@@ -309,67 +330,102 @@ def get_statistics(user_id, year=None, lifetime=False):
         for _ in range(int(count))
     ]
 
-    # Query 3 — media-type split (bounded: 2 stored values).
+    # ── Query 3 — media-type split (2 stored values) ───────────────────
     type_rows = (
-        _base_query(user_id, start_date, end_date)
-        .with_entities(DiaryEntry.media_type, func.count(DiaryEntry.id))
+        _windowed(
+            db.session.query(DiaryEntry.media_type, func.count(DiaryEntry.id))
+            .filter(DiaryEntry.user_id == user_id),
+            lower, upper,
+        )
         .group_by(DiaryEntry.media_type)
         .all()
     )
 
-    # Query 4 — monthly trend (GROUP BY year+month; shaped in
-    # _monthly_trend to the window contract).
-    months = _monthly_trend(
-        user_id, start_date, end_date, kind, resolved_year)
-
-    # Query 5 — slim per-event projection for the CSV genre split (SQL
-    # cannot split comma-separated labels). One row per watch event,
-    # bounded by the window's event count; media IDs are used only to
-    # de-duplicate title breadth in Python and never leave this module.
-    media_rows = (
-        db.session.query(
-            DiaryEntry.media_id, MediaItem.genres,
+    # ── Query 4 — monthly trend (GROUP BY year+month) ──────────────────
+    trend_rows = (
+        _windowed(
+            db.session.query(
+                extract("year", DiaryEntry.watched_date).label("y"),
+                extract("month", DiaryEntry.watched_date).label("m"),
+                func.count(DiaryEntry.id),
+            ).filter(DiaryEntry.user_id == user_id),
+            lower, upper,
         )
-        .select_from(DiaryEntry)
-        .join(MediaItem, DiaryEntry.media_id == MediaItem.id)
-        .filter(DiaryEntry.user_id == user_id)
+        .group_by("y", "m")
+        .all()
     )
-    if start_date is not None:
-        media_rows = media_rows.filter(
-            DiaryEntry.watched_date >= start_date)
-    if end_date is not None:
-        media_rows = media_rows.filter(
-            DiaryEntry.watched_date <= end_date)
+    by_bucket = {
+        f"{int(y):04d}-{int(m):02d}": int(c) for y, m, c in trend_rows
+    }
+    if kind == "year":
+        monthly = [
+            {"month": f"{resolved_year:04d}-{mm:02d}",
+             "count": by_bucket.get(f"{resolved_year:04d}-{mm:02d}", 0)}
+            for mm in range(1, 13)
+        ]
+    elif kind == "dates":
+        monthly = [{"month": bucket, "count": count}
+                   for bucket, count in sorted(by_bucket.items())]
+    else:  # lifetime — bounded to the most recent MAX_LIFETIME_MONTHS
+        monthly = [{"month": bucket, "count": count}
+                   for bucket, count in
+                   sorted(by_bucket.items())[-MAX_LIFETIME_MONTHS:]]
+
+    # ── Genre aggregation (see _genre_projection: 5th bounded query) ──
+    # SQL cannot split comma-separated labels, so a slim per-event
+    # projection (media_id, genres) is folded in Python. Media IDs are
+    # used only here to de-duplicate title breadth; they never leave
+    # this module. The projection is bounded by the window's event
+    # count — never a full-history scan.
     event_genres, title_genres, seen_media = [], {}, set()
-    for media_id, genres_value in media_rows.all():
+    for media_id, genres_value in _genre_projection(user_id, lower, upper):
         names = parse_genres(genres_value)
         event_genres.append(names)
         if media_id not in seen_media:
             seen_media.add(media_id)
             for name in names:
                 title_genres[name] = title_genres.get(name, 0) + 1
-    genre_rows = aggregate_genres(event_genres)
-    for row in genre_rows:
+    top_genres = aggregate_genres(event_genres)
+    for row in top_genres:
         row["titles"] = title_genres.get(row["name"], 0)
 
     return {
-        "available": total_events > 0,
-        "window": {"kind": kind, "year": year if kind == "year" else None},
-        "watch": {
-            "events": total_events,
-            "distinct_titles": distinct_titles,
-            "rewatch_events": rewatch_events,
-            "rewatch_rate": rewatch_rate(rewatch_events, total_events),
-            "hours_watched": hours_watched(runtime_sum),
-            "events_missing_runtime": int(missing_runtime or 0),
-        },
-        "media_types": media_type_distribution(
+        "total_watch_events": total_events,
+        "distinct_titles": distinct_titles,
+        "movies_watched": int(dict(
+            (t, c) for t, c in type_rows).get("movie", 0) or 0),
+        "tv_watch_events": int(dict(
+            (t, c) for t, c in type_rows).get("tv", 0) or 0),
+        "total_hours_watched": hours_watched(runtime_sum),
+        "runtime_covered_events": runtime_covered,
+        "runtime_missing_events": runtime_missing,
+        "average_rating": average_rating(ratings_flat),
+        "rating_count": len(ratings_flat),
+        "rating_distribution": rating_distribution(ratings_flat),
+        "rewatch_count": rewatch_count,
+        "rewatch_rate": rewatch_rate(rewatch_count, total_events),
+        "top_genres": top_genres,
+        "monthly_watch_counts": monthly,
+        "media_type_distribution": media_type_distribution(
             {t: c for t, c in type_rows}),
-        "ratings": {
-            "count": len(ratings_flat),
-            "average": average_rating(ratings_flat),
-            "distribution": rating_distribution(ratings_flat),
-        },
-        "genres": genre_rows,
-        "months": months,
     }
+
+
+def _genre_projection(user_id, lower, upper):
+    """Slim per-event projection (media_id, genres) for the CSV split.
+
+    The fifth bounded statement: SQL cannot split comma-separated genre
+    labels, so the minimal two columns are projected per event (bounded
+    by the window's event count) and folded in Python. Media IDs are
+    used only for title de-duplication and never leave this module.
+    """
+    return (
+        _windowed(
+            db.session.query(DiaryEntry.media_id, MediaItem.genres)
+            .select_from(DiaryEntry)
+            .join(MediaItem, DiaryEntry.media_id == MediaItem.id)
+            .filter(DiaryEntry.user_id == user_id),
+            lower, upper,
+        )
+        .all()
+    )

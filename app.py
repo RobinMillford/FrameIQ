@@ -54,6 +54,7 @@ from routes.seo import seo_bp
 
 # ── Routes: private taste profile (Taste DNA) ─────────────────────────────────
 from routes.taste_profile import taste_profile_bp
+from routes.statistics import statistics_bp
 
 # ── Routes: stats, TV, watch ──────────────────────────────────────────────────
 from routes.stats import stats_bp
@@ -193,6 +194,7 @@ def create_app() -> Flask:
         # Stats, TV, watch, notifications, smart lists
         stats_bp, tv_tracking, watch_bp, notifications_bp, smart_lists_bp,
         recommendation_feedback_bp, for_you_bp, taste_profile_bp,
+        statistics_bp,
         # AI
         agent_chat,
     ]
