@@ -5,7 +5,7 @@ Derives everything from the canonical watch history:
 
     DiaryEntry (authoritative watch-event log)  ×  MediaItem (metadata)
         ↓  get_statistics(user_id, year=... | lifetime=True | dates)
-    6 bounded SQL aggregates  →  deterministic presentation dict
+    7 bounded SQL aggregates  →  deterministic presentation dict
 
 ═══════════════════════════════════════════════════════════════════════
 AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — intentionally left
@@ -69,9 +69,10 @@ Design invariants:
   taste_profile, RecommendationFeedback, lists, watchlist, wishlist,
   likes, or Continue Watching (a start is not a completed watch).
   BOUNDED — a small fixed set of SQL statements per call regardless of
-  history size (6: event/rating/media/monthly aggregates, the genre
-  projection, and the daily-activity GROUP BY); no N+1; lifetime
-  monthly output capped at MAX_LIFETIME_MONTHS.
+  history size (7: event/rating/media/monthly aggregates, the genre
+  projection, the daily-activity GROUP BY, and the director
+  aggregation); no N+1; lifetime monthly output capped at
+  MAX_LIFETIME_MONTHS.
   PURE CORE — helpers are deterministic with no DB/network access.
   ISOLATION — the service receives user_id explicitly and queries only
   that user; presentation contains no IDs or ORM rows.
@@ -81,15 +82,18 @@ from datetime import date, datetime
 from sqlalchemy import case, distinct, extract, func
 
 from models.base import db
+from models.director import Director, MediaDirector
 from models.media import MediaItem
 from models.social import DiaryEntry
 
 __all__ = [
     "MAX_LIFETIME_MONTHS",
     "TOP_GENRES",
+    "TOP_PEOPLE_LIMIT",
     "aggregate_genres",
     "average_rating",
     "build_daily_watch_counts",
+    "build_people_statistics",
     "calendar_year_bounds",
     "get_statistics",
     "hours_watched",
@@ -104,6 +108,11 @@ __all__ = [
 # unbounded rows (§14): the most recent 36 months, chronological.
 MAX_LIFETIME_MONTHS = 36
 TOP_GENRES = 10
+
+# People statistics (Feature #8 Phase 6) return a fixed bounded top-N
+# per category (directors, actors), applied after deterministic
+# aggregation — never a full lifetime people dump (§9).
+TOP_PEOPLE_LIMIT = 10
 
 _MIN_YEAR = 1900
 _RATING_BUCKETS = tuple(f"{0.5 * i:.1f}" for i in range(1, 11))  # 0.5..5.0
@@ -294,6 +303,52 @@ def _daily_label(raw):
         return None
 
 
+def build_people_statistics(rows, limit=TOP_PEOPLE_LIMIT):
+    """Aggregate grouped person rows into the bounded people series.
+
+    PURE helper (Feature #8 Phase 6): no DB access, no Flask, no
+    network, deterministic. ``rows`` is an explicit iterable of
+    ``(name, watch_event_count, distinct_title_count)`` scalars —
+    exactly what the service's grouped SQL returns — so the helper
+    folds lightweight rows without ever seeing ORM graphs.
+
+    Semantics (§5–§9): events are never deduplicated at the event
+    level (a title watched 3× contributes 3 events to each attached
+    person); distinct titles are unique MediaItem identities. Output
+    is deterministic: watch_event_count DESC, distinct_title_count
+    DESC, then name ASC (case-consistent), capped to ``limit``.
+    Co-attached people each receive the full contribution — counts are
+    never divided or normalized across collaborators.
+
+    Returns ``[{name, watch_event_count, distinct_title_count}, ...]``;
+    empty input → []. Names render verbatim (the caller owns privacy
+    trimming — rows carry no IDs by construction).
+    """
+    events, titles = {}, {}
+    for row in rows or []:
+        try:
+            name, event_count, title_count = row
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(name, str) or not name:
+            continue  # never fabricate "Unknown" people (§17)
+        events[name] = events.get(name, 0) + int(event_count or 0)
+        titles[name] = titles.get(name, 0) + int(title_count or 0)
+    ranked = sorted(
+        events,
+        key=lambda name: (
+            -events[name], -titles[name], name.casefold(), name),
+    )
+    return [
+        {
+            "name": name,
+            "watch_event_count": events[name],
+            "distinct_title_count": titles[name],
+        }
+        for name in ranked[:limit]
+    ]
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Service
 # ════════════════════════════════════════════════════════════════════════════
@@ -467,6 +522,20 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
     daily_activity = build_daily_watch_counts(
         _daily_projection(user_id, lower, upper))
 
+    # ── People: directors (see _director_rows: 7th bounded query) ──────
+    # Local-persistence aggregation only (§2): DiaryEntry → MediaItem →
+    # MediaDirector → Director, grouped in SQL by director identity +
+    # name. A director contributes only when all three links exist;
+    # missing enrichment degrades to no contribution — never a
+    # fabricated "Unknown Director". Actors are deliberately an empty
+    # list: this repository has NO persisted actor/cast relationship
+    # (audit: models/ contains Director/MediaDirector only), and §3
+    # forbids inventing one or scraping TMDb at request time. The field
+    # is documented as unavailable until actor persistence exists.
+    directors = build_people_statistics(
+        _director_rows(user_id, lower, upper))
+    actors = []  # no persisted actor relationship exists (§3/§16)
+
     return {
         "total_watch_events": total_events,
         "distinct_titles": distinct_titles,
@@ -490,6 +559,8 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         "active_watch_days": len(daily_activity),
         "max_daily_watch_events": max(
             (row["count"] for row in daily_activity), default=0),
+        "directors": directors,
+        "actors": actors,
     }
 
 
@@ -513,6 +584,37 @@ def _daily_projection(user_id, lower, upper):
         )
         .group_by(DiaryEntry.watched_date)
         .order_by(DiaryEntry.watched_date.asc())
+        .all()
+    )
+
+
+def _director_rows(user_id, lower, upper):
+    """Grouped (name, event_count, distinct_titles) director scalars.
+
+    The seventh bounded statement (§15): DiaryEntry JOIN MediaItem JOIN
+    MediaDirector JOIN Director, filtered by the canonical user +
+    watched_date window, grouped by director identity and display
+    name, with COUNT(*) as watch events and COUNT(DISTINCT media id)
+    as distinct titles. Grouping by ``Director.tmdb_person_id`` keeps a
+    renamed person single; including ``Director.name`` in the GROUP BY
+    satisfies SQL strictness for the selected label. Lightweight
+    scalar rows only — no ORM hydration, no per-person queries.
+    """
+    return (
+        _windowed(
+            db.session.query(
+                Director.name,
+                func.count(DiaryEntry.id),
+                func.count(distinct(MediaItem.id)),
+            )
+            .select_from(DiaryEntry)
+            .join(MediaItem, DiaryEntry.media_id == MediaItem.id)
+            .join(MediaDirector, MediaDirector.media_item_id == MediaItem.id)
+            .join(Director, MediaDirector.director_id == Director.id)
+            .filter(DiaryEntry.user_id == user_id)
+            .group_by(Director.tmdb_person_id, Director.name),
+            lower, upper,
+        )
         .all()
     )
 

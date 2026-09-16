@@ -277,6 +277,7 @@ def test_renderer_reads_only_canonical_service_fields():
         'rating_distribution', 'rewatch_count', 'rewatch_rate',
         'top_genres', 'monthly_watch_counts', 'media_type_distribution',
         'daily_activity', 'active_watch_days', 'max_daily_watch_events',
+        'directors', 'actors',
     }
     unknown = read_fields - canonical
     assert not unknown, f'renderer reads non-canonical fields: {unknown}'

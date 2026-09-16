@@ -213,6 +213,7 @@ def test_output_contract_exact_names(user):
         "rating_distribution", "rewatch_count", "rewatch_rate",
         "top_genres", "monthly_watch_counts", "media_type_distribution",
         "daily_activity", "active_watch_days", "max_daily_watch_events",
+        "directors", "actors",
     }
 
 
@@ -655,7 +656,7 @@ def test_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) <= 6, statements
+    assert len(statements) <= 7, statements
 
 
 def test_no_n_plus_one_across_many_titles(user):
@@ -921,7 +922,7 @@ def test_bounded_query_count_with_daily_activity(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) == 6, statements
+    assert len(statements) == 7, statements
 
 
 def test_daily_helper_pure_and_graceful():
@@ -1032,3 +1033,417 @@ def test_ui_heatmap_template_targets_exist():
     for target in ("statistics-heatmap", "statistics-heatmap-summary",
                    "statistics-heatmap-block"):
         assert target in js and f'id="{target}"' in template
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Feature #8 Phase 6 — actor/director statistics (§2–§36)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _director(name, tmdb_person_id):
+    from models import Director, MediaDirector  # noqa: F401 (re-exported)
+    d = Director(tmdb_person_id=tmdb_person_id, name=name)
+    db.session.add(d)
+    db.session.commit()
+    return d
+
+
+def _attach_director(media, director):
+    from models import MediaDirector
+    link = MediaDirector(media_item_id=media.id, director_id=director.id)
+    db.session.add(link)
+    db.session.commit()
+    return link
+
+
+# ── §30 canonical example: A×2 + B×1 both by X; C by Y ─────────────────────
+
+def test_director_event_and_title_counts(user):
+    x = _director("Director X", 101)
+    y = _director("Director Y", 102)
+    a = _media("Movie A", runtime=90)
+    b = _media("Movie B", runtime=90)
+    c = _media("Movie C", runtime=90)
+    _attach_director(a, x)
+    _attach_director(b, x)
+    _attach_director(c, y)
+    _diary(user, a, date(2026, 1, 1))
+    _diary(user, a, date(2026, 2, 1))     # rewatch of A
+    _diary(user, b, date(2026, 3, 1))
+    _diary(user, c, date(2026, 4, 1))
+    s = get_statistics(user.id, year=2026)
+    by_name = {p["name"]: p for p in s["directors"]}
+    assert by_name["Director X"]["watch_event_count"] == 3
+    assert by_name["Director X"]["distinct_title_count"] == 2
+    assert by_name["Director Y"]["watch_event_count"] == 1
+    assert by_name["Director Y"]["distinct_title_count"] == 1
+
+
+def test_two_directors_sharing_one_title_each_get_full_contribution(user):
+    x = _director("Co X", 201)
+    z = _director("Co Z", 202)
+    a = _media("Co Movie", runtime=90)
+    _attach_director(a, x)
+    _attach_director(a, z)
+    _diary(user, a, date(2026, 1, 1))
+    _diary(user, a, date(2026, 2, 1))
+    s = get_statistics(user.id, year=2026)
+    by_name = {p["name"]: p for p in s["directors"]}
+    # §30: co-directors are never divided — each gets the full events.
+    assert by_name["Co X"] == {"name": "Co X", "watch_event_count": 2,
+                               "distinct_title_count": 1}
+    assert by_name["Co Z"] == {"name": "Co Z", "watch_event_count": 2,
+                               "distinct_title_count": 1}
+
+
+def test_director_ordering_events_then_titles_then_name(user):
+    d1 = _director("Aaa", 301)   # 3 events, 1 title
+    d2 = _director("Bbb", 302)   # 3 events, 2 titles
+    d3 = _director("Ccc", 303)   # 2 events, 1 title
+    m1 = _media("O1", runtime=90)
+    m2 = _media("O2", runtime=90)
+    m3 = _media("O3", runtime=90)
+    _attach_director(m1, d1)
+    _attach_director(m2, d2)
+    _attach_director(m3, d2)
+    _attach_director(m3, d3)
+    _diary(user, m1, date(2026, 1, 1))
+    _diary(user, m1, date(2026, 2, 1))
+    _diary(user, m1, date(2026, 3, 1))
+    _diary(user, m2, date(2026, 4, 1))
+    _diary(user, m3, date(2026, 5, 1))
+    _diary(user, m3, date(2026, 6, 1))
+    s = get_statistics(user.id, year=2026)
+    names = [p["name"] for p in s["directors"]]
+    # events DESC → titles DESC (breaks the 3/3 event tie) → name ASC
+    assert names == ["Bbb", "Aaa", "Ccc"]
+
+
+def test_director_name_tiebreak_case_consistent(user):
+    lo = _director("beta", 401)
+    hi = _director("Alpha", 402)
+    m1 = _media("T1", runtime=90)
+    m2 = _media("T2", runtime=90)
+    _attach_director(m1, lo)
+    _attach_director(m2, hi)
+    _diary(user, m1, date(2026, 1, 1))
+    _diary(user, m2, date(2026, 1, 2))
+    s = get_statistics(user.id, year=2026)
+    names = [p["name"] for p in s["directors"]]
+    assert names == ["Alpha", "beta"]   # casefold tie-break: A < b
+
+
+def test_director_top_n_cap(user):
+    for i in range(12):
+        d = _director(f"Cap {i:02d}", 500 + i)
+        m = _media(f"Cap Movie {i}", runtime=90)
+        _attach_director(m, d)
+        _diary(user, m, date(2026, 1, 1))
+    s = get_statistics(user.id, year=2026)
+    assert len(s["directors"]) == 10     # TOP_PEOPLE_LIMIT
+    assert all(p["watch_event_count"] == 1 for p in s["directors"])
+    names = [p["name"] for p in s["directors"]]
+    assert names == sorted(names, key=str.casefold)   # name tie-break
+
+
+def test_director_empty_data(user):
+    s = get_statistics(user.id, year=2026)
+    assert s["directors"] == []
+    assert s["actors"] == []
+
+
+def test_mediaitem_without_director_fabricates_nothing(user):
+    m = _media("No Director", runtime=90)
+    _diary(user, m, date(2026, 1, 1))
+    s = get_statistics(user.id, year=2026)
+    assert s["directors"] == []                       # no fabrication
+    assert s["total_watch_events"] == 1               # event still counts
+    assert s["distinct_titles"] == 1
+
+
+def test_orphan_diaryentry_contributes_no_person(user):
+    from models.base import db as _db
+    m = _media("Doomed Dir", runtime=90)
+    d = _director("Ghost Director", 601)
+    _attach_director(m, d)
+    e = _diary(user, m, date(2026, 1, 1))
+    _db.session.execute(
+        DiaryEntry.__table__.delete().where(DiaryEntry.id == e.id))
+    _db.session.execute(
+        DiaryEntry.__table__.insert().values(
+            user_id=user.id, media_id=999999999, media_type="movie",
+            watched_date=date(2026, 1, 1)))
+    _db.session.commit()
+    s = get_statistics(user.id, year=2026)
+    assert s["directors"] == []                       # no person invented
+    assert s["total_watch_events"] == 1               # global stats intact
+
+
+def test_director_window_filtering_and_lifetime(user):
+    d = _director("Window", 701)
+    m = _media("Window Movie", runtime=90)
+    _attach_director(m, d)
+    _diary(user, m, date(2025, 12, 31))
+    _diary(user, m, date(2026, 1, 1))
+    s2026 = get_statistics(user.id, year=2026)
+    assert s2026["directors"][0]["watch_event_count"] == 1
+    life = get_statistics(user.id, lifetime=True)
+    assert life["directors"][0]["watch_event_count"] == 2
+    assert life["directors"][0]["distinct_title_count"] == 1
+
+
+def test_director_watched_date_authoritative(user):
+    from sqlalchemy import text as _text
+    from models.base import db as _db
+    d = _director("Date Truth Dir", 801)
+    m = _media("Date Truth Movie", runtime=90)
+    _attach_director(m, d)
+    _diary(user, m, date(2026, 3, 15))
+    _db.session.execute(_text(
+        "UPDATE diary_entry SET created_at = '2019-01-01 00:00:00' "
+        "WHERE user_id = :uid"), {"uid": user.id})
+    _db.session.commit()
+    s2026 = get_statistics(user.id, year=2026)
+    assert s2026["directors"][0]["watch_event_count"] == 1
+    s2019 = get_statistics(user.id, year=2019)
+    assert s2019["directors"] == []       # created_at never consulted
+
+
+def test_actors_absent_until_persistence_exists(user):
+    # §3/§16/§19: no persisted actor relationship exists in this
+    # repository; the field is honestly empty, never fabricated.
+    m = _media("Any Movie", runtime=90)
+    _diary(user, m, date(2026, 1, 1))
+    s = get_statistics(user.id, year=2026)
+    assert s["actors"] == []
+
+
+def test_people_stats_no_tmdb_or_network(user):
+    import socket
+    from unittest.mock import patch
+
+    def _blocked(*args, **kwargs):
+        raise AssertionError("network access attempted")
+
+    d = _director("Net Dir", 901)
+    m = _media("Net Movie", runtime=90)
+    _attach_director(m, d)
+    _diary(user, m, date(2026, 1, 1))
+    with patch.object(socket.socket, "__init__", _blocked), \
+         patch.object(socket.socket, "connect", _blocked), \
+         patch.object(socket.socket, "connect_ex", _blocked):
+        s = get_statistics(user.id, year=2026)
+    assert s["directors"][0]["name"] == "Net Dir"
+
+
+def test_people_stats_no_recommendation_imports():
+    import api.statistics as stats_mod
+    source = open(stats_mod.__file__, encoding="utf-8").read()
+    for name in ("for_you", "taste_profile", "recommendation_feedback",
+                 "smart_lists", "cinebot", "agents", "tmdb"):
+        assert f"import {name}" not in source
+        assert f"from {name}" not in source
+
+
+def test_people_stats_no_ids_in_response(user):
+    d = _director("Privacy Dir", 1001)
+    m = _media("Privacy Movie", runtime=90)
+    _attach_director(m, d)
+    _diary(user, m, date(2026, 1, 1))
+    s = get_statistics(user.id, year=2026)
+    import json as _json
+    for row in s["directors"]:
+        assert set(row.keys()) == {"name", "watch_event_count",
+                                   "distinct_title_count"}
+
+    # Structural privacy check (naive substring matching trips on plain
+    # counts like "4"): walk the whole payload and assert no key looks
+    # like an identifier.
+    def _walk_keys(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield key
+                yield from _walk_keys(value)
+        elif isinstance(node, list):
+            for item in node:
+                yield from _walk_keys(item)
+
+    for key in _walk_keys(s):
+        assert "id" not in key.lower()
+    assert "tmdb_person_id" not in _json.dumps(s)
+
+
+def test_people_stats_deterministic(user):
+    x = _director("Det X", 1101)
+    y = _director("Det Y", 1102)
+    m1 = _media("Det M1", runtime=90)
+    m2 = _media("Det M2", runtime=90)
+    _attach_director(m1, x)
+    _attach_director(m2, x)
+    _attach_director(m2, y)
+    _diary(user, m1, date(2026, 1, 1))
+    _diary(user, m2, date(2026, 2, 1))
+    import json as _json
+    first = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    second = _json.dumps(get_statistics(user.id, year=2026), sort_keys=True)
+    assert first == second
+
+
+def test_people_stats_do_not_alter_global_statistics(user):
+    # §29 invariant: people aggregation is supplementary. Compare the
+    # global fields before/after attaching director enrichment.
+    m = _media("Invariant Movie", runtime=90)
+    _diary(user, m, date(2026, 1, 1))
+    _diary(user, m, date(2026, 2, 1), is_rewatch=True)
+    before = get_statistics(user.id, year=2026)
+    d = _director("Invariant Dir", 1201)
+    _attach_director(m, d)
+    after = get_statistics(user.id, year=2026)
+    for key in ("total_watch_events", "distinct_titles", "movies_watched",
+                "tv_watch_events", "daily_activity",
+                "monthly_watch_counts", "total_hours_watched",
+                "rewatch_count", "rewatch_rate", "average_rating",
+                "rating_count", "active_watch_days",
+                "max_daily_watch_events"):
+        assert before[key] == after[key], key
+    assert after["directors"][0]["watch_event_count"] == 2
+
+
+def test_people_stats_helper_pure():
+    from api.statistics import build_people_statistics as build
+    assert build(None) == []
+    assert build([]) == []
+    # event-level dedup never happens: repeated rows accumulate.
+    # X → (2+1 events, 1+1 titles) = (3, 2), tying with Y (3, 2);
+    # the name tie-break (ASC) then ranks X before Y.
+    rows = [("X", 2, 1), ("X", 1, 1), ("Y", 3, 2)]
+    assert build(rows) == [
+        {"name": "X", "watch_event_count": 3, "distinct_title_count": 2},
+        {"name": "Y", "watch_event_count": 3, "distinct_title_count": 2},
+    ]
+    # custom limit
+    many = [(f"P{i:02d}", 10 - i, 1) for i in range(12)]
+    assert len(build(many, limit=5)) == 5
+    # unusable rows skipped, no fabricated names
+    assert build([(None, 1, 1), ("", 1, 1), (42, 1, 1), ("Ok", 1, 1)]) == [
+        {"name": "Ok", "watch_event_count": 1, "distinct_title_count": 1}]
+
+
+def test_people_stats_bounded_query_count(user):
+    # §14/§20/§26: exactly 7 statements (6 prior + 1 director GROUP BY);
+    # the count must not scale with people/titles/events.
+    from sqlalchemy import event as sa_event
+    d = _director("Q Dir", 1301)
+    m = _media("Q Dir Movie", runtime=90)
+    _attach_director(m, d)
+    for day in range(1, 6):
+        _diary(user, m, date(2026, 9, day))
+    uid = user.id
+    statements = []
+
+    def _record(conn, cursor, statement, *args, **kwargs):
+        statements.append(statement)
+
+    sa_event.listen(db.engine, "before_cursor_execute", _record)
+    try:
+        get_statistics(uid, year=2026)
+    finally:
+        sa_event.remove(db.engine, "before_cursor_execute", _record)
+    assert len(statements) == 7, statements
+
+
+def test_people_stats_no_n_plus_one_across_many_directors(user):
+    d1 = _director("N+1 A", 1401)
+    d2 = _director("N+1 B", 1402)
+    for i in range(12):
+        m = _media(f"N+1 Dir Movie {i}", runtime=90)
+        _attach_director(m, d1 if i % 2 == 0 else d2)
+        _diary(user, m, date(2026, 9, 1))
+    s = get_statistics(user.id, year=2026)
+    assert len(s["directors"]) == 2
+    assert {p["watch_event_count"] for p in s["directors"]} == {6}
+
+
+# ── API surface ──────────────────────────────────────────────────────────────
+
+def test_api_exposes_people_fields(auth_client, stats_user, app):
+    with app.app_context():
+        d = _director("API Dir", 1501)
+        m = _media("API Dir Movie", runtime=90)
+        _attach_director(m, d)
+        _diary(stats_user, m, date(2026, 5, 5))
+        data = auth_client.get("/api/statistics?year=2026").get_json()
+    assert data["directors"] == [
+        {"name": "API Dir", "watch_event_count": 1,
+         "distinct_title_count": 1}]
+    assert data["actors"] == []
+
+
+def test_api_people_session_isolation(auth_client, stats_user, app):
+    # Another user's directors must never leak into this session.
+    from models import User, db as _db
+    username = "otherstat" + uuid.uuid4().hex[:6]
+    other = User(username=username, email=f"{username}@example.com",
+                 email_verified=True)
+    other.set_password("TestPass1")
+    _db.session.add(other)
+    _db.session.commit()
+    with app.app_context():
+        d = _director("Other Dir", 1601)
+        m = _media("Other Dir Movie", runtime=90)
+        _attach_director(m, d)
+        _diary(other, m, date(2026, 5, 5))
+        data = auth_client.get("/api/statistics?year=2026").get_json()
+    assert data["directors"] == []
+
+
+def test_api_people_existing_fields_unchanged(auth_client, stats_user):
+    data = auth_client.get("/api/statistics?year=2026").get_json()
+    for key in ("total_watch_events", "distinct_titles", "movies_watched",
+                "tv_watch_events", "total_hours_watched",
+                "runtime_covered_events", "runtime_missing_events",
+                "average_rating", "rating_count", "rating_distribution",
+                "rewatch_count", "rewatch_rate", "top_genres",
+                "monthly_watch_counts", "daily_activity",
+                "active_watch_days", "max_daily_watch_events",
+                "media_type_distribution"):
+        assert key in data
+
+
+# ── Profile UI guards ────────────────────────────────────────────────────────
+
+def test_ui_people_renders_from_api_no_recompute():
+    js = _statistics_js_code()
+    assert "directors" in js and "actors" in js
+    # No people math in the browser: it renders server rows verbatim.
+    assert "watch_event_count" in js
+    assert "reduce(" not in js
+
+
+def test_ui_people_textcontent_only():
+    js = _statistics_js_code()
+    assert "textContent" in js
+    assert "innerHTML" not in js
+    assert "insertAdjacentHTML" not in js
+
+
+def test_ui_people_accessibility_and_neutral_wording():
+    js = _statistics_js_code()
+    assert "aria-label" in js
+    blob = js.lower()
+    for word in ("favorite", "best", "top-rated", "most talented"):
+        assert word not in blob
+
+
+def test_ui_people_template_targets_exist():
+    js = _statistics_js_code()
+    template = open("templates/profile.html", encoding="utf-8").read()
+    for target in ("statistics-directors", "statistics-directors-block",
+                   "statistics-actors", "statistics-actors-block",
+                   "statistics-actors-empty"):
+        assert target in js and f'id="{target}"' in template
+
+
+def test_ui_people_one_fetch_still():
+    js = _statistics_js_code()
+    assert js.count("fetch(url,") == 1
+    assert "setInterval" not in js

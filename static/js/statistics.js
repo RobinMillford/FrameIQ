@@ -130,6 +130,35 @@
         show('statistics-monthly-block');
     }
 
+    function renderPeople(listId, blockId, people) {
+        // Neutral, descriptive rows only: "N watches \u00b7 M titles".
+        // Names are untrusted display text — textContent everywhere;
+        // every row's full fact is its accessible content (§23).
+        var list = el(listId);
+        list.textContent = '';
+        people.forEach(function (person) {
+            var li = document.createElement('li');
+            li.className = 'flex items-baseline justify-between gap-2';
+            var name = document.createElement('span');
+            name.className = 'text-sm text-[var(--text-hi)] truncate';
+            name.textContent = person.name;
+            var counts = document.createElement('span');
+            counts.className =
+                'font-slate text-[10px] text-[var(--text-low)] shrink-0';
+            var watches = person.watch_event_count;
+            var titles = person.distinct_title_count;
+            counts.textContent = watches +
+                (watches === 1 ? ' watch \u00b7 ' : ' watches \u00b7 ') +
+                titles + (titles === 1 ? ' title' : ' titles');
+            li.setAttribute('aria-label', person.name + ': ' +
+                counts.textContent);
+            li.appendChild(name);
+            li.appendChild(counts);
+            list.appendChild(li);
+        });
+        show(blockId);
+    }
+
     function renderHeatmap(dailyActivity, activeDays, maxEvents) {
         var grid = el('statistics-heatmap');
         grid.textContent = '';
@@ -187,6 +216,23 @@
                 summary.daily_activity.length) {
             renderHeatmap(summary.daily_activity,
                 summary.active_watch_days, summary.max_daily_watch_events);
+        }
+
+        if (Array.isArray(summary.directors) && summary.directors.length) {
+            renderPeople('statistics-directors',
+                'statistics-directors-block', summary.directors);
+        }
+
+        if (Array.isArray(summary.actors) && summary.actors.length) {
+            renderPeople('statistics-actors',
+                'statistics-actors-block', summary.actors);
+        } else {
+            // §24: no actor persistence exists yet — neutral note, no
+            // fabricated people and no placeholder actors wording.
+            // §24: when persistence is absent the API returns [] and the
+            // UI shows the neutral block below — never a fake name.
+            show('statistics-actors-empty');
+            show('statistics-actors-block');
         }
 
         var media = summary.media_type_distribution || {};
