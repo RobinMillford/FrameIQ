@@ -222,6 +222,99 @@
                             </div>
                         </div>
 
+                        <!-- Personal statistics (canonical service presentation;
+                             rendered client-side from GET /api/statistics —
+                             the server-rendered shell carries NO private values) -->
+                        <div id="statistics-section"
+                             class="bg-gray-700 rounded-lg p-6 mb-6 hidden">
+                            <div class="flex justify-between items-center mb-4 gap-4">
+                                <h3 class="text-xl font-semibold text-[var(--accent-hi)]" style="font-family: var(--font-display)">Statistics</h3>
+                                <label class="font-slate text-xs text-[var(--text-low)] flex items-center gap-2">
+                                    <span>Period</span>
+                                    <select id="statistics-period"
+                                            aria-label="Statistics period"
+                                            class="bg-black/40 border border-gray-600 rounded px-2 py-1 text-xs text-[var(--text-hi)]">
+                                        <option value="current">This year</option>
+                                        <option value="lifetime">Lifetime</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <!-- Loading skeleton (bounded; replaced on settle) -->
+                            <div id="statistics-loading" aria-hidden="true">
+                                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
+                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
+                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
+                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
+                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse hidden md:block"></div>
+                                </div>
+                                <div class="h-4 w-2/3 bg-gray-600/50 rounded animate-pulse mb-2"></div>
+                                <div class="h-4 w-1/2 bg-gray-600/50 rounded animate-pulse"></div>
+                            </div>
+
+                            <!-- Error (neutral; the rest of the profile is untouched) -->
+                            <div id="statistics-error" class="hidden">
+                                <p class="text-sm text-[var(--text-mid)]">Statistics are unavailable right now.</p>
+                            </div>
+
+                            <!-- Empty state (no watch history) -->
+                            <div id="statistics-empty" class="hidden">
+                                <p class="text-sm text-[var(--text-hi)]">No viewing history yet.</p>
+                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">Start logging movies and shows to see your statistics.</p>
+                            </div>
+
+                            <!-- Content -->
+                            <div id="statistics-content" class="hidden">
+                                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center mb-5">
+                                    <div class="bg-black/30 rounded-lg p-3">
+                                        <div id="statistics-watch-events" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
+                                        <div class="text-[10px] font-slate text-[var(--text-low)]">WATCH EVENTS</div>
+                                    </div>
+                                    <div class="bg-black/30 rounded-lg p-3">
+                                        <div id="statistics-distinct-titles" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
+                                        <div class="text-[10px] font-slate text-[var(--text-low)]">TITLES</div>
+                                    </div>
+                                    <div class="bg-black/30 rounded-lg p-3">
+                                        <div id="statistics-hours" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
+                                        <div class="text-[10px] font-slate text-[var(--text-low)]">HOURS WATCHED</div>
+                                    </div>
+                                    <div class="bg-black/30 rounded-lg p-3">
+                                        <div id="statistics-average-rating" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">—</div>
+                                        <div class="text-[10px] font-slate text-[var(--text-low)]">AVG RATING</div>
+                                    </div>
+                                    <div class="bg-black/30 rounded-lg p-3">
+                                        <div id="statistics-rewatches" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
+                                        <div class="text-[10px] font-slate text-[var(--text-low)]">REWATCHES</div>
+                                    </div>
+                                </div>
+
+                                <dl class="space-y-4">
+                                    <div id="statistics-genres-block">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Top genres</dt>
+                                        <dd><ul id="statistics-genres" class="flex flex-wrap gap-2"></ul></dd>
+                                    </div>
+                                    <div id="statistics-ratings-block">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Rating distribution</dt>
+                                        <dd><ul id="statistics-rating-distribution" class="space-y-1"></ul></dd>
+                                        <p id="statistics-rating-count" class="font-slate text-[10px] text-[var(--text-low)] mt-1"></p>
+                                    </div>
+                                    <div id="statistics-monthly-block">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Monthly activity</dt>
+                                        <dd><ul id="statistics-monthly" class="space-y-1"></ul></dd>
+                                    </div>
+                                    <div id="statistics-media-block">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Movie vs TV</dt>
+                                        <dd><p id="statistics-media" class="text-sm text-[var(--text-hi)]"></p></dd>
+                                    </div>
+                                    <div id="statistics-runtime-block">
+                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime coverage</dt>
+                                        <dd><p id="statistics-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
+
                         <!-- Quick stats strip -->
                         <div class="bg-gray-700 rounded-lg p-6 mb-6">
                             <div class="grid grid-cols-4 gap-3 text-center mb-2">
@@ -444,5 +537,6 @@
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/taste-dna.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/statistics.js') }}"></script>
 </body>
 </html>
