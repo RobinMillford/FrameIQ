@@ -130,6 +130,101 @@
         show('statistics-monthly-block');
     }
 
+    function renderPeople(listId, blockId, people) {
+        // Neutral, descriptive rows only: "N watches \u00b7 M titles".
+        // Names are untrusted display text — textContent everywhere;
+        // every row's full fact is its accessible content (§23).
+        var list = el(listId);
+        list.textContent = '';
+        people.forEach(function (person) {
+            var li = document.createElement('li');
+            li.className = 'flex items-baseline justify-between gap-2';
+            var name = document.createElement('span');
+            name.className = 'text-sm text-[var(--text-hi)] truncate';
+            name.textContent = person.name;
+            var counts = document.createElement('span');
+            counts.className =
+                'font-slate text-[10px] text-[var(--text-low)] shrink-0';
+            var watches = person.watch_event_count;
+            var titles = person.distinct_title_count;
+            counts.textContent = watches +
+                (watches === 1 ? ' watch \u00b7 ' : ' watches \u00b7 ') +
+                titles + (titles === 1 ? ' title' : ' titles');
+            li.setAttribute('aria-label', person.name + ': ' +
+                counts.textContent);
+            li.appendChild(name);
+            li.appendChild(counts);
+            list.appendChild(li);
+        });
+        show(blockId);
+    }
+
+    function renderHeatmap(dailyActivity, activeDays, maxEvents) {
+        var grid = el('statistics-heatmap');
+        grid.textContent = '';
+        dailyActivity.forEach(function (row) {
+            // One semantic list item per active day. Understandable
+            // without color: the count is always rendered as text and
+            // the accessible name carries the full fact (§14).
+            var cell = document.createElement('span');
+            cell.setAttribute('role', 'listitem');
+            var intensity = maxEvents > 0
+                ? Math.min(4, Math.ceil(row.count / maxEvents * 4))
+                : 1;
+            cell.className = 'heatmap-cell heatmap-l' + intensity +
+                ' w-3 h-3 rounded-sm shrink-0';
+            cell.textContent = String(row.count);
+            cell.title = row.date + ': ' + row.count +
+                (row.count === 1 ? ' watch' : ' watches');
+            cell.setAttribute('aria-label',
+                row.date + ': ' + row.count +
+                (row.count === 1 ? ' watch' : ' watches'));
+            grid.appendChild(cell);
+        });
+        setText('statistics-heatmap-summary',
+            activeDays + (activeDays === 1 ? ' active day' : ' active days') +
+            ' \u00b7 busiest day: ' + maxEvents +
+            (maxEvents === 1 ? ' watch' : ' watches'));
+        show('statistics-heatmap-block');
+    }
+
+    function renderSeasonQuality(seasons) {
+        // Phase 7: bounded neutral rows — "Show S1 · avg 4.3 (8 rated)".
+        // Descriptive display ordering only (§11): never framed as a
+        // quality judgment or preference. Server ordering, server
+        // values, textContent everywhere; accessible via the aria-label
+        // on each row.
+        var list = el('statistics-season-quality');
+        var block = el('statistics-season-quality-block');
+        if (!list || !block) {
+            return;
+        }
+        while (list.firstChild) {
+            list.removeChild(list.firstChild);
+        }
+        seasons.forEach(function (season) {
+            var li = document.createElement('li');
+            li.className = 'flex items-center gap-2 text-xs';
+            var name = document.createElement('span');
+            name.className = 'text-[var(--text-hi)] w-28 shrink-0 truncate';
+            name.textContent = season.show_name;
+            name.title = season.show_name;
+            var meta = document.createElement('span');
+            meta.className = 'font-slate text-[10px] text-[var(--text-low)]';
+            meta.textContent = 'S' + season.season_number +
+                ' \u00b7 avg ' + season.average_rating +
+                ' (' + season.rating_count + ' rated)';
+            li.setAttribute('aria-label',
+                season.show_name + ' season ' + season.season_number +
+                ': average rating ' + season.average_rating +
+                ' from ' + season.rating_count + ' rated episodes');
+            li.appendChild(name);
+            li.appendChild(meta);
+            list.appendChild(li);
+        });
+        block.classList.remove('hidden');
+    }
+
     function render(data) {
         var summary = data;
         setText('statistics-watch-events', String(summary.total_watch_events));
@@ -152,6 +247,36 @@
 
         if (summary.monthly_watch_counts && summary.monthly_watch_counts.length) {
             renderMonthly(summary.monthly_watch_counts);
+        }
+
+        if (Array.isArray(summary.daily_activity) &&
+                summary.daily_activity.length) {
+            renderHeatmap(summary.daily_activity,
+                summary.active_watch_days, summary.max_daily_watch_events);
+        }
+
+        if (Array.isArray(summary.directors) && summary.directors.length) {
+            renderPeople('statistics-directors',
+                'statistics-directors-block', summary.directors);
+        }
+
+        if (Array.isArray(summary.actors) && summary.actors.length) {
+            renderPeople('statistics-actors',
+                'statistics-actors-block', summary.actors);
+        } else {
+            // §24: no actor persistence exists yet — neutral note, no
+            // fabricated people and no placeholder actors wording.
+            show('statistics-actors-empty');
+            show('statistics-actors-block');
+        }
+
+        // Phase 7: season quality — the server provides the show name,
+        // season number, rating count, average, and the full ten-bucket
+        // distribution. All values are rendered verbatim (no averaging,
+        // ranking, or rating math here). Hidden when the list is empty.
+        if (Array.isArray(summary.season_quality) &&
+                summary.season_quality.length) {
+            renderSeasonQuality(summary.season_quality);
         }
 
         var media = summary.media_type_distribution || {};

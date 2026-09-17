@@ -56,6 +56,13 @@ Privacy: output contains no user IDs, emails, usernames, database IDs,
 review text, watchlist data, or feedback payloads. Only user-facing-safe
 facts are included so a future share-card UI can consume the model
 without exposing internals (no share URLs yet — §23/§24).
+
+Phase 8 (presentation experience): the model gains three ADDITIVE
+canonical passthrough fields for the private recap UI — people
+(directors/actors), season_quality, and daily_activity — copied verbatim
+from the same one get_statistics() call. No new computation, no renamed
+fields, no IDs; sections the canonical data cannot support stay absent
+or [] exactly as the canonical service reports them.
 """
 from api.statistics import calendar_year_bounds, get_statistics
 
@@ -315,4 +322,11 @@ def build_year_in_review(user_id, year):
             "rate": stats["rewatch_rate"],
         },
         "runtime": build_runtime_summary(stats),
+        # ── Phase 8 additive passthroughs (verbatim canonical values) ──
+        "people": {
+            "directors": stats["directors"],
+            "actors": stats["actors"],  # unavailable → [] (§23)
+        },
+        "season_quality": stats["season_quality"],
+        "daily_activity": stats["daily_activity"],
     }

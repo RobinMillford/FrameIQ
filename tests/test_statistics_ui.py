@@ -276,6 +276,8 @@ def test_renderer_reads_only_canonical_service_fields():
         'runtime_missing_events', 'average_rating', 'rating_count',
         'rating_distribution', 'rewatch_count', 'rewatch_rate',
         'top_genres', 'monthly_watch_counts', 'media_type_distribution',
+        'daily_activity', 'active_watch_days', 'max_daily_watch_events',
+        'directors', 'actors', 'season_quality',
     }
     unknown = read_fields - canonical
     assert not unknown, f'renderer reads non-canonical fields: {unknown}'
@@ -325,3 +327,36 @@ def test_data_correctness_cross_check(auth_client, stats_user, app):
             from models import DiaryEntry, db as _db
             DiaryEntry.query.filter_by(user_id=stats_user.id).delete()
             _db.session.commit()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Feature #8 Phase 7 — season-quality UI + completion unavailability
+# ════════════════════════════════════════════════════════════════════════════
+
+def test_season_quality_ui_targets_wired():
+    js = _js_source()
+    template = _read(TEMPLATE)
+    for target in ("statistics-season-quality",
+                   "statistics-season-quality-block"):
+        assert target in js, target
+        assert f'id="{target}"' in template, target
+    # renderer reads the canonical server field only
+    assert "summary.season_quality" in js
+
+
+def test_season_quality_ui_safe_and_accessible():
+    js = _js_source()
+    assert "aria-label" in js          # textual info, not color alone
+    assert "createElement" in js and "textContent" in js
+    assert "innerHTML" not in js       # person/show names are untrusted
+
+
+def test_completion_ui_absent_while_unsupported():
+    # §27/§28: UNAVAILABLE (no defensible denominator) must not render
+    # any completion widget — distinct from an EMPTY state.
+    js = _js_source().lower()
+    template = _read(TEMPLATE).lower()
+    for blob in (js, template):
+        assert "tv-completion" not in blob
+        assert "completion-rate" not in blob
+        assert "completed episodes" not in blob
