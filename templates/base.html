@@ -107,7 +107,7 @@
     <div class="projector" aria-hidden="true"></div>
 
     <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
+    <nav class="fixed top-0 left-0 right-0 z-[1000] glass-effect">
         <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3">
             <div class="flex justify-between items-center gap-4">
                 <!-- Logo -->
@@ -166,9 +166,9 @@
                                 <i data-lucide="bell" class="w-5 h-5"></i>
                                 <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold leading-[1.1rem] text-center text-black bg-[var(--accent)] rounded-full" aria-hidden="true"></span>
                             </button>
-                            <div id="notif-panel" class="hidden absolute right-0 top-full mt-2 w-[22rem] max-w-[calc(100vw-2rem)] z-50 rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-2xl overflow-hidden" role="dialog" aria-label="Notifications">
-                                <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--line)]">
-                                    <span class="text-sm font-semibold text-white">Notifications</span>
+                            <div id="notif-panel" class="fi-menu hidden absolute right-0 top-full mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl" role="dialog" aria-label="Notifications">
+                                <div class="fi-menu-header">
+                                    <span class="fi-menu-title">Notifications</span>
                                     <button id="notif-mark-all" class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors">Mark all as read</button>
                                 </div>
                                 <div id="notif-list" class="max-h-[24rem] overflow-y-auto"></div>

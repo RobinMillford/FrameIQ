@@ -1,6 +1,6 @@
 {# Simple site navigation bar (gray variant).
    Params: with_diary — forwarded to the profile dropdown (optional) #}
-<nav class=" shadow-lg">
+<nav class=" shadow-lg fi-topbar">
     <div class="container mx-auto px-4 py-3">
         <div class="flex justify-between items-center">
             <div class="flex items-center">
@@ -8,6 +8,20 @@
             </div>
             <div class="flex items-center space-x-4">
                 {% if current_user.is_authenticated %}
+                    <div class="relative" id="notif-root">
+                        <button id="notif-bell" class="relative p-2 text-[var(--text-mid)] hover:text-white transition-colors"
+                                aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+                            <i class="fas fa-bell" aria-hidden="true"></i>
+                            <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold leading-[1.1rem] text-center text-black bg-[var(--accent)] rounded-full" aria-hidden="true"></span>
+                        </button>
+                        <div id="notif-panel" class="fi-menu hidden absolute right-0 top-full mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl" role="dialog" aria-label="Notifications">
+                            <div class="fi-menu-header">
+                                <span class="fi-menu-title">Notifications</span>
+                                <button id="notif-mark-all" class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors">Mark all as read</button>
+                            </div>
+                            <div id="notif-list" class="max-h-[24rem] overflow-y-auto"></div>
+                        </div>
+                    </div>
                     {% include "partials/profile_dropdown.html" %}
                 {% else %}
                     <a href="{{ url_for('auth.login') }}" class="text-white hover:text-[var(--accent)]">Login</a>

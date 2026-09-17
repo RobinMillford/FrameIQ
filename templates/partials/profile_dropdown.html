@@ -1,17 +1,45 @@
 {# Profile dropdown (authenticated users only).
-   Params: with_diary — include the Diary link (optional, default false) #}
+   Params: with_diary — include the Diary link (optional, default false)
+
+   Accessibility: real button with aria-expanded/aria-haspopup; Escape and
+   outside-click close it (wired in base.html / profile-page.js). The menu
+   uses .fi-menu — an always-readable dark panel (z-index 1100, above the
+   header at 1000 and every hero/page layer), never a transparent surface. #}
 <div class="relative" id="profile-dropdown">
-    <button id="profile-button" class="flex items-center space-x-1 text-white hover:text-gray-300">
-        <i class="fas fa-user"></i>
-        <span>{{ current_user.username }}</span>
-        <i class="fas fa-caret-down"></i>
+    <button id="profile-button" type="button"
+            class="flex items-center gap-2 text-[var(--text-hi)] hover:text-[var(--accent-hi)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-hi)] rounded px-1 py-1"
+            aria-expanded="false" aria-haspopup="true"
+            aria-controls="profile-menu">
+        <i class="fas fa-user text-sm"></i>
+        <span class="text-sm font-medium max-w-[10rem] truncate">{{ current_user.username }}</span>
+        <i class="fas fa-caret-down text-xs opacity-70" aria-hidden="true"></i>
     </button>
-    <div id="profile-menu" class="absolute right-0 mt-2 w-48  rounded-md shadow-lg py-1 hidden z-10">
-        <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Profile</a>
-        <a href="{{ url_for('main.watchlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Watchlist</a>
-        <a href="{{ url_for('main.wishlist') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Wishlist</a>
-        <a href="{{ url_for('main.viewed') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Viewed</a>
-        {% if with_diary %}<a href="/diary" class="block px-4 py-2 text-sm hover:bg-gray-700">Diary</a>{% endif %}
-        <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm hover:bg-gray-700">Logout</a>
+    <div id="profile-menu" class="fi-menu hidden mt-2 w-56 right-0" role="menu"
+         aria-label="Account menu">
+        <div class="fi-menu-header">
+            <span class="fi-menu-title truncate">{{ current_user.username }}</span>
+        </div>
+        <a href="{{ url_for('auth.profile') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-user" aria-hidden="true"></i> Profile
+        </a>
+        <a href="{{ url_for('main.watchlist') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-bookmark" aria-hidden="true"></i> Watchlist
+        </a>
+        <a href="{{ url_for('main.wishlist') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-heart" aria-hidden="true"></i> Wishlist
+        </a>
+        <a href="{{ url_for('main.viewed') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-eye" aria-hidden="true"></i> Viewed
+        </a>
+        {% if with_diary %}<a href="/diary" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-book-open" aria-hidden="true"></i> Diary
+        </a>{% endif %}
+        <hr class="fi-menu-sep">
+        <a href="{{ url_for('auth.edit_profile') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-gear" aria-hidden="true"></i> Settings
+        </a>
+        <a href="{{ url_for('auth.logout') }}" role="menuitem" class="fi-menu-item fi-menu-danger">
+            <i class="fas fa-arrow-right-from-bracket" aria-hidden="true"></i> Logout
+        </a>
     </div>
 </div>
