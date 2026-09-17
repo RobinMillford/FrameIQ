@@ -50,6 +50,20 @@
                 </label>
             </div>
 
+            <!-- Share controls (Phase 9): explicit opt-in only — nothing
+                 is shared unless the user clicks Share; revocable. -->
+            <div id="yir-share-controls" class="hidden mb-6 flex flex-wrap items-center gap-2">
+                <button id="yir-share-btn" type="button"
+                        class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs font-semibold rounded px-3 py-1.5">Share</button>
+                <button id="yir-copy-btn" type="button"
+                        class="hidden bg-black/40 text-[var(--text-hi)] text-xs rounded px-3 py-1.5">Copy link</button>
+                <button id="yir-revoke-btn" type="button"
+                        class="hidden bg-black/40 text-[var(--text-low)] text-xs rounded px-3 py-1.5">Revoke share</button>
+                <span id="yir-share-status"
+                      class="text-xs text-[var(--text-mid)]"
+                      role="status" aria-live="polite"></span>
+            </div>
+
             <!-- Loading skeleton (bounded; replaced on settle) -->
             <div id="yir-loading" aria-hidden="true">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -161,6 +175,7 @@
         window.__YIR_YEAR__ = {{ year|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/yir-share.js') }}"></script>
     <script src="{{ url_for('static', filename='js/year-in-review.js') }}"></script>
 </body>
 </html>

@@ -31,17 +31,34 @@ adapter around api.year_in_review.build_year_in_review(), the canonical
 story transformation over ONE get_statistics() call. Year-only scope;
 invalid years are rejected (clean 400) before the builder is ever
 invoked. Responses carry Cache-Control: private, no-store (§40).
+
+Feature #8 Phase 9 adds the share surface, opt-in and revocable:
+
+- POST   /api/year-in-review/share  — create (or reuse) the active share
+  for one year of the session user's recap; returns the share URL with
+  the raw opaque token, which is NOT persisted anywhere
+- DELETE /api/year-in-review/share  — revoke the active share for one
+  year; public links die immediately and generically (404)
+
+Share creation validates the year FIRST, then builds the recap exactly
+once to fail closed on empty years (§30), and only then creates the
+share record. No user_id override exists; global CSRF stays enabled on
+both mutations (§40). The share layer never queries the watch-history
+or media tables directly and never calls the statistics service itself
+(§36) — it only consumes the canonical builder's output.
 """
 import logging
 
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, url_for
 from flask_login import login_required, current_user
 
 from extensions import limiter
+from models import db, YearInReviewShare
 import api.statistics as statistics_service
 import api.year_in_review as year_in_review_service
+import api.year_in_review_share as year_in_review_share_service
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +69,7 @@ RATE_LIMIT = "60 per minute"
 
 # §40: private recap — one user's recap must never be cached for another.
 _PRIVATE_NO_STORE = {'Cache-Control': 'private, no-store'}
+
 
 _LIFETIME_TRUE = ('true', '1', 'yes')
 _LIFETIME_FALSE = ('false', '0', 'no')
@@ -167,3 +185,114 @@ def api_year_in_review():
     response = jsonify(recap)
     response.headers['Cache-Control'] = 'private, no-store'
     return response
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Year-in-Review share lifecycle (Feature #8, Phase 9) — opt-in, revocable
+# ══════════════════════════════════════════════════════════════════════════
+
+def _parse_share_year():
+    """Strict integer-year parse for the share JSON body.
+
+    §5/§31: JSON coercion (e.g. true → 1, 2026.0 → 2026) is refused so
+    the private and public routes share one consistent year semantic.
+    Returns (year, error_response) — exactly one is non-None.
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'year' not in body:
+        return None, (jsonify({'error': "JSON body with 'year' required"}),
+                      400)
+    raw_year = body['year']
+    if isinstance(raw_year, bool) or not isinstance(raw_year, int):
+        return None, (jsonify({'error': 'year must be an integer'}), 400)
+    return raw_year, None
+
+
+@statistics_bp.route('/api/year-in-review/share', methods=['POST'])
+@login_required
+@limiter.limit(RATE_LIMIT)
+def api_year_in_review_share_create():
+    """Create (or reuse) the active share for one year of the own recap.
+
+    Call graph (§12): auth → strict year parse → canonical validation →
+    exactly ONE build_year_in_review() (empty years fail closed, §30) →
+    create/reuse the share record → share URL. The builder alone calls
+    the statistics service; this route never does (§36). CSRF stays
+    enabled (§40) and no user_id parameter exists (§11).
+    """
+    year, error = _parse_share_year()
+    if error is not None:
+        return error
+
+    try:
+        recap = year_in_review_service.build_year_in_review(
+            current_user.id, year)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        logger.error("Share creation failed for user %s",
+                     current_user.id, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+    if not recap.get('available'):
+        # §30: never create a public token pointing at an empty story.
+        return jsonify({'error': 'nothing to share for this year'}), 400
+
+    # Regeneration semantics (§14): creating a share for a year that
+    # already has an active one revokes the old token and issues a fresh
+    # one — old links die immediately. The partial unique index on
+    # unrevoked (user_id, year) backs this one-active-share invariant.
+    existing = YearInReviewShare.query.filter_by(
+        user_id=current_user.id, year=year, revoked_at=None).first()
+    if existing is None:
+        raw_token = year_in_review_share_service.generate_share_token()
+        share = YearInReviewShare(
+            user_id=current_user.id, year=year,
+            token_hash=year_in_review_share_service.hash_share_token(
+                raw_token))
+        db.session.add(share)
+    else:
+        share = existing
+        share.revoked_at = datetime.utcnow()  # old token dies now
+        raw_token = year_in_review_share_service.generate_share_token()
+        replacement = YearInReviewShare(
+            user_id=current_user.id, year=year,
+            token_hash=year_in_review_share_service.hash_share_token(
+                raw_token))
+        db.session.add(replacement)
+        share = replacement
+    db.session.commit()
+
+    share_url = url_for('main.year_in_review_share_page', token=raw_token,
+                        _external=True)
+    logger.info(
+        "Year in review share %s for user %s year %s",
+        'reissued' if existing is not None else 'created',
+        current_user.id, year)
+    return jsonify({
+        'year': year,
+        'share_url': share_url,
+        'active': True,
+    })
+
+
+@statistics_bp.route('/api/year-in-review/share', methods=['DELETE'])
+@login_required
+@limiter.limit(RATE_LIMIT)
+def api_year_in_review_share_revoke():
+    """Revoke the session user's active share for one year.
+
+    Owner-only (§13): the lookup is scoped to the session user, so
+    another user's share can neither be found nor revoked. Revocation
+    is instant — the public route re-checks revoked_at on every view.
+    Idempotent: revoking a year with no active share is a no-op.
+    """
+    year, error = _parse_share_year()
+    if error is not None:
+        return error
+
+    share = YearInReviewShare.query.filter_by(
+        user_id=current_user.id, year=year, revoked_at=None).first()
+    if share is not None:
+        share.revoked_at = datetime.utcnow()
+        db.session.commit()
+    return jsonify({'year': year, 'active': False})

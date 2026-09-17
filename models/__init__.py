@@ -70,6 +70,7 @@ from models.chat import (                                      # noqa: F401
     UserChatDailyUsage,
     UserChatMemory,
 )
+from models.year_in_review_share import YearInReviewShare      # noqa: F401
 
 __all__ = [
     'db',
@@ -86,4 +87,5 @@ __all__ = [
     'TasteProfile',
     'RecommendationFeedback',
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
+    'YearInReviewShare',
 ]

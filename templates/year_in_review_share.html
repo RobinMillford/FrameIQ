@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# §54: user sharing, not per-user/year SEO pages. #}
+    <meta name="robots" content="noindex, nofollow">
+    <title>{{ recap.year }} in Review — FrameIQ</title>
+    <meta property="og:title" content="{{ recap.year }} in Review — FrameIQ">
+    <meta property="og:type" content="website">
+    <meta property="og:description" content="A Year in Review recap shared on FrameIQ.">
+    {# No token in page metadata (§22); the canonical URL is the share URL itself. #}
+    <link rel="canonical" href="{{ request.url }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <style>
+        body {
+            font-family: Inter, sans-serif;
+            background-color: var(--bg-base);
+            color: white;
+        }
+
+        .yir-card {
+            transition: transform 0.3s ease;
+        }
+
+        .yir-card:hover {
+            transform: translateY(-3px);
+        }
+    </style>
+</head>
+<body>
+    <!-- FrameIQ wordmark links home; no nav partial (the viewer is not
+         necessarily authenticated — §18 no login assumptions). -->
+    <header class="container mx-auto px-4 pt-6 max-w-3xl">
+        <a href="{{ url_for('main.stats_dashboard') }}"
+           class="text-lg font-bold text-[var(--accent-hi)]"
+           style="font-family: var(--font-display)">FRAMEIQ</a>
+    </header>
+
+    <main class="container mx-auto px-4 py-6 max-w-3xl">
+        <div class="bg-gray-700 rounded-lg shadow-lg p-6 md:p-10">
+            <!-- Heading -->
+            <div class="mb-8">
+                <p class="text-[10px] font-slate uppercase tracking-widest text-[var(--text-low)]">{{ recap.year }} IN REVIEW</p>
+                <h1 class="text-4xl font-bold text-[var(--accent)] mt-1" style="font-family: var(--font-display)">A Year in Review</h1>
+            </div>
+
+            <!-- Summary cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center mb-8">
+                <div class="yir-card bg-black/30 rounded-lg p-4">
+                    <div class="text-3xl font-bold text-[var(--accent-hi)] font-slate">{{ recap.summary.total_watch_events }}</div>
+                    <div class="text-[10px] font-slate text-[var(--text-low)]">WATCH EVENTS</div>
+                </div>
+                <div class="yir-card bg-black/30 rounded-lg p-4">
+                    <div class="text-3xl font-bold text-[var(--accent-hi)] font-slate">{{ recap.summary.distinct_titles }}</div>
+                    <div class="text-[10px] font-slate text-[var(--text-low)]">TITLES</div>
+                </div>
+                <div class="yir-card bg-black/30 rounded-lg p-4">
+                    <div class="text-3xl font-bold text-[var(--accent-hi)] font-slate">{{ recap.summary.total_hours_watched }}</div>
+                    <div class="text-[10px] font-slate text-[var(--text-low)]">HOURS WATCHED</div>
+                </div>
+                <div class="yir-card bg-black/30 rounded-lg p-4">
+                    <div class="text-3xl font-bold text-[var(--accent-hi)] font-slate">{% if recap.summary.average_rating is not none %}{{ recap.summary.average_rating }}{% else %}&mdash;{% endif %}</div>
+                    <div class="text-[10px] font-slate text-[var(--text-low)]">AVG RATING</div>
+                </div>
+            </div>
+
+            <!-- Highlights (canonical sentences, escaped server-side) -->
+            <section aria-labelledby="yir-share-highlights" class="mb-8">
+                <h2 id="yir-share-highlights" class="text-xl font-semibold mb-4 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Highlights</h2>
+                <ul class="space-y-2">
+                    {% if recap.highlights.top_genre %}
+                    <li class="text-sm text-[var(--text-hi)]">{{ recap.highlights.top_genre.name }}</li>
+                    {% endif %}
+                    {% if recap.highlights.busiest_month %}
+                    <li class="text-sm text-[var(--text-hi)]">{{ recap.highlights.busiest_month.text }}</li>
+                    {% endif %}
+                    {% if recap.highlights.rewatches %}
+                    <li class="text-sm text-[var(--text-hi)]">{{ recap.highlights.rewatches.text }}</li>
+                    {% endif %}
+                    {% if recap.highlights.media_split %}
+                    <li class="text-sm text-[var(--text-hi)]">{{ recap.highlights.media_split.description|capitalize }}</li>
+                    {% endif %}
+                </ul>
+            </section>
+
+            <!-- Genres (canonical order, bounded chips) -->
+            {% if recap.genres %}
+            <section aria-labelledby="yir-share-genres" class="mb-8">
+                <h2 id="yir-share-genres" class="text-xl font-semibold mb-4 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Genres</h2>
+                <ul class="flex flex-wrap gap-2">
+                    {% for genre in recap.genres %}
+                    <li class="bg-black/30 rounded-full px-3 py-1 text-xs text-[var(--text-hi)]">{{ genre.name }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            <!-- Directors (canonical top slice, neutral heading) -->
+            {% if recap.directors %}
+            <section aria-labelledby="yir-share-directors" class="mb-8">
+                <h2 id="yir-share-directors" class="text-xl font-semibold mb-4 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Directors</h2>
+                <ul class="space-y-1">
+                    {% for person in recap.directors %}
+                    <li class="text-sm text-[var(--text-hi)]">
+                        {{ person.name }}
+                        <span class="font-slate text-[10px] text-[var(--text-low)]">{{ person.watch_event_count }} watches &middot; {{ person.distinct_title_count }} titles</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            <!-- Season ratings (canonical aggregate only) -->
+            {% if recap.season_quality %}
+            <section aria-labelledby="yir-share-seasons" class="mb-8">
+                <h2 id="yir-share-seasons" class="text-xl font-semibold mb-4 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Season ratings</h2>
+                <ul class="space-y-1">
+                    {% for season in recap.season_quality %}
+                    <li class="text-sm text-[var(--text-hi)]">
+                        {{ season.show_name }} &mdash; S{{ season.season_number }}
+                        <span class="font-slate text-[10px] text-[var(--text-low)]">avg {{ season.average_rating }} ({{ season.rating_count }} rated)</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            <!-- Runtime (canonical wording verbatim: "At least X hours"
+                 when coverage is incomplete — never recomputed) -->
+            {% if recap.runtime %}
+            <section aria-labelledby="yir-share-runtime" class="mb-2">
+                <h2 id="yir-share-runtime" class="text-xl font-semibold mb-4 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Runtime</h2>
+                <p class="text-sm text-[var(--text-hi)]">{{ recap.runtime.text }}</p>
+            </section>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>
