@@ -520,3 +520,15 @@ body {
 .heatmap-l2 { background: rgba(246, 183, 60, 0.32); }
 .heatmap-l3 { background: rgba(246, 183, 60, 0.55); color: #1a1a1a; }
 .heatmap-l4 { background: var(--accent); color: #1a1a1a; }
+
+/* Year-in-Review heatmap container (Feature #8 Phase 8) — reuses the
+   same intensity ramp as the profile heatmap; wraps safely on narrow
+   screens (no horizontal overflow, §28). */
+.heatmap-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}

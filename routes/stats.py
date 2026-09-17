@@ -1,6 +1,11 @@
 """
 Film Stats & Analytics Routes
-Week 3 Implementation: Personal stats, viewing patterns, Year in Review
+Week 3 Implementation: Personal stats, viewing patterns
+
+(Year in Review moved to the canonical Feature #8 stack: the private
+GET /api/year-in-review adapter and the /stats/year-in-review page in
+routes/main.py — the duplicate engine that lived here was removed in
+Phase 8.)
 """
 
 import logging
@@ -330,113 +335,6 @@ def get_viewing_streaks():
         
     except Exception:
         logger.error("Failed to fetch viewing streaks", exc_info=True)
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-
-@stats_bp.route('/api/stats/year-in-review/<int:year>', methods=['GET'])
-@login_required
-def get_year_in_review(year):
-    """Generate Year in Review for a specific year"""
-    try:
-        user_id = current_user.id
-        
-        # Total watched this year
-        total_watched = DiaryEntry.query.filter(
-            DiaryEntry.user_id == user_id,
-            extract('year', DiaryEntry.watched_date) == year
-        ).count()
-        
-        # Get all watched items for the year with media data
-        watched_items = db.session.query(DiaryEntry, MediaItem).join(
-            MediaItem, DiaryEntry.media_id == MediaItem.id
-        ).filter(
-            DiaryEntry.user_id == user_id,
-            extract('year', DiaryEntry.watched_date) == year
-        ).all()
-        
-        # Top genres
-        genre_counts = Counter()
-        for entry, media in watched_items:
-            if media.genres:
-                genres = media.genres if isinstance(media.genres, list) else media.genres.split(',')
-                for genre in genres:
-                    genre = genre.strip()
-                    if genre:
-                        genre_counts[genre] += 1
-        
-        top_genres = [genre for genre, count in genre_counts.most_common(3)]
-        
-        # Top rated (reviews from this year)
-        top_rated = db.session.query(Review).filter(
-            Review.user_id == user_id,
-            Review.is_deleted.is_(False),
-            extract('year', Review.created_at) == year,
-            Review.rating.isnot(None)
-        ).order_by(desc(Review.rating)).limit(10).all()
-        
-        top_rated_list = [
-            {
-                'media_id': r.media_id,
-                'media_type': r.media_type,
-                'title': r.title,
-                'rating': r.rating
-            }
-            for r in top_rated
-        ]
-        
-        # Average rating for the year
-        avg_rating = db.session.query(
-            func.avg(Review.rating)
-        ).filter(
-            Review.user_id == user_id,
-            Review.is_deleted.is_(False),
-            extract('year', Review.created_at) == year,
-            Review.rating.isnot(None)
-        ).scalar()
-        
-        # Busiest month
-        busiest_month_data = db.session.query(
-            extract('month', DiaryEntry.watched_date).label('month'),
-            func.count(DiaryEntry.id).label('count')
-        ).filter(
-            DiaryEntry.user_id == user_id,
-            extract('year', DiaryEntry.watched_date) == year
-        ).group_by('month').order_by(desc('count')).first()
-        
-        busiest_month = {
-            'month': int(busiest_month_data.month) if busiest_month_data else 0,
-            'month_name': calendar.month_name[int(busiest_month_data.month)] if busiest_month_data else 'N/A',
-            'count': busiest_month_data.count if busiest_month_data else 0
-        }
-        
-        # Movie vs TV breakdown
-        media_type_counts = db.session.query(
-            DiaryEntry.media_type,
-            func.count(DiaryEntry.id)
-        ).filter(
-            DiaryEntry.user_id == user_id,
-            extract('year', DiaryEntry.watched_date) == year
-        ).group_by(DiaryEntry.media_type).all()
-        
-        media_breakdown = {
-            media_type: count for media_type, count in media_type_counts
-        }
-        
-        return jsonify({
-            'success': True,
-            'year': year,
-            'year_in_review': {
-                'total_watched': total_watched,
-                'top_genres': top_genres,
-                'top_rated': top_rated_list,
-                'average_rating': round(float(avg_rating), 2) if avg_rating else 0,
-                'busiest_month': busiest_month,
-                'media_breakdown': media_breakdown
-            }
-        })
-        
-    except Exception:
-        logger.error("Failed to fetch year in review", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
