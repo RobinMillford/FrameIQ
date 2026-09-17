@@ -28,6 +28,11 @@ class DiaryEntry(db.Model):
     # Constraints
     __table_args__ = (
         db.CheckConstraint('rating IS NULL OR (rating >= 0.5 AND rating <= 5.0)', name='valid_diary_rating'),
+        # Phase 10 hardening (audit-proven): every canonical statistics
+        # statement filters (user_id, watched_date window). The composite
+        # turns per-row date filtering into a direct range scan (~6x fewer
+        # rows touched at 50k-row scale; see migrates/migrate_diary_statistics_indexes.py).
+        db.Index('idx_diary_user_watched_date', 'user_id', 'watched_date'),
     )
 
     def __init__(self, **kwargs):

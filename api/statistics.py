@@ -5,7 +5,17 @@ Derives everything from the canonical watch history:
 
     DiaryEntry (authoritative watch-event log)  ×  MediaItem (metadata)
         ↓  get_statistics(user_id, year=... | lifetime=True | dates)
-    7 bounded SQL aggregates  →  deterministic presentation dict
+    8 bounded SQL aggregates  →  deterministic presentation dict
+
+ROLLUP DECISION (Phase 10 audit, §6 outcome A — NOT justified): all 8
+statements are bounded per-user aggregates completing in well under a
+millisecond of DB work at synthetic 50k-diary-row scale, so request
+load scales linearly with traffic and no materialized (user_id, year)
+snapshot is warranted — invalidation on every diary mutation would
+outweigh the O(1) per-request saving. The ONE schema change taken from
+the audit is the composite index
+idx_diary_user_watched_date(user_id, watched_date) shared by every
+statement here (migrates/migrate_diary_statistics_indexes.py).
 
 ═══════════════════════════════════════════════════════════════════════
 AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — intentionally left
