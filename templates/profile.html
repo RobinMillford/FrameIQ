@@ -11,32 +11,82 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    // Auto-inject CSRF token into POST forms and fetch() calls
+    // (same patch as base.html — this page is standalone, not an extension)
+    (function() {
+        const getMeta = () => {
+            const el = document.querySelector('meta[name="csrf-token"]');
+            return el ? el.content : '';
+        };
+        const _fetch = window.fetch;
+        window.fetch = function(url, options) {
+            options = options || {};
+            const method = (options.method || 'GET').toUpperCase();
+            if (method !== 'GET' && method !== 'HEAD') {
+                const headers = new Headers(options.headers || {});
+                if (!headers.has('X-CSRFToken')) {
+                    headers.set('X-CSRFToken', getMeta());
+                }
+                options = Object.assign({}, options, { headers: headers });
+            }
+            return _fetch.call(this, url, options);
+        };
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = getMeta();
+            document.querySelectorAll('form').forEach(function(form) {
+                if (form.method === 'post' && !form.querySelector('input[name="csrf_token"]')) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'csrf_token';
+                    input.value = token;
+                    form.appendChild(input);
+                }
+            });
+        });
+    })();
+    </script>
     <style>
         body {
             font-family: Inter, sans-serif;
-            background-color: var(--bg-base);
-            color: white;
+            background: #050505;
+            color: var(--text-hi);
         }
-        
-        .stat-card {
-            transition: transform 0.3s ease;
+
+        /* Profile hero: opaque enough for readable text over any backdrop */
+        .profile-hero {
+            background: linear-gradient(135deg, rgba(35, 43, 58, 0.96) 0%, rgba(35, 43, 58, 0.88) 100%);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
         }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
+
+        /* Prominent metrics, readable labels (§7) */
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-hi);
+            font-family: var(--font-mono);
+            line-height: 1.2;
         }
-        
-        .recommendation-card {
-            transition: all 0.3s ease;
+        .metric-label {
+            font-size: 0.6875rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-low);
+            font-family: var(--font-mono);
         }
-        
-        .recommendation-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+
+        /* Metadata readable at normal distance — never ultra-small */
+        .meta-text {
+            font-size: 0.8125rem;
+            color: var(--text-mid);
         }
-        
-        .profile-image {
-            border: 3px solid #6366f1;
+
+        /* Recommendation explanation readable, not tiny (§4-E) */
+        .rec-reason {
+            font-size: 0.8125rem;
+            line-height: 1.45;
+            color: var(--accent-hi);
         }
     </style>
 </head>
@@ -44,476 +94,454 @@
     <!-- Navigation -->
     {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
-    <div class="container mx-auto px-4 py-8">
-        <div class=" rounded-lg shadow-lg p-6">
-            <div class="flex justify-between items-center mb-6">
-                <h1 class="text-3xl font-bold text-[var(--accent)]">My Profile</h1>
-                <a href="{{ url_for('auth.edit_profile') }}" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300">
-                    Edit Profile
-                </a>
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- ═══════════ Unified profile shell — header (§3) ═══════════ -->
+        <div class="profile-hero p-6 md:p-8 mb-6">
+            <div class="flex flex-col md:flex-row md:items-start gap-6">
+                <!-- Avatar -->
+                <div class="shrink-0 mx-auto md:mx-0">
+                    {% if current_user.profile_picture %}
+                        {% if current_user.profile_picture.startswith('http') %}
+                            <img src="{{ current_user.profile_picture }}" alt="Avatar of {{ current_user.username }}"
+                                 class="profile-avatar rounded-full w-24 h-24 object-cover">
+                        {% else %}
+                            <img src="{{ url_for('static', filename=current_user.profile_picture) }}" alt="Avatar of {{ current_user.username }}"
+                                 class="profile-avatar rounded-full w-24 h-24 object-cover">
+                        {% endif %}
+                    {% else %}
+                        <div class="profile-avatar rounded-full w-24 h-24 bg-white/5 flex items-center justify-center">
+                            <span class="text-3xl font-bold text-[var(--accent)]">{{ current_user.username[0].upper() }}</span>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Identity + actions -->
+                <div class="flex-1 text-center md:text-left">
+                    <h1 class="text-2xl md:text-3xl font-bold text-[var(--text-hi)]">{{ current_user.username }}</h1>
+                    <p class="text-sm text-[var(--text-low)] mt-0.5">@{{ current_user.username }}</p>
+                    <p class="meta-text mt-2">{{ current_user.email }}</p>
+                    <p class="meta-text mt-1">Member since {{ current_user.date_joined.strftime('%B %Y') }}</p>
+
+                    {% if current_user.bio %}
+                        <p class="text-sm text-[var(--text-mid)] leading-relaxed mt-3 max-w-prose mx-auto md:mx-0">{{ current_user.bio }}</p>
+                    {% endif %}
+
+                    <!-- Compact statistics (§3) -->
+                    <div class="flex flex-wrap justify-center md:justify-start gap-x-6 gap-y-2 mt-4 text-sm">
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.diary }}</strong> Watched</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ reviews|length }}</strong> Reviews</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold" id="header-lists-count">0</strong> Lists</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ current_user.followers_count or 0 }}</strong> Followers</span>
+                    </div>
+
+                    <div class="flex flex-wrap justify-center md:justify-start gap-3 mt-5">
+                        <a href="{{ url_for('auth.edit_profile') }}" class="btn-accent !py-2 !px-4 !text-sm">Edit Profile</a>
+                        <a href="{{ url_for('main.user_profile', user_id=current_user.id) }}" class="btn-ghost !py-2 !px-4 !text-sm">View Public Profile</a>
+                    </div>
+                </div>
             </div>
-            
+
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
                     {% for message in messages %}
-                        <div class="bg-green-500 text-white p-2 mb-4 rounded">{{ message }}</div>
+                        <div class="surface-secondary mt-5 p-3 rounded-lg text-sm text-[var(--text-hi)]" role="status">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
             {% endwith %}
-            
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="md:col-span-1">
-                    <div class="bg-gray-700 rounded-lg p-6">
-                        <div class="text-center">
-                            {% if current_user.profile_picture %}
-                                {% if current_user.profile_picture.startswith('http') %}
-                                    <!-- Cloudinary URL -->
-                                    <img src="{{ current_user.profile_picture }}" alt="Profile Picture" class="rounded-full w-24 h-24 mx-auto mb-4 object-cover profile-image">
-                                {% else %}
-                                    <!-- Local file path -->
-                                    <img src="{{ url_for('static', filename=current_user.profile_picture) }}" alt="Profile Picture" class="rounded-full w-24 h-24 mx-auto mb-4 object-cover profile-image">
-                                {% endif %}
-                            {% else %}
-                                <div class="bg-gray-600 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center profile-image">
-                                    <span class="text-3xl font-bold">{{ current_user.username[0].upper() }}</span>
-                                </div>
+        </div>
+
+        <!-- ═══════════ Tabs (keyboard-navitable, §8) ═══════════ -->
+        <div class="profile-tabs surface-secondary !rounded-t-xl !rounded-b-none mb-6" role="tablist" aria-label="Profile sections">
+            <button id="tab-overview" type="button" class="profile-tab" role="tab"
+                    aria-selected="true" aria-controls="overview-content">Overview</button>
+            <button id="tab-reviews" type="button" class="profile-tab" role="tab"
+                    aria-selected="false" aria-controls="reviews-content">Reviews</button>
+            <button id="tab-insights" type="button" class="profile-tab" role="tab"
+                    aria-selected="false" aria-controls="insights-content">Insights</button>
+        </div>
+
+        <!-- ═══════════ OVERVIEW (§4) ═══════════ -->
+        <div id="overview-content" role="tabpanel" aria-labelledby="tab-overview">
+            <!-- B. Quick navigation cards -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                <a href="{{ url_for('main.watchlist') }}" class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Watchlist</h3>
+                        <i class="fas fa-bookmark text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Movies and shows you want to watch.</p>
+                    <span class="metric-label">{{ stats.watchlist }} titles · View all →</span>
+                </a>
+
+                <a href="{{ url_for('main.wishlist') }}" class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Wishlist</h3>
+                        <i class="fas fa-heart text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Favorites you want to own or revisit.</p>
+                    <span class="metric-label">{{ current_user.wishlist|length }} titles · View all →</span>
+                </a>
+
+                <a href="{{ url_for('main.viewed') }}" class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Viewing History</h3>
+                        <i class="fas fa-eye text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Everything you've already watched.</p>
+                    <span class="metric-label">{{ stats.viewed }} titles · View all →</span>
+                </a>
+
+                <div class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">My Lists</h3>
+                        <i class="fas fa-list text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Curated collections, your way.</p>
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-auto pt-1">
+                        <a href="/lists" class="text-xs font-medium text-[var(--accent-hi)] hover:text-[var(--accent)]">View all →</a>
+                        <button type="button" onclick="openCreateListModal()"
+                                class="text-xs font-medium text-[var(--text-mid)] hover:text-[var(--text-hi)]">
+                            <i class="fas fa-plus mr-1" aria-hidden="true"></i>Create
+                        </button>
+                        <span class="metric-label" id="lists-count">…</span>
+                    </div>
+                </div>
+
+                <a href="/diary" class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Diary</h3>
+                        <i class="fas fa-book-open text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Your dated watch log and ratings.</p>
+                    <span class="metric-label" id="diary-count">…</span>
+                </a>
+
+                <a href="{{ url_for('auth.profile_recommendations') }}" class="quick-nav-card">
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Recommendations</h3>
+                        <i class="fas fa-wand-magic-sparkles text-[var(--accent)]" aria-hidden="true"></i>
+                    </div>
+                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Suggestions based on your activity.</p>
+                    <span class="metric-label">View all →</span>
+                </a>
+            </div>
+
+            <!-- C. Taste DNA (canonical TasteProfile presentation;
+                 rendered client-side from GET /api/taste-profile) -->
+            <div id="taste-dna-section"
+                 class="surface-primary p-6 mb-6 hidden"
+                 data-initial-state="{{ 'cold_start' if not taste_dna else 'available' }}">
+                <h3 class="text-xl font-semibold mb-1 text-[var(--text-hi)]" style="font-family: var(--font-display)">Taste DNA</h3>
+                <p id="taste-dna-level" class="font-slate text-[10px] text-[var(--text-low)] mb-4"></p>
+
+                <!-- Cold start -->
+                <div id="taste-dna-coldstart" class="hidden">
+                    <p class="text-sm text-[var(--text-hi)]">Taste DNA is still learning.</p>
+                    <p class="text-xs font-slate text-[var(--text-low)] mt-1">Rate or log a few more titles to build your profile.</p>
+                </div>
+
+                <!-- Content -->
+                <div id="taste-dna-content" class="hidden">
+                    <dl class="space-y-4">
+                        <div id="taste-dna-genres-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Genres you watch</dt>
+                            <dd><ul id="taste-dna-genres" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="taste-dna-avoid-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Genres you watch less</dt>
+                            <dd><ul id="taste-dna-avoid" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="taste-dna-directors-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Directors you watch</dt>
+                            <dd><ul id="taste-dna-directors" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="taste-dna-eras-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Eras you watch</dt>
+                            <dd><ul id="taste-dna-eras" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="taste-dna-media-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Movie vs TV</dt>
+                            <dd><p id="taste-dna-media" class="text-sm text-[var(--text-hi)]"></p></dd>
+                        </div>
+                        <div id="taste-dna-runtime-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime preference</dt>
+                            <dd><p id="taste-dna-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
+                        </div>
+                    </dl>
+                    <p id="taste-dna-basis" class="font-slate text-[10px] text-[var(--text-low)] mt-4"></p>
+                </div>
+            </div>
+
+            <!-- E. Recommended for You -->
+            <div class="surface-primary p-6 mb-6">
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-xl font-semibold text-[var(--text-hi)]" style="font-family: var(--font-display)">Recommended for You</h3>
+                    <a href="{{ url_for('auth.profile_recommendations') }}" class="text-sm text-[var(--accent-hi)] hover:text-[var(--accent)]">View all →</a>
+                </div>
+                <p class="meta-text mb-4">Based on your watchlist, wishlist, and viewing history.</p>
+
+                <div id="recommendations-preview" class="text-center py-6">
+                    <p class="meta-text">Loading personalized recommendations…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ REVIEWS (§5) ═══════════ -->
+        <div id="reviews-content" class="hidden">
+            <h3 class="text-2xl font-bold mb-1 text-[var(--text-hi)]" style="font-family: var(--font-display)">Your Reviews</h3>
+            <p class="meta-text mb-6">Share your thoughts on the movies and shows you've watched.</p>
+
+            <div class="space-y-6">
+            {% if reviews %}
+                {% for review in reviews %}
+                    <article class="surface-secondary p-5 md:p-6">
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            {% set poster_url = review.media.poster_path %}
+                            {% if poster_url and not poster_url.startswith('http') %}
+                                {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
                             {% endif %}
-                            <h2 class="text-xl font-bold">{{ current_user.username }}</h2>
-                            <p class="text-[var(--text-mid)]">{{ current_user.email }}</p>
-                            <p class="text-[var(--text-mid)] text-sm mt-2">Member since {{ current_user.date_joined.strftime('%B %d, %Y') }}</p>
-                            <div class="mt-4">
-                                <a href="{{ url_for('main.user_profile', user_id=current_user.id) }}" class="inline-block bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-sm font-semibold py-2 px-4 rounded transition duration-300">
-                                    View Public Profile
-                                </a>
+                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}"
+                                 alt="Poster for {{ review.media.title }}"
+                                 class="w-20 h-[7.5rem] rounded-lg object-cover shrink-0 border border-white/10"
+                                 onerror="this.src='/static/images/no-poster.svg'">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex flex-wrap justify-between items-start gap-2">
+                                    <div class="min-w-0">
+                                        <h4 class="text-lg font-bold text-[var(--text-hi)]">
+                                            <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-[var(--accent)] transition-colors">
+                                                {{ review.media.title }}
+                                            </a>
+                                        </h4>
+                                        <div class="flex items-center gap-3 mt-1">
+                                            <div class="flex text-yellow-400 text-sm" role="img" aria-label="Rated {{ review.rating }} out of 5">
+                                                {% for i in range(5) %}
+                                                    <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
+                                                {% endfor %}
+                                            </div>
+                                            <span class="meta-text">{{ review.created_at.strftime('%b %d, %Y') }}</span>
+                                        </div>
+                                    </div>
+                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}#review-{{ review.id }}" class="text-sm text-[var(--accent-hi)] hover:text-[var(--accent)] shrink-0">
+                                        <i class="fas fa-edit mr-1" aria-hidden="true"></i>Edit
+                                    </a>
+                                </div>
+                                <p class="text-sm text-[var(--text-mid)] leading-relaxed mt-3">{{ review.content or 'No written review.' }}</p>
                             </div>
                         </div>
-                        
-                        <div class="mt-6">
-                            <h3 class="text-lg font-semibold mb-3">About</h3>
-                            {% if current_user.bio %}
-                                <p>{{ current_user.bio }}</p>
-                            {% else %}
-                                <p class="text-[var(--text-mid)]">No bio available.</p>
-                            {% endif %}
+                    </article>
+                {% endfor %}
+            {% else %}
+                <div class="text-center py-14 px-6 surface-primary">
+                    <i class="fas fa-comment-slash text-4xl text-[var(--text-low)] mb-4" aria-hidden="true"></i>
+                    <p class="text-lg font-semibold text-[var(--text-hi)]">No reviews yet</p>
+                    <p class="meta-text mt-1">Log what you watch, then tell everyone what you thought.</p>
+                    <div class="flex flex-wrap justify-center gap-4 mt-5">
+                        <a href="{{ url_for('main.index') }}" class="text-sm font-medium text-[var(--accent-hi)] hover:text-[var(--accent)]">Write your first review →</a>
+                        <a href="{{ url_for('main.viewed') }}" class="text-sm font-medium text-[var(--text-mid)] hover:text-[var(--text-hi)]">Browse watched titles</a>
+                    </div>
+                </div>
+            {% endif %}
+            </div>
+        </div>
+
+        <!-- ═══════════ INSIGHTS (§6) ═══════════ -->
+        <div id="insights-content" class="hidden">
+            <h3 class="text-2xl font-bold mb-1 text-[var(--text-hi)]" style="font-family: var(--font-display)">Your Insights</h3>
+            <p class="meta-text mb-6">What you watched, when, and how you rated it.</p>
+
+            <!-- Personal statistics (canonical service presentation;
+                 rendered client-side from GET /api/statistics —
+                 the server-rendered shell carries NO private values) -->
+            <div id="statistics-section"
+                 class="surface-primary p-6 mb-6 hidden">
+                <div class="flex justify-between items-center mb-4 gap-4">
+                    <h4 class="text-lg font-semibold text-[var(--text-hi)]">Statistics</h4>
+                    <label class="font-slate text-xs text-[var(--text-low)] flex items-center gap-2">
+                        <span>Period</span>
+                        <select id="statistics-period"
+                                aria-label="Statistics period"
+                                class="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-[var(--text-hi)]">
+                            <option value="current">This year</option>
+                            <option value="lifetime">Lifetime</option>
+                        </select>
+                    </label>
+                </div>
+
+                <!-- Loading skeleton (bounded; replaced on settle) -->
+                <div id="statistics-loading" aria-hidden="true">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                        <div class="h-16 bg-white/5 rounded animate-pulse"></div>
+                        <div class="h-16 bg-white/5 rounded animate-pulse"></div>
+                        <div class="h-16 bg-white/5 rounded animate-pulse"></div>
+                        <div class="h-16 bg-white/5 rounded animate-pulse"></div>
+                        <div class="h-16 bg-white/5 rounded animate-pulse hidden md:block"></div>
+                    </div>
+                    <div class="h-4 w-2/3 bg-white/5 rounded animate-pulse mb-2"></div>
+                    <div class="h-4 w-1/2 bg-white/5 rounded animate-pulse"></div>
+                </div>
+
+                <!-- Error (neutral; the rest of the profile is untouched) -->
+                <div id="statistics-error" class="hidden">
+                    <p class="text-sm text-[var(--text-mid)]">Statistics are unavailable right now.</p>
+                </div>
+
+                <!-- Empty state (no watch history) -->
+                <div id="statistics-empty" class="hidden">
+                    <p class="text-sm text-[var(--text-hi)]">No viewing history yet.</p>
+                    <p class="text-xs font-slate text-[var(--text-low)] mt-1">Start logging movies and shows to see your statistics.</p>
+                </div>
+
+                <!-- Content -->
+                <div id="statistics-content" class="hidden">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center mb-5">
+                        <div class="bg-black/30 rounded-lg p-3">
+                            <div id="statistics-watch-events" class="metric-value">0</div>
+                            <div class="metric-label">WATCH EVENTS</div>
+                        </div>
+                        <div class="bg-black/30 rounded-lg p-3">
+                            <div id="statistics-distinct-titles" class="metric-value">0</div>
+                            <div class="metric-label">TITLES</div>
+                        </div>
+                        <div class="bg-black/30 rounded-lg p-3">
+                            <div id="statistics-hours" class="metric-value">0</div>
+                            <div class="metric-label">HOURS WATCHED</div>
+                        </div>
+                        <div class="bg-black/30 rounded-lg p-3">
+                            <div id="statistics-average-rating" class="metric-value">—</div>
+                            <div class="metric-label">AVG RATING</div>
+                        </div>
+                        <div class="bg-black/30 rounded-lg p-3">
+                            <div id="statistics-rewatches" class="metric-value">0</div>
+                            <div class="metric-label">REWATCHES</div>
+                        </div>
+                    </div>
+
+                    <dl class="space-y-4">
+                        <div id="statistics-genres-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Top genres</dt>
+                            <dd><ul id="statistics-genres" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="statistics-ratings-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Rating distribution</dt>
+                            <dd><ul id="statistics-rating-distribution" class="space-y-1"></ul></dd>
+                            <p id="statistics-rating-count" class="font-slate text-[10px] text-[var(--text-low)] mt-1"></p>
+                        </div>
+                        <div id="statistics-monthly-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Monthly activity</dt>
+                            <dd><ul id="statistics-monthly" class="space-y-1"></ul></dd>
+                        </div>
+                        <div id="statistics-heatmap-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Watch heatmap</dt>
+                            <dd>
+                                <div id="statistics-heatmap"
+                                     class="grid grid-flow-col grid-rows-7 gap-[2px] overflow-x-auto pb-1"
+                                     role="list"
+                                     aria-label="Daily watch activity heatmap"></div>
+                                <p id="statistics-heatmap-summary"
+                                   class="font-slate text-[10px] text-[var(--text-low)] mt-2"></p>
+                            </dd>
+                        </div>
+                        <div id="statistics-media-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Movie vs TV</dt>
+                            <dd><p id="statistics-media" class="text-sm text-[var(--text-hi)]"></p></dd>
+                        </div>
+                        <div id="statistics-directors-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Directors</dt>
+                            <dd><ul id="statistics-directors" class="space-y-1"></ul></dd>
+                        </div>
+                        <div id="statistics-actors-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Actors</dt>
+                            <dd><ul id="statistics-actors" class="space-y-1"></ul>
+                                <p id="statistics-actors-empty" class="font-slate text-[10px] text-[var(--text-low)] hidden">No actor data available.</p></dd>
+                        </div>
+                        <div id="statistics-season-quality-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Season ratings</dt>
+                            <dd><ul id="statistics-season-quality" class="space-y-1"></ul></dd>
+                        </div>
+                        <div id="statistics-runtime-block">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime coverage</dt>
+                            <dd><p id="statistics-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Quick stats strip (server-rendered counts; no private
+                 statistics values — those arrive via /api/statistics) -->
+            <!-- Quick stats strip -->
+            <div class="surface-secondary p-6 mb-6">
+                <div class="grid grid-cols-4 gap-3 text-center">
+                    <div><div class="metric-value">{{ stats.diary }}</div><div class="metric-label">DIARY</div></div>
+                    <div><div class="metric-value">{{ stats.watching }}</div><div class="metric-label">TRACKING</div></div>
+                    <div><div class="metric-value">{{ stats.watchlist }}</div><div class="metric-label">WATCHLIST</div></div>
+                    <div><div class="metric-value">{{ stats.viewed }}</div><div class="metric-label">VIEWED</div></div>
+                </div>
+            </div>
+
+            <!-- Visual insights (stats-dashboard.js on tab open) -->
+            <div class="surface-primary p-6">
+                <h4 class="text-lg font-semibold mb-6 text-[var(--text-hi)]">Visual Insights</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div class="surface-secondary p-5">
+                        <h5 class="text-base font-semibold mb-4 text-[var(--text-hi)]">Genre DNA</h5>
+                        <div class="h-64 relative">
+                            <canvas id="genre-chart" aria-label="Genre distribution chart" role="img"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="surface-secondary p-5">
+                        <h5 class="text-base font-semibold mb-4 text-[var(--text-hi)]">Rating Distribution</h5>
+                        <div class="h-64 relative">
+                            <canvas id="rating-dist-chart" aria-label="Rating distribution chart" role="img"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="surface-secondary p-5">
+                        <h5 class="text-base font-semibold mb-4 text-[var(--text-hi)]">Media Mix</h5>
+                        <div class="h-64 relative">
+                            <canvas id="media-mix-chart" aria-label="Movie versus TV chart" role="img"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="surface-secondary p-5">
+                        <h5 class="text-base font-semibold mb-4 text-[var(--text-hi)]">Recent Activity</h5>
+                        <div class="h-64 relative">
+                            <canvas id="activity-chart" aria-label="Recent activity chart" role="img"></canvas>
                         </div>
                     </div>
                 </div>
-                
-                <div class="md:col-span-2">
-                    <!-- Tabs -->
-                    <div class="overflow-x-auto -mx-1">
-                    <div class="flex border-b border-gray-700 mb-6 min-w-max px-1">
-                        <button id="tab-overview" class="px-6 py-2 border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold focus:outline-none whitespace-nowrap">
-                            Overview
-                        </button>
-                        <button id="tab-reviews" class="px-6 py-2 border-b-2 border-transparent text-[var(--text-mid)] hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
-                            Reviews
-                        </button>
-                        <button id="tab-insights" class="px-6 py-2 border-b-2 border-transparent text-[var(--text-mid)] hover:text-white font-semibold transition-all focus:outline-none whitespace-nowrap">
-                            Insights
-                        </button>
+
+                <!-- Statistics grid extension -->
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Total Watched</div>
+                        <div id="stat-total-watched" class="text-xl font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1" id="stat-movie-tv-split">- / -</div>
                     </div>
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Avg Rating</div>
+                        <div id="stat-avg-rating" class="text-xl font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1">out of 5.0</div>
                     </div>
-
-                    <div id="overview-content">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Watchlist</h3>
-                                <p class="text-[var(--text-mid)]">Movies and shows you want to watch</p>
-                                <div class="mt-4">
-                                    <a href="{{ url_for('main.watchlist') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.watchlist|length }})</a>
-                                </div>
-                            </div>
-                            
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Wishlist</h3>
-                                <p class="text-[var(--text-mid)]">Your favorite movies and shows</p>
-                                <div class="mt-4">
-                                    <a href="{{ url_for('main.wishlist') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.wishlist|length }})</a>
-                                </div>
-                            </div>
-                            
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Viewing History</h3>
-                                <p class="text-[var(--text-mid)]">Movies and shows you've watched</p>
-                                <div class="mt-4">
-                                    <a href="{{ url_for('main.viewed') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all ({{ current_user.viewed_media|length }})</a>
-                                </div>
-                            </div>
-                            
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">My Lists</h3>
-                                <p class="text-[var(--text-mid)]">Custom curated collections</p>
-                                <div class="mt-4 flex gap-2">
-                                    <button onclick="openCreateListModal()" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
-                                        <i class="fas fa-plus"></i> Create New
-                                    </button>
-                                    <span class="text-[var(--text-mid)]">•</span>
-                                    <a href="/lists" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
-                                        <i class="fas fa-list"></i> View All
-                                    </a>
-                                    <span class="text-[var(--text-mid)]">•</span>
-                                    <span class="text-[var(--text-mid)] text-sm" id="lists-count">Loading...</span>
-                                </div>
-                            </div>
-                            
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Diary</h3>
-                                <p class="text-[var(--text-mid)]">Your watch history</p>
-                                <div class="mt-4">
-                                    <a href="/diary" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View Diary</a>
-                                    <span class="text-[var(--text-mid)] mx-2">•</span>
-                                    <span class="text-[var(--text-mid)] text-sm" id="diary-count">Loading...</span>
-                                </div>
-                            </div>
-                            
-                            <div class="stat-card bg-gray-700 rounded-lg p-6">
-                                <h3 class="text-lg font-semibold mb-4 text-[var(--accent)]">Recommendations</h3>
-                                <p class="text-[var(--text-mid)]">Personalized suggestions</p>
-                                <div class="mt-4">
-                                    <a href="{{ url_for('auth.profile_recommendations') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)]">View all</a>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Taste DNA (canonical TasteProfile presentation;
-                             rendered client-side from GET /api/taste-profile) -->
-                        <div id="taste-dna-section"
-                             class="bg-gray-700 rounded-lg p-6 mb-6 hidden"
-                             data-initial-state="{{ 'cold_start' if not taste_dna else 'available' }}">
-                            <h3 class="text-xl font-semibold mb-1 text-[var(--accent-hi)]" style="font-family: var(--font-display)">Taste DNA</h3>
-                            <p id="taste-dna-level" class="font-slate text-[10px] text-[var(--text-low)] mb-4"></p>
-
-                            <!-- Cold start -->
-                            <div id="taste-dna-coldstart" class="hidden">
-                                <p class="text-sm text-[var(--text-hi)]">Taste DNA is still learning.</p>
-                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">Rate or log a few more titles to build your profile.</p>
-                            </div>
-
-                            <!-- Content -->
-                            <div id="taste-dna-content" class="hidden">
-                                <dl class="space-y-4">
-                                    <div id="taste-dna-genres-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Strongest genres</dt>
-                                        <dd><ul id="taste-dna-genres" class="flex flex-wrap gap-2"></ul></dd>
-                                    </div>
-                                    <div id="taste-dna-avoid-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Tends to steer away from</dt>
-                                        <dd><ul id="taste-dna-avoid" class="flex flex-wrap gap-2"></ul></dd>
-                                    </div>
-                                    <div id="taste-dna-directors-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Favorite directors</dt>
-                                        <dd><ul id="taste-dna-directors" class="flex flex-wrap gap-2"></ul></dd>
-                                    </div>
-                                    <div id="taste-dna-eras-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Favorite eras</dt>
-                                        <dd><ul id="taste-dna-eras" class="flex flex-wrap gap-2"></ul></dd>
-                                    </div>
-                                    <div id="taste-dna-media-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Watching preference</dt>
-                                        <dd><p id="taste-dna-media" class="text-sm text-[var(--text-hi)]"></p></dd>
-                                    </div>
-                                    <div id="taste-dna-runtime-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime preference</dt>
-                                        <dd><p id="taste-dna-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
-                                    </div>
-                                </dl>
-                                <p id="taste-dna-basis" class="font-slate text-[10px] text-[var(--text-low)] mt-4"></p>
-                            </div>
-                        </div>
-
-                        <!-- Personal statistics (canonical service presentation;
-                             rendered client-side from GET /api/statistics —
-                             the server-rendered shell carries NO private values) -->
-                        <div id="statistics-section"
-                             class="bg-gray-700 rounded-lg p-6 mb-6 hidden">
-                            <div class="flex justify-between items-center mb-4 gap-4">
-                                <h3 class="text-xl font-semibold text-[var(--accent-hi)]" style="font-family: var(--font-display)">Statistics</h3>
-                                <label class="font-slate text-xs text-[var(--text-low)] flex items-center gap-2">
-                                    <span>Period</span>
-                                    <select id="statistics-period"
-                                            aria-label="Statistics period"
-                                            class="bg-black/40 border border-gray-600 rounded px-2 py-1 text-xs text-[var(--text-hi)]">
-                                        <option value="current">This year</option>
-                                        <option value="lifetime">Lifetime</option>
-                                    </select>
-                                </label>
-                            </div>
-
-                            <!-- Loading skeleton (bounded; replaced on settle) -->
-                            <div id="statistics-loading" aria-hidden="true">
-                                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
-                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
-                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
-                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse"></div>
-                                    <div class="h-16 bg-gray-600/50 rounded animate-pulse hidden md:block"></div>
-                                </div>
-                                <div class="h-4 w-2/3 bg-gray-600/50 rounded animate-pulse mb-2"></div>
-                                <div class="h-4 w-1/2 bg-gray-600/50 rounded animate-pulse"></div>
-                            </div>
-
-                            <!-- Error (neutral; the rest of the profile is untouched) -->
-                            <div id="statistics-error" class="hidden">
-                                <p class="text-sm text-[var(--text-mid)]">Statistics are unavailable right now.</p>
-                            </div>
-
-                            <!-- Empty state (no watch history) -->
-                            <div id="statistics-empty" class="hidden">
-                                <p class="text-sm text-[var(--text-hi)]">No viewing history yet.</p>
-                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">Start logging movies and shows to see your statistics.</p>
-                            </div>
-
-                            <!-- Content -->
-                            <div id="statistics-content" class="hidden">
-                                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center mb-5">
-                                    <div class="bg-black/30 rounded-lg p-3">
-                                        <div id="statistics-watch-events" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
-                                        <div class="text-[10px] font-slate text-[var(--text-low)]">WATCH EVENTS</div>
-                                    </div>
-                                    <div class="bg-black/30 rounded-lg p-3">
-                                        <div id="statistics-distinct-titles" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
-                                        <div class="text-[10px] font-slate text-[var(--text-low)]">TITLES</div>
-                                    </div>
-                                    <div class="bg-black/30 rounded-lg p-3">
-                                        <div id="statistics-hours" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
-                                        <div class="text-[10px] font-slate text-[var(--text-low)]">HOURS WATCHED</div>
-                                    </div>
-                                    <div class="bg-black/30 rounded-lg p-3">
-                                        <div id="statistics-average-rating" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">—</div>
-                                        <div class="text-[10px] font-slate text-[var(--text-low)]">AVG RATING</div>
-                                    </div>
-                                    <div class="bg-black/30 rounded-lg p-3">
-                                        <div id="statistics-rewatches" class="text-2xl font-bold text-[var(--accent-hi)] font-slate">0</div>
-                                        <div class="text-[10px] font-slate text-[var(--text-low)]">REWATCHES</div>
-                                    </div>
-                                </div>
-
-                                <dl class="space-y-4">
-                                    <div id="statistics-genres-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Top genres</dt>
-                                        <dd><ul id="statistics-genres" class="flex flex-wrap gap-2"></ul></dd>
-                                    </div>
-                                    <div id="statistics-ratings-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Rating distribution</dt>
-                                        <dd><ul id="statistics-rating-distribution" class="space-y-1"></ul></dd>
-                                        <p id="statistics-rating-count" class="font-slate text-[10px] text-[var(--text-low)] mt-1"></p>
-                                    </div>
-                                    <div id="statistics-monthly-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Monthly activity</dt>
-                                        <dd><ul id="statistics-monthly" class="space-y-1"></ul></dd>
-                                    </div>
-                                    <div id="statistics-heatmap-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Watch heatmap</dt>
-                                        <dd>
-                                            <div id="statistics-heatmap"
-                                                 class="grid grid-flow-col grid-rows-7 gap-[2px] overflow-x-auto pb-1"
-                                                 role="list"
-                                                 aria-label="Daily watch activity heatmap"></div>
-                                            <p id="statistics-heatmap-summary"
-                                               class="font-slate text-[10px] text-[var(--text-low)] mt-2"></p>
-                                        </dd>
-                                    </div>
-                                    <div id="statistics-media-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Movie vs TV</dt>
-                                        <dd><p id="statistics-media" class="text-sm text-[var(--text-hi)]"></p></dd>
-                                    </div>
-                                    <div id="statistics-directors-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Directors</dt>
-                                        <dd><ul id="statistics-directors" class="space-y-1"></ul></dd>
-                                    </div>
-                                    <div id="statistics-actors-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Actors</dt>
-                                        <dd><ul id="statistics-actors" class="space-y-1"></ul>
-                                            <p id="statistics-actors-empty" class="font-slate text-[10px] text-[var(--text-low)] hidden">No actor data available.</p></dd>
-                                    </div>
-                                    <div id="statistics-season-quality-block" class="hidden">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Season ratings</dt>
-                                        <dd><ul id="statistics-season-quality" class="space-y-1"></ul></dd>
-                                    </div>
-                                    <div id="statistics-runtime-block">
-                                        <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Runtime coverage</dt>
-                                        <dd><p id="statistics-runtime" class="text-sm text-[var(--text-hi)]"></p></dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        </div>
-
-                        <!-- Quick stats strip -->
-                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
-                            <div class="grid grid-cols-4 gap-3 text-center mb-2">
-                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.diary }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">DIARY</div></div>
-                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.watching }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">TRACKING</div></div>
-                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.watchlist }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">WATCHLIST</div></div>
-                                <div><div class="text-2xl font-bold text-[var(--accent-hi)] font-slate">{{ stats.viewed }}</div><div class="text-[10px] font-slate text-[var(--text-low)]">VIEWED</div></div>
-                            </div>
-                        </div>
-
-                        <!-- Personal Stats -->
-                        <div class="bg-gray-700 rounded-lg p-6 mb-6">
-                            <h3 class="text-xl font-semibold mb-4 text-[var(--accent)]">Your Stats</h3>
-                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
-                                <div>
-                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.watchlist|length }}</div>
-                                    <div class="text-[var(--text-mid)] text-sm">Watchlist</div>
-                                </div>
-                                <div>
-                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.wishlist|length }}</div>
-                                    <div class="text-[var(--text-mid)] text-sm">Wishlist</div>
-                                </div>
-                                <div>
-                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.viewed_media|length }}</div>
-                                    <div class="text-[var(--text-mid)] text-sm">Viewed</div>
-                                </div>
-                                <div>
-                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.followers_count or 0 }}</div>
-                                    <div class="text-[var(--text-mid)] text-sm">Followers</div>
-                                </div>
-                                <div>
-                                    <div class="text-2xl font-bold text-[var(--accent)]">{{ current_user.following_count or 0 }}</div>
-                                    <div class="text-[var(--text-mid)] text-sm">Following</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Recommendations Preview -->
-                        <div class="bg-gray-700 rounded-lg p-6">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-xl font-semibold text-[var(--accent)]">Recommended for You</h3>
-                                <a href="{{ url_for('auth.profile_recommendations') }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">View all</a>
-                            </div>
-                            <p class="text-[var(--text-mid)] mb-4">Based on your watchlist, wishlist, and viewing history</p>
-                            
-                            <!-- Preview of recommendations -->
-                            <div class="text-center py-4" id="recommendations-preview">
-                                <p class="text-[var(--text-mid)]">Loading personalized recommendations...</p>
-                            </div>
-                        </div>
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Reviews</div>
+                        <div id="stat-total-reviews" class="text-xl font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1">total written</div>
                     </div>
-
-                    <div id="reviews-content" class="hidden">
-                        <h3 class="text-2xl font-bold mb-6 text-[var(--accent)]">Your Reviews</h3>
-                        <div class="space-y-6">
-                        {% if reviews %}
-                            {% for review in reviews %}
-                                <div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
-                                    <div class="flex justify-between items-start mb-4">
-                                        <div class="flex items-center gap-4">
-                                            {% set poster_url = review.media.poster_path %}
-                                            {% if poster_url and not poster_url.startswith('http') %}
-                                                {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
-                                            {% endif %}
-                                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}" 
-                                                 alt="{{ review.media.title }}" 
-                                                 class="w-16 h-24 rounded border border-gray-600 object-cover"
-                                                 onerror="this.src='/static/images/no-poster.svg'">
-                                            <div>
-                                                <h4 class="text-lg font-bold">
-                                                    <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}" class="hover:text-[var(--accent)] transition-colors">
-                                                        {{ review.media.title }}
-                                                    </a>
-                                                </h4>
-                                                <div class="flex items-center gap-2 mt-1">
-                                                    <div class="flex text-yellow-400 text-sm">
-                                                        {% for i in range(5) %}
-                                                            <i class="f{{ 'as' if i < review.rating|int else 'ar' }} fa-star"></i>
-                                                        {% endfor %}
-                                                    </div>
-                                                    <span class="text-[var(--text-mid)] text-sm">{{ review.created_at.strftime('%b %d, %Y') }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="flex gap-2">
-                                            <a href="{{ url_for('details.movie_detail', movie_id=review.media.tmdb_id) if review.media_type == 'movie' else url_for('details.tv_detail', show_id=review.media.tmdb_id) }}#review-{{ review.id }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm">
-                                                <i class="fas fa-edit"></i> Edit
-                                            </a>
-                                        </div>
-                                    </div>
-                                    <p class="text-gray-300">{{ review.content or 'No written review.' }}</p>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="text-center py-12 bg-gray-700 rounded-xl border border-gray-600">
-                                <i class="fas fa-comment-slash text-4xl text-[var(--text-mid)] mb-4"></i>
-                                <p class="text-[var(--text-mid)]">You haven't written any reviews yet.</p>
-                                <a href="{{ url_for('main.index') }}" class="mt-4 inline-block text-[var(--accent)] hover:text-[var(--accent-hi)]">Browse movies and shows</a>
-                            </div>
-                        {% endif %}
-                        </div>
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Watchlist Progress</div>
+                        <div id="stat-watchlist-completion" class="text-xl font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1">completion rate</div>
                     </div>
-
-                    <div id="insights-content" class="hidden">
-                        <!-- Insights Dashboard -->
-                        <div class="bg-gray-700 rounded-lg p-6 mb-6 border border-gray-600">
-                            <h3 class="text-xl font-semibold mb-6 text-[var(--accent)]">Visual Insights</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                <!-- Genre Distribution -->
-                                <div class=" rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Genre DNA</h4>
-                                    <div class="h-64 relative">
-                                        <canvas id="genre-chart"></canvas>
-                                    </div>
-                                </div>
-                                
-                                <!-- Rating Distribution -->
-                                <div class=" rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Rating Distribution</h4>
-                                    <div class="h-64 relative">
-                                        <canvas id="rating-dist-chart"></canvas>
-                                    </div>
-                                </div>
-
-                                <!-- Media Mix -->
-                                <div class=" rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Media Mix</h4>
-                                    <div class="h-64 relative">
-                                        <canvas id="media-mix-chart"></canvas>
-                                    </div>
-                                </div>
-
-                                <!-- Monthly Activity -->
-                                <div class=" rounded-xl p-6 border border-gray-600">
-                                    <h4 class="text-lg font-semibold mb-4 text-[var(--accent-hi)]">Recent Activity</h4>
-                                    <div class="h-64 relative">
-                                        <canvas id="activity-chart"></canvas>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Statistics Grid Extension -->
-                            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Total Watched</div>
-                                    <div id="stat-total-watched" class="text-xl font-bold text-[var(--accent)]">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1" id="stat-movie-tv-split">- / -</div>
-                                </div>
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Avg Rating</div>
-                                    <div id="stat-avg-rating" class="text-xl font-bold text-pink-400">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">out of 5.0</div>
-                                </div>
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Reviews</div>
-                                    <div id="stat-total-reviews" class="text-xl font-bold text-purple-400">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">total written</div>
-                                </div>
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Watchlist Progress</div>
-                                    <div id="stat-watchlist-completion" class="text-xl font-bold text-green-400">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">completion rate</div>
-                                </div>
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Top Genre (Rank)</div>
-                                    <div id="stat-top-genre" class="text-lg font-bold text-yellow-500">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">by count</div>
-                                </div>
-                                <div class=" rounded-xl p-4 text-center border border-gray-600">
-                                    <div class="text-[var(--text-mid)] text-xs mb-1">Highest Rated</div>
-                                    <div id="stat-best-genre" class="text-lg font-bold text-orange-500">-</div>
-                                    <div class="text-[10px] text-[var(--text-mid)] mt-1">avg performance</div>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Top Genre (Rank)</div>
+                        <div id="stat-top-genre" class="text-lg font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1">by count</div>
+                    </div>
+                    <div class="surface-secondary p-4 text-center">
+                        <div class="meta-text mb-1">Highest Rated</div>
+                        <div id="stat-best-genre" class="text-lg font-bold text-[var(--accent-hi)]">-</div>
+                        <div class="metric-label mt-1">avg performance</div>
                     </div>
                 </div>
             </div>
@@ -521,45 +549,70 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/stats-dashboard.js') }}"></script>
-<script>
-      // Page data for static/profile-page.js
-      window.__PROFILE_BOOTSTRAP__ = { userId: {{ current_user.id | tojson }} };
+    <script>
+        // Page data for static/profile-page.js
+        window.__PROFILE_BOOTSTRAP__ = { userId: {{ current_user.id | tojson }} };
     </script>
     <script src="{{ url_for('static', filename='js/profile-page.js') }}"></script>
-    
+
     <!-- Create List Modal -->
-    <div id="create-list-modal" class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class=" rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6 text-[var(--accent)]">Create New List</h2>
-            
+    <div id="create-list-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden" role="dialog" aria-modal="true" aria-labelledby="create-list-title">
+        <div class="surface-primary p-8 w-full max-w-md mx-4">
+            <h2 id="create-list-title" class="text-2xl font-bold mb-6 text-[var(--text-hi)]">Create New List</h2>
+
             <div class="space-y-4">
                 <div>
-                    <label for="list-title" class="block text-sm font-semibold mb-2">List Title *</label>
-                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <label for="list-title" class="block text-sm font-semibold mb-2 text-[var(--text-hi)]">List Title *</label>
+                    <input type="text" id="list-title" placeholder="e.g., Best Sci-Fi of 2024" class="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-[var(--text-hi)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
                 </div>
-                
+
                 <div>
-                    <label for="list-description" class="block text-sm font-semibold mb-2">Description (Optional)</label>
-                    <textarea id="list-description" rows="3" placeholder="Describe your list..." class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                    <label for="list-description" class="block text-sm font-semibold mb-2 text-[var(--text-hi)]">Description (Optional)</label>
+                    <textarea id="list-description" rows="3" placeholder="Describe your list…" class="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-[var(--text-hi)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] resize-none"></textarea>
                 </div>
-                
+
                 <div class="flex items-center">
-                    <input type="checkbox" id="list-public" checked class="w-4 h-4 text-[var(--accent)] bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
-                    <label for="list-public" class="ml-2 text-sm text-gray-300">Make this list public</label>
+                    <input type="checkbox" id="list-public" checked class="w-4 h-4 accent-[var(--accent)] bg-black/40 border-white/10 rounded">
+                    <label for="list-public" class="ml-2 text-sm text-[var(--text-mid)]">Make this list public</label>
                 </div>
             </div>
-            
+
             <div class="flex space-x-4 mt-6">
-                <button onclick="createList()" class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
-                    Create List
-                </button>
-                <button onclick="closeCreateListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">
-                    Cancel
-                </button>
+                <button type="button" onclick="createList()" class="btn-accent flex-1">Create List</button>
+                <button type="button" onclick="closeCreateListModal()" class="btn-ghost">Cancel</button>
             </div>
         </div>
     </div>
+    <script>
+        // Profile dropdown toggle — same behavior/ids as base.html
+        // (aria-expanded, outside-click, Escape), for this standalone page.
+        document.addEventListener('DOMContentLoaded', function() {
+            const profileButton = document.getElementById('profile-button');
+            const profileMenu = document.getElementById('profile-menu');
+            if (!profileButton || !profileMenu) return;
+
+            profileButton.addEventListener('click', function() {
+                const willOpen = profileMenu.classList.contains('hidden');
+                profileMenu.classList.toggle('hidden', !willOpen);
+                profileButton.setAttribute('aria-expanded', String(willOpen));
+            });
+            document.addEventListener('click', function(event) {
+                if (!profileButton.contains(event.target) && !profileMenu.contains(event.target)) {
+                    profileMenu.classList.add('hidden');
+                    profileButton.setAttribute('aria-expanded', 'false');
+                }
+            });
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !profileMenu.classList.contains('hidden')) {
+                    profileMenu.classList.add('hidden');
+                    profileButton.setAttribute('aria-expanded', 'false');
+                    profileButton.focus();
+                }
+            });
+        });
+    </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     <script src="{{ url_for('static', filename='js/taste-dna.js') }}"></script>
     <script src="{{ url_for('static', filename='js/statistics.js') }}"></script>
 </body>
