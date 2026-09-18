@@ -26,7 +26,7 @@
     bottom: 24px;
     left: 50%;
     transform: translate(-50%, 80px);
-    z-index: 300;
+    z-index: 1300; /* header-layering contract: above menu portal */
     display: flex;
     align-items: center;
     gap: 10px;
@@ -668,7 +668,7 @@ input, textarea, select {
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Header always above page content/hero layers */
-.fi-header { z-index: 1000; }
+.fi-header { z-index: 1100; } /* nav layer contract: nav 1100 < modals 1200 < portal 1250 < toasts 1300 */
 
 /* Top bar surface for the simple (non-fixed) nav variant */
 .fi-topbar {
@@ -676,6 +676,26 @@ input, textarea, select {
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--line);
+}
+
+/* ── Header layering contract (cross-page stacking fix) ─────────────
+   The header itself creates a stacking context (backdrop-filter), so it
+   must own an explicit root-level z-index — otherwise page-level
+   overlays (sticky bars, carousels, modals) paint above the whole nav.
+   Ladder: nav 1100 < modals 1200 < menu portal 1250 < toasts 1300. */
+.fi-nav-layer { z-index: 1100; }
+
+/* Menus render through a fixed <body>-level portal so header/hero/card
+   stacking contexts can never clip or cover them. */
+.fi-menu-portal {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1250;
+}
+
+.fi-menu-portal .fi-menu {
+    pointer-events: auto;
 }
 
 /* Dropdown panel: ALWAYS a readable surface, never inherited opacity.

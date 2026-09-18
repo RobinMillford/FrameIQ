@@ -439,11 +439,79 @@
      * tolerates absent elements, so base-derived and standalone
      * pages share one contract.
      */
+    /* Header overlay portal (header-layering contract, chrome.css):
+     * the header creates its own stacking context, and cards, sticky
+     * bars or hero layers at root level were painting above the menus.
+     * Moving each open menu into a body-level fixed portal lifts it
+     * clear of every page stacking context. Nothing else changes:
+     * click-outside/Escape keep working because containment checks
+     * run against the original anchor's root (the portal lives there). */
+    function portalMenu(panel, anchor) {
+        if (!panel || !anchor || panel._fiPortaled) return;
+        panel._fiPortaled = true;
+
+        // Re-host inside a fixed, pointer-transparent body-level layer.
+        const portal = document.createElement('div');
+        portal.className = 'fi-menu-portal hidden';
+        document.body.appendChild(portal);
+        portal.appendChild(panel);
+
+        // Slot where the panel used to live; nothing reflows.
+        const slot = document.createElement('div');
+        slot.hidden = true;
+        anchor.appendChild(slot);
+        panel._fiSlot = slot;
+
+        function place() {
+            if (panel.classList.contains('hidden')) return;
+            const r = anchor.getBoundingClientRect();
+            const w = panel.offsetWidth || 224;
+            const h = panel.offsetHeight;
+            let left = r.right - w;
+            let top = r.bottom + 8;
+            if (left < 8) left = 8;                    // keep on-screen
+            if (top + h > window.innerHeight - 8) {
+                top = r.top - h - 8;                   // flip above
+                if (top < 8) top = 8;                  // never clip
+            }
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+        }
+
+        // Track scroll/resize; auto-hide if the trigger scrolls away.
+        const track = function () {
+            if (panel.classList.contains('hidden')) return;
+            const r = anchor.getBoundingClientRect();
+            if (r.bottom < 0 || r.top > window.innerHeight) {
+                panel.classList.add('hidden');
+                return;
+            }
+            place();
+        };
+        window.addEventListener('scroll', track, true);
+        window.addEventListener('resize', track);
+
+        // Opening lifts the panel into the portal; closing parks it
+        // back in its slot so the DOM returns to its authored shape.
+        new MutationObserver(function () {
+            if (panel.classList.contains('hidden')) {
+                slot.appendChild(panel);
+                panel.style.left = '';
+                panel.style.top = '';
+            } else {
+                portal.classList.remove('hidden');
+                portal.appendChild(panel);
+                place();
+            }
+        }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+    }
+
     function initHeaderChrome() {
         const profileButton = document.getElementById('profile-button');
         const profileMenu = document.getElementById('profile-menu');
 
         if (profileButton && profileMenu) {
+            portalMenu(profileMenu, profileButton);
             profileButton.addEventListener('click', function () {
                 const willOpen = profileMenu.classList.contains('hidden');
                 profileMenu.classList.toggle('hidden', !willOpen);
@@ -464,6 +532,12 @@
                 }
             });
         }
+
+        // Notification panel shares the portal contract (readability
+        // over hero/backdrop layers, never clipped by the header).
+        const notifBell = document.getElementById('notif-bell');
+        const notifPanel = document.getElementById('notif-panel');
+        if (notifBell && notifPanel) portalMenu(notifPanel, notifBell);
 
         // Mobile navigation drawer (base.html)
         const mobileNavToggle = document.getElementById('mobile-nav-toggle');

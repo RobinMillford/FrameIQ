@@ -745,6 +745,18 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
     media_split = {t: int(c) for t, c in type_rows}
     media_split["tv"] = media_split.get("tv", 0) + len(tv_episode_ids)
 
+    # Distinct TV shows watched: >=1 TVEpisodeWatch row. Titles, not
+    # episodes; tracking status contributes nothing (§3).
+    tv_shows_watched = 0
+    if tv_episode_ids:
+        tv_shows_watched = (
+            _tv_windowed(
+                db.session.query(func.count(func.distinct(
+                    TVEpisodeWatch.show_id)))
+                .filter(TVEpisodeWatch.user_id == user_id),
+                lower, upper,
+            ).scalar() or 0)
+
     # ── Query 4 — monthly trend (GROUP BY year+month) ──────────────────
     by_bucket = _monthly_trend_buckets(
         user_id, lower, upper, tv_episode_ids)
@@ -822,6 +834,7 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         "distinct_titles": distinct_titles,
         "movies_watched": media_split.get("movie", 0),
         "tv_watch_events": media_split.get("tv", 0),
+        "tv_shows_watched": tv_shows_watched,
         "total_hours_watched": hours_watched(runtime_sum),
         "runtime_covered_events": runtime_covered,
         "runtime_missing_events": runtime_missing,

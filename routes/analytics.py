@@ -4,7 +4,7 @@ Handles data aggregation for user statistics and charts
 """
 from flask import Blueprint, jsonify
 from flask_login import login_required
-from models import db, User, Review, MediaItem, user_viewed, user_watchlist
+from models import db, User, Review, MediaItem, user_watchlist
 from sqlalchemy import func
 from collections import Counter
 from datetime import datetime, timedelta
@@ -14,24 +14,27 @@ analytics = Blueprint('analytics', __name__)
 @analytics.route('/api/users/<int:user_id>/stats', methods=['GET'])
 @login_required
 def get_user_stats(user_id):
-    """Get aggregated statistics for a specific user"""
+    """Get aggregated statistics for a specific user.
+
+    Watch-count semantics (movies watched / TV watched / total
+    watched) come from the CANONICAL statistics service — the same
+    source the profile header consumes — so the two surfaces can never
+    diverge again (previously this endpoint counted ``user_viewed``
+    rows, a table TV watches never enter, which reported 0 TV for
+    any episode-watching user).
+    """
+    from api.statistics import get_statistics
+
     user = User.query.get_or_404(user_id)
-    
-    # 1. basic counts
+
+    # 1. basic counts — watch metrics from the canonical service
+    canonical = get_statistics(user_id, lifetime=True)
+    total_watched = (canonical["movies_watched"]
+                     + canonical["tv_shows_watched"])
+    movie_watched = canonical["movies_watched"]
+    tv_watched = canonical["tv_shows_watched"]
+
     total_reviews = Review.query.filter_by(user_id=user_id, is_deleted=False).count()
-    
-    # Total watched (from user_viewed table)
-    total_watched = db.session.query(user_viewed).filter(user_viewed.c.user_id == user_id).count()
-    
-    # Media Type Breakdown
-    movie_watched = db.session.query(user_viewed).filter(
-        user_viewed.c.user_id == user_id, 
-        user_viewed.c.media_type == 'movie'
-    ).count()
-    tv_watched = db.session.query(user_viewed).filter(
-        user_viewed.c.user_id == user_id, 
-        user_viewed.c.media_type == 'tv'
-    ).count()
 
     # Watchlist Completion
     total_watchlist = db.session.query(user_watchlist).filter(user_watchlist.c.user_id == user_id).count()
@@ -98,22 +101,27 @@ def get_user_stats(user_id):
         'data': [p[1] for p in perf_list[:5]]
     }
     
-    # 4. Monthly Activity (last 6 months)
+    # 4. Monthly Activity (last 6 months). Grouped in Python over a
+    # bounded scalar projection so the query stays portable across
+    # Postgres (prod) and SQLite (tests) — date_trunc is PG-only.
     six_months_ago = datetime.utcnow() - timedelta(days=180)
-    activity_query = db.session.query(
-        func.date_trunc('month', Review.created_at).label('month'),
-        func.count(Review.id).label('count')
-    ).filter(
+    created_rows = db.session.query(Review.created_at).filter(
         Review.user_id == user_id,
         Review.is_deleted == False,
         Review.created_at >= six_months_ago
-    ).group_by(func.date_trunc('month', Review.created_at)).order_by('month').all()
-    
+    ).all()
+
+    month_counts = Counter()
+    for (created,) in created_rows:
+        if created:
+            month_counts[created.strftime("%Y-%m")] += 1
+
     months = []
     counts = []
-    for row in activity_query:
-        months.append(row.month.strftime('%b %Y'))
-        counts.append(row.count)
+    for key in sorted(month_counts):
+        year, mon = key.split("-")
+        months.append(datetime(int(year), int(mon), 1).strftime("%b %Y"))
+        counts.append(month_counts[key])
     
     activity_data = {
         'labels': months,

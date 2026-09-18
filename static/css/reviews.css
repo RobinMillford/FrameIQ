@@ -559,7 +559,7 @@
     opacity: 0;
     transform: translateY(20px);
     transition: all 0.3s;
-    z-index: 9999;
+    z-index: 1300; /* header-layering contract (chrome.css): above menus */
 }
 
 .toast.show {
