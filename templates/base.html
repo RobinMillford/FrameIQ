@@ -240,89 +240,9 @@
         </div>
     </footer>
 
-    <!-- Base JavaScript -->
-    <script>
-        // Profile dropdown toggle
-        document.addEventListener('DOMContentLoaded', function() {
-            const profileButton = document.getElementById('profile-button');
-            const profileMenu = document.getElementById('profile-menu');
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-
-            if (profileButton && profileMenu) {
-                profileButton.addEventListener('click', function() {
-                    const isOpen = !profileMenu.classList.contains('hidden');
-                    profileMenu.classList.toggle('hidden');
-                    profileButton.setAttribute('aria-expanded', String(!isOpen));
-                });
-
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function(event) {
-                    if (!profileButton.contains(event.target) && !profileMenu.contains(event.target)) {
-                        profileMenu.classList.add('hidden');
-                        profileButton.setAttribute('aria-expanded', 'false');
-                    }
-                });
-
-                // Close on Escape key
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape' && !profileMenu.classList.contains('hidden')) {
-                        profileMenu.classList.add('hidden');
-                        profileButton.setAttribute('aria-expanded', 'false');
-                        profileButton.focus();
-                    }
-                });
-            }
-
-            // Mobile nav drawer toggle
-            const mobileNavToggle = document.getElementById('mobile-nav-toggle');
-            const mobileNavClose = document.getElementById('mobile-nav-close');
-            const mobileNavDrawer = document.getElementById('mobile-nav-drawer');
-
-            function openMobileNav() {
-                mobileNavDrawer.classList.add('open');
-                mobileNavDrawer.setAttribute('aria-hidden', 'false');
-                mobileNavToggle.setAttribute('aria-expanded', 'true');
-                document.body.style.overflow = 'hidden';
-            }
-
-            function closeMobileNav() {
-                mobileNavDrawer.classList.remove('open');
-                mobileNavDrawer.setAttribute('aria-hidden', 'true');
-                mobileNavToggle.setAttribute('aria-expanded', 'false');
-                document.body.style.overflow = '';
-            }
-
-            if (mobileNavToggle && mobileNavDrawer) {
-                mobileNavToggle.addEventListener('click', openMobileNav);
-            }
-            if (mobileNavClose && mobileNavDrawer) {
-                mobileNavClose.addEventListener('click', closeMobileNav);
-            }
-
-            // Close on link click
-            mobileNavDrawer?.querySelectorAll('a').forEach(link => {
-                link.addEventListener('click', closeMobileNav);
-            });
-
-            // Close on Escape
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && mobileNavDrawer?.classList.contains('open')) {
-                    closeMobileNav();
-                    mobileNavToggle?.focus();
-                }
-            });
-
-            // Close on overlay click
-            mobileNavDrawer?.addEventListener('click', function(e) {
-                if (e.target === mobileNavDrawer) closeMobileNav();
-            });
-
-            // Lucide icons (new chrome)
-            if (window.lucide) lucide.createIcons();
-        });
-    </script>
-
+    <!-- Base JavaScript: header chrome (profile dropdown, mobile drawer)
+         lives in chrome.js so it initializes on EVERY page that renders
+         the shared header — base-derived and standalone templates alike. -->
     <!-- Chrome: command palette + CineBot slide-over + toasts -->
     <script>window.__IS_AUTH__ = {{ 'true' if current_user.is_authenticated else 'false' }};</script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>

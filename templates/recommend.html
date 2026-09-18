@@ -195,6 +195,10 @@
     <!-- Chat Button -->
 
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            setupMobileMenu();
+        });
+
         function setupMobileMenu() {
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
@@ -214,26 +218,7 @@
                 mobileMenu.classList.toggle('hidden');
             });
         }
-});
-                
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-                
-                // Close dropdown when pressing Escape key
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-            }
-            
-            setupMobileMenu();
-        });
-    </script>
+        </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

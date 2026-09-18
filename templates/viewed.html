@@ -223,31 +223,6 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Profile dropdown
-            const profileButton = document.getElementById('profile-button');
-            const profileMenu = document.getElementById('profile-menu');
-            
-            if (profileButton && profileMenu) {
-                profileButton.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    profileMenu.classList.toggle('hidden');
-                });
-                
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-                
-                // Close dropdown when pressing Escape key
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-            }
-            
             // Category filtering
             const categoryButtons = document.querySelectorAll('.category-btn');
             const categorySections = document.querySelectorAll('.category-section');

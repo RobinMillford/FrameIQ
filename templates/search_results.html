@@ -372,55 +372,6 @@
         </div>
     </section>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Profile dropdown
-            const profileButton = document.getElementById('profile-button');
-            const profileMenu = document.getElementById('profile-menu');
-            
-            if (profileButton && profileMenu) {
-                profileButton.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    profileMenu.classList.toggle('hidden');
-                });
-                
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-                
-                // Close dropdown when pressing Escape key
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-            }
-            
-            // Mobile menu
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0  glass-effect hidden';
-            mobileMenu.innerHTML = `
-                <div class="container mx-auto px-4 py-4">
-                    <div class="flex flex-col space-y-4">
-                        <a href="/" class="text-white hover:text-[var(--accent)]">Home</a>
-                        <a href="/movies" class="text-white hover:text-[var(--accent)]">Movies</a>
-                        <a href="/tv_shows" class="text-white hover:text-[var(--accent)]">TV Shows</a>
-                        <a href="/news" class="text-white hover:text-[var(--accent)]">News</a>
-                        <a href="/chat" class="text-white hover:text-[var(--accent)]">AI Chat</a>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(mobileMenu);
-
-            mobileMenuButton.addEventListener('click', () => {
-                mobileMenu.classList.toggle('hidden');
-            });
-        });
-    </script>
     <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>

@@ -411,18 +411,25 @@ def test_duplicate_genres_in_one_title_count_once(user):
 # ════════════════════════════════════════════════════════════════════════════
 
 def test_movie_tv_split(user):
+    # TV watch events are TVEpisodeWatch rows (the product's only TV
+    # write path); DiaryEntry rows with media_type='tv' cannot be
+    # created through routes (diary rejects TV) and are not counted.
     movie = _media("A Movie", runtime=90, media_type="movie")
     show = _media("A Show", runtime=45, media_type="tv")
     _diary(user, movie, date(2026, 8, 1))
-    _diary(user, show, date(2026, 8, 2))
-    _diary(user, show, date(2026, 8, 3), is_rewatch=True)
+    _episode(user, show, 1, 1, date(2026, 8, 2))
+    _episode(user, show, 1, 2, date(2026, 8, 3), is_rewatch=True)
     s = get_statistics(user.id, year=2026)
     assert s["movies_watched"] == 1
     assert s["tv_watch_events"] == 2
     assert s["media_type_distribution"] == {"movie": 1, "tv": 2}
+    assert s["total_watch_events"] == 3
+    assert s["distinct_titles"] == 2
 
 
 def test_movie_tv_split_uses_stored_media_type(user):
+    # Stored media_type drives the diary-side split (legacy TV-typed
+    # diary rows, if any, stay visible as title-level TV events).
     m = _media("Stored Type", runtime=90, media_type="tv")
     _diary(user, m, date(2026, 8, 1))
     s = get_statistics(user.id, year=2026)
@@ -606,12 +613,12 @@ def test_continue_watching_start_is_not_a_watch(user):
     assert s["total_watch_events"] == 0
 
 
-def test_tv_episode_watch_table_is_not_merged(user):
-    # §16: TVEpisodeWatch is the episode-tracking subsystem; statistics
-    # must not double-count a TV event through two source tables.
+def test_tv_episode_watch_rows_are_watch_events(user):
+    # TV watch events ARE TVEpisodeWatch rows (corrected canonical
+    # semantics); a stray TV DiaryEntry cannot exist through the
+    # product's write path and is not double-counted.
     from models.tv import TVEpisodeWatch
     m = _media("TV Show", runtime=45, media_type="tv")
-    _diary(user, m, date(2026, 9, 1))  # the ONLY canonical watch event
     db.session.add(TVEpisodeWatch(
         user_id=user.id, show_id=m.tmdb_id, season_number=1,
         episode_number=1, watched_date=date(2026, 9, 1)))
@@ -621,6 +628,30 @@ def test_tv_episode_watch_table_is_not_merged(user):
     assert s["tv_watch_events"] == 1
     TVEpisodeWatch.query.filter_by(user_id=user.id).delete()
     db.session.commit()
+
+
+def test_episode_rows_feed_global_totals_and_season_quality(user):
+    # Corrected canonical model: episode rows are watch events, so they
+    # feed every global metric (events, titles, hours, ratings, daily)
+    # AND season_quality — both views must stay consistent.
+    m = _media("Base Movie", runtime=90)
+    _diary(user, m, date(2026, 7, 1))
+    before = get_statistics(user.id, year=2026)
+    show = _show("Side Show")
+    _episode(user, show, 1, 1, date(2026, 8, 2), rating=5.0)
+    _episode(user, show, 1, 2, date(2026, 8, 3), rating=4.0)
+    after = get_statistics(user.id, year=2026)
+    assert after["total_watch_events"] == before["total_watch_events"] + 2
+    assert after["tv_watch_events"] == before["tv_watch_events"] + 2
+    assert after["distinct_titles"] == before["distinct_titles"] + 1
+    assert after["rating_count"] == before["rating_count"] + 2
+    assert after["rating_distribution"]["5.0"] == 1
+    assert after["rating_distribution"]["4.0"] == 1
+    daily_sum = sum(r["count"] for r in after["daily_activity"])
+    monthly_sum = sum(r["count"] for r in after["monthly_watch_counts"])
+    assert daily_sum == monthly_sum == after["total_watch_events"]
+    assert len(after["season_quality"]) == 1
+    assert after["season_quality"][0]["rating_count"] == 2
 
 
 def test_user_isolation(user):
@@ -1459,11 +1490,12 @@ def _show(name):
     return _media(name, runtime=45, media_type="tv")
 
 
-def _episode(user, show, season, episode, watched, rating=None):
+def _episode(user, show, season, episode, watched, rating=None,
+             is_rewatch=False):
     row = TVEpisodeWatch(
         user_id=user.id, show_id=show.tmdb_id,
         season_number=season, episode_number=episode,
-        watched_date=watched, rating=rating,
+        watched_date=watched, rating=rating, is_rewatch=is_rewatch,
     )
     db.session.add(row)
     db.session.commit()
@@ -1635,10 +1667,10 @@ def test_season_quality_missing_media_item_degrades(user):
     assert s["season_quality"] == []
 
 
-def test_season_quality_does_not_alter_global_totals(user):
-    # §29/§33: people/season aggregation is supplementary. Snapshot the
-    # global series with DiaryEntry only, then add rated episode
-    # watches and confirm nothing global moved.
+def test_season_quality_is_consistent_with_global_totals(user):
+    # Corrected canonical model: episode rows ARE watch events, so they
+    # feed global totals AND season_quality consistently — the two
+    # views must move together (no silent divergence).
     m = _media("Global Movie", runtime=90)
     _diary(user, m, date(2026, 8, 1), rating=4.0)
     before = get_statistics(user.id, year=2026)
@@ -1646,14 +1678,15 @@ def test_season_quality_does_not_alter_global_totals(user):
     _episode(user, show, 1, 1, date(2026, 8, 2), rating=5.0)
     _episode(user, show, 1, 2, date(2026, 8, 3), rating=4.0)
     after = get_statistics(user.id, year=2026)
-    for field in ("total_watch_events", "distinct_titles", "movies_watched",
-                  "tv_watch_events", "total_hours_watched", "average_rating",
-                  "rating_count", "rewatch_count", "active_watch_days",
-                  "max_daily_watch_events"):
-        assert before[field] == after[field], field
-    assert before["monthly_watch_counts"] == after["monthly_watch_counts"]
-    assert before["daily_activity"] == after["daily_activity"]
-    # …but the season series now reflects the episode ratings
+    assert after["total_watch_events"] == before["total_watch_events"] + 2
+    assert after["tv_watch_events"] == before["tv_watch_events"] + 2
+    assert after["distinct_titles"] == before["distinct_titles"] + 1
+    assert after["rating_count"] == before["rating_count"] + 2
+    assert before["movies_watched"] == after["movies_watched"]
+    monthly_after = sum(r["count"] for r in after["monthly_watch_counts"])
+    daily_after = sum(r["count"] for r in after["daily_activity"])
+    assert monthly_after == daily_after == after["total_watch_events"]
+    # …and the season series reflects the same episode ratings
     assert len(after["season_quality"]) == 1
     assert after["season_quality"][0]["rating_count"] == 2
 
