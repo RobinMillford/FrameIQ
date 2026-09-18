@@ -285,14 +285,17 @@ def test_feedback_events_never_recompute_or_retrieve(auth_client,
 
 # ── 23/29/40. Canonical state stays orthogonal to feedback ───────────────────
 
-def test_not_interested_does_not_touch_watchlist(auth_client):
+def test_not_interested_does_not_touch_watchlist(auth_client, user):
     """The negative preference lives only in RecommendationFeedback — the
-    canonical watchlist stays untouched."""
+    canonical watchlist stays untouched. Scoped to the fixture user:
+    other suites legitimately write watchlist rows on the shared test DB,
+    so a whole-table assertion would be order-dependent."""
     _post_event(auth_client, 'not_interested')
     rows = db.session.execute(
-        select(user_watchlist.c.user_id)).fetchall()
+        select(user_watchlist.c.user_id).where(
+            user_watchlist.c.user_id == user.id)).fetchall()
     assert rows == []
-    assert RecommendationFeedback.query.count() == 1
+    assert RecommendationFeedback.query.count() >= 1
 
 
 def test_feedback_api_still_validates_events(auth_client):

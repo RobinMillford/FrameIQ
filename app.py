@@ -56,6 +56,9 @@ from routes.seo import seo_bp
 from routes.taste_profile import taste_profile_bp
 from routes.statistics import statistics_bp
 
+# Feature 10 — unified personal entertainment calendar
+from routes.calendar import calendar_bp
+
 # ── Routes: stats, TV, watch ──────────────────────────────────────────────────
 from routes.stats import stats_bp
 from routes.tv_tracking import tv_tracking
@@ -195,6 +198,7 @@ def create_app() -> Flask:
         stats_bp, tv_tracking, watch_bp, notifications_bp, smart_lists_bp,
         recommendation_feedback_bp, for_you_bp, taste_profile_bp,
         statistics_bp,
+        calendar_bp,
         # AI
         agent_chat,
     ]

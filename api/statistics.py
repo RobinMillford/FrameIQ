@@ -612,7 +612,11 @@ def _merged_event_aggregates(user_id, lower, upper):
     TVEpisodeWatch rows (see the TV note in the module docstring).
     The two sources are UNION ALL-ed inside one subquery — tagged with
     their origin — so the aggregate remains a single bounded statement
-    and rewatch/hours semantics apply uniformly to both sources.
+    and rewatch/hours semantics apply uniformly to both sources. The
+    TV branch is JOIN-FREE by identity coalescing: TVEpisodeWatch rows
+    must all count even when the show has no MediaItem row (the write
+    path permits that state), so the count always agrees with the
+    join-free id projection in _tv_episode_ids.
     Internal MediaItem ids are used for joins and distinct-title
     counting only and never leave this module.
 
@@ -637,12 +641,22 @@ def _merged_event_aggregates(user_id, lower, upper):
     tv_events = (
         select(
             TVEpisodeWatch.id.label("event_id"),
-            MediaItem.id.label("media_id"),
+            # Per-episode identity coalesced on TMDb ids, join-free.
+            # The write path (mark_episode_watched_core) creates
+            # TVEpisodeWatch rows WITHOUT a MediaItem row for the
+            # show, so an INNER JOIN silently dropped those events
+            # here while _tv_episode_ids (id-only, join-free) still
+            # returned them — the production invariant failure. A
+            # LEFT JOIN keeps every episode row; identity coalescing
+            # on TMDb ids stays correct because MediaItem.tmdb_id is
+            # UNIQUE (no fan-out).
+            func.coalesce(MediaItem.id, TVEpisodeWatch.show_id)
+            .label("media_id"),
             TVEpisodeWatch.is_rewatch.label("is_rewatch"),
             literal_column("1").label("source"),
         )
         .select_from(TVEpisodeWatch)
-        .join(MediaItem, TVEpisodeWatch.show_id == MediaItem.tmdb_id)
+        .outerjoin(MediaItem, TVEpisodeWatch.show_id == MediaItem.tmdb_id)
         .where(TVEpisodeWatch.user_id == user_id)
     )
     if lower is not None:
@@ -658,8 +672,12 @@ def _merged_event_aggregates(user_id, lower, upper):
                 "distinct_titles"),
             func.sum(case((column("is_rewatch").is_(True), 1),
                           else_=0)).label("rewatch_count"),
-            func.count(MediaItem.runtime).label("runtime_covered"),
-            func.coalesce(func.sum(MediaItem.runtime), 0).label(
+            # Runtime folds through the coalesced identity against a
+            # LEFT-joined MediaItem: hydrated events (movie or TV)
+            # count/sum runtime; orphan TV events contribute none —
+            # never fabricated.
+            func.count(column("runtime")).label("runtime_covered"),
+            func.coalesce(func.sum(column("runtime")), 0).label(
                 "runtime_sum"),
             func.sum(case((column("source") == 1, 1), else_=0)).label(
                 "tv_event_count"),

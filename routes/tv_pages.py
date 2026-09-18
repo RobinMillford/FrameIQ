@@ -28,8 +28,10 @@ def tv_upcoming():
 @tv_tracking.route('/tv/calendar')
 @login_required
 def tv_calendar_page():
-    """Render TV calendar page"""
-    return render_template('tv_calendar.html')
+    """Legacy TV calendar — now redirects to the unified calendar
+    (Feature 10) pre-filtered to TV, preserving existing bookmarks."""
+    from flask import redirect, url_for
+    return redirect(url_for('calendar.calendar_page', type='tv'))
 
 
 @tv_tracking.route('/tv/my-shows')
