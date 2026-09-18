@@ -183,24 +183,66 @@ def profile():
                                  current_user.id, exc_info=True)
         taste_dna_data = None
 
-    # Quick stats strip
+    # Quick stats strip — Phase 1–3 semantics:
+    #   WATCH EVENTS = movie DiaryEntry rows + TVEpisodeWatch rows
+    #   TITLES       = distinct watched movie titles (diary) + distinct
+    #                  TV shows with >=1 watched episode (NOT per-episode)
+    #   TRACKING     = TVShowProgress rows (tracking state, never watch
+    #                  events) — reported separately from watching
     from models import DiaryEntry, user_watchlist, user_viewed
-    diary_count = DiaryEntry.query.filter_by(user_id=current_user.id).count()
+    from models.tv import TVEpisodeWatch
+    from sqlalchemy import func as _func
+
+    uid = current_user.id
+    diary_count = DiaryEntry.query.filter_by(user_id=uid).count()
+    movie_events = DiaryEntry.query.filter_by(
+        user_id=uid, media_type="movie").count()
+    tv_watch_events = TVEpisodeWatch.query.filter_by(user_id=uid).count()
+    movie_titles = db.session.query(_func.count(_func.distinct(
+        DiaryEntry.media_id))).filter(
+        DiaryEntry.user_id == uid,
+        DiaryEntry.media_type == "movie").scalar() or 0
+    tv_titles = db.session.query(_func.count(_func.distinct(
+        TVEpisodeWatch.show_id))).filter(
+        TVEpisodeWatch.user_id == uid).scalar() or 0
+    tracking_count = TVShowProgress.query.filter_by(user_id=uid).count()
     watching_count = TVShowProgress.query.filter_by(
-        user_id=current_user.id, status='watching').count()
+        user_id=uid, status="watching").count()
     wl_count = db.session.execute(
-        user_watchlist.select().where(user_watchlist.c.user_id == current_user.id)
+        user_watchlist.select().where(user_watchlist.c.user_id == uid)
     ).rowcount
     viewed_count = db.session.execute(
-        user_viewed.select().where(user_viewed.c.user_id == current_user.id)
+        user_viewed.select().where(user_viewed.c.user_id == uid)
     ).rowcount
 
-    return render_template('profile.html', reviews=recent_reviews,
-                           taste_dna=taste_dna_data,
-                           stats={'diary': diary_count,
-                                  'watching': watching_count,
-                                  'watchlist': wl_count,
-                                  'viewed': viewed_count})
+    # TV progress surface (Phase 6): bounded batch reads over existing
+    # TV tracking data — progress rows, titles, and last-watched
+    # positions in three grouped statements. No per-show queries, no
+    # TMDb calls, no duplicated progress system.
+    progress_rows = (TVShowProgress.query
+                     .filter_by(user_id=uid)
+                     .order_by(TVShowProgress.last_watched.desc().nullslast(),
+                               TVShowProgress.id.desc())
+                     .limit(8)
+                     .all())
+    tv_progress = _build_tv_progress_rows(progress_rows)
+
+    return render_template(
+        "profile.html", reviews=recent_reviews,
+        taste_dna=taste_dna_data,
+        tv_progress=tv_progress,
+        stats={
+            "diary": diary_count,
+            "watch_events": movie_events + tv_watch_events,
+            "movie_titles": movie_titles,
+            "tv_titles": tv_titles,
+            "total_titles": movie_titles + tv_titles,
+            "tv_watch_events": tv_watch_events,
+            "tracking": tracking_count,
+            "watching": watching_count,
+            "watchlist": wl_count,
+            "viewed": viewed_count,
+        })
 
 
 def _build_recommendations(unique_user_items, max_total, max_per_item):
@@ -245,6 +287,57 @@ def _build_recommendations(unique_user_items, max_total, max_per_item):
             logger.warning("Recommendations fetch failed for %s: %s", item.title, e)
 
     return recommendations
+
+
+def _build_tv_progress_rows(progress_rows):
+    """Compact TV-progress rows for the profile surface (Phase 6).
+
+    Bounded: three batch queries total regardless of row count —
+    titles via one tmdb_id IN scan, last-watched positions via one
+    grouped scan. Percentages are half-up (deterministic UI math).
+    Tracking rows without episode data render a neutral note instead
+    of a fabricated percentage.
+    """
+    if not progress_rows:
+        return []
+    from models.media import MediaItem
+    from models.tv import TVEpisodeWatch
+
+    show_ids = [p.show_id for p in progress_rows]
+    titles = dict(
+        db.session.query(MediaItem.tmdb_id, MediaItem.title)
+        .filter(MediaItem.tmdb_id.in_(show_ids)).all())
+
+    positions = {}
+    if show_ids:
+        from sqlalchemy import func as _func
+        for show_id, season, episode in (
+                db.session.query(
+                    TVEpisodeWatch.show_id,
+                    _func.max(TVEpisodeWatch.season_number),
+                    _func.max(TVEpisodeWatch.episode_number))
+                .filter(TVEpisodeWatch.user_id == current_user.id,
+                        TVEpisodeWatch.show_id.in_(show_ids))
+                .group_by(TVEpisodeWatch.show_id).all()):
+            positions[show_id] = (season, episode)
+
+    rows = []
+    for progress in progress_rows:
+        total = progress.total_episodes or 0
+        watched = progress.watched_episodes or 0
+        percent = (min(100, int(watched * 100 / total + 0.5))
+                   if total > 0 else None)
+        season, episode = positions.get(progress.show_id, (None, None))
+        rows.append({
+            "show_id": progress.show_id,
+            "title": titles.get(progress.show_id, "Untitled show"),
+            "status_label": (progress.status or "tracking")
+            .replace("_", " ").capitalize(),
+            "percent": percent,
+            "next_label": (f"S{season}E{episode + 1} up next"
+                           if season is not None else None),
+        })
+    return rows
 
 
 @auth.route('/profile/recommendations')
@@ -413,7 +506,7 @@ def reset_password(token):
 
     if request.method == 'POST':
         password = request.form.get('password', '')
-        confirm  = request.form.get('confirm_password', '')
+        confirm = request.form.get('confirm_password', '')
 
         if len(password) < 8:
             flash('Password must be at least 8 characters.')

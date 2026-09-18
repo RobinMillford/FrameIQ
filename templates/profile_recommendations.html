@@ -233,69 +233,6 @@
 
     <!-- Add floating chat button -->
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Profile dropdown
-            const profileButton = document.getElementById('profile-button');
-            const profileMenu = document.getElementById('profile-menu');
-            
-            if (profileButton && profileMenu) {
-                profileButton.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    profileMenu.classList.toggle('hidden');
-                });
-                
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-                
-                // Close dropdown when pressing Escape key
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') {
-                        profileMenu.classList.add('hidden');
-                    }
-                });
-            }
-            
-            // Mobile menu
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.createElement('div');
-            mobileMenu.className = 'fixed top-16 left-0 right-0  hidden z-50';
-            mobileMenu.innerHTML = `
-                <div class="container mx-auto px-4 py-4">
-                    <div class="flex flex-col space-y-4">
-                        <a href="{{ url_for('main.index') }}" class="text-white hover:text-[var(--accent)]">Home</a>
-                        <a href="{{ url_for('main.movies') }}" class="text-white hover:text-[var(--accent)]">Movies</a>
-                        <a href="{{ url_for('main.tv_shows') }}" class="text-white hover:text-[var(--accent)]">TV Shows</a>
-                        <a href="{{ url_for('main.news') }}" class="text-white hover:text-[var(--accent)]">News</a>
-                        <a href="{{ url_for('chat.model_selection') }}" class="text-white hover:text-[var(--accent)] flex items-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                            </svg>
-                            AI Chat
-                        </a>
-                        {% if current_user.is_authenticated %}
-                            <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">Profile</a>
-                            <a href="{{ url_for('main.watchlist') }}" class="text-white hover:text-[var(--accent)]">Watchlist</a>
-                            <a href="{{ url_for('main.wishlist') }}" class="text-white hover:text-[var(--accent)]">Wishlist</a>
-                            <a href="{{ url_for('main.viewed') }}" class="text-white hover:text-[var(--accent)]">Viewed</a>
-                        {% else %}
-                            <a href="{{ url_for('auth.login') }}" class="text-white hover:text-[var(--accent)]">Login</a>
-                            <a href="{{ url_for('auth.register') }}" class="text-white hover:text-[var(--accent)]">Register</a>
-                        {% endif %}
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(mobileMenu);
-
-            mobileMenuButton.addEventListener('click', () => {
-                mobileMenu.classList.toggle('hidden');
-            });
-        });
-    </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>

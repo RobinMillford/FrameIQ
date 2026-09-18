@@ -105,12 +105,16 @@ class ListEnhancementsManager {
     
     async saveNewOrder(itemOrder) {
         try {
+            // Lists V2: numeric ids + CSRF header (global CSRFProtect covers
+            // this PUT; base.html's fetch patch is not loaded on this page).
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
             const response = await fetch(`/api/lists/${this.listId}/reorder`, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrf
                 },
-                body: JSON.stringify({ item_order: itemOrder })
+                body: JSON.stringify({ item_order: itemOrder.map(Number) })
             });
             
             const data = await response.json();

@@ -43,6 +43,8 @@ from models.lists import (                                    # noqa: F401
     ListAnalytics,
     ListView,
     UserListItem,
+    ListLike,
+    ListComment,
 )
 from models.social import (                                   # noqa: F401
     DiaryEntry,
@@ -79,7 +81,7 @@ __all__ = [
     'MediaItem',
     'Review', 'ReviewLike', 'ReviewComment', 'ReviewHelpful',
     'UserList', 'ListCollaborator', 'ListCategory', 'UserListCategory',
-    'ListAnalytics', 'ListView', 'UserListItem',
+    'ListAnalytics', 'ListView', 'UserListItem', 'ListLike', 'ListComment',
     'DiaryEntry', 'Tag', 'UserMediaTag', 'MediaLike', 'MediaComment',
     'TVShowProgress', 'TVEpisodeWatch', 'UpcomingEpisode',
     'WatchProgress',

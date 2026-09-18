@@ -126,9 +126,14 @@
                         <p class="text-sm text-[var(--text-mid)] leading-relaxed mt-3 max-w-prose mx-auto md:mx-0">{{ current_user.bio }}</p>
                     {% endif %}
 
-                    <!-- Compact statistics (§3) -->
+                    <!-- Compact statistics (§4: titles = movies + TV shows
+                         actually watched; watch events = diary + episode
+                         rows; tracking reported separately) -->
                     <div class="flex flex-wrap justify-center md:justify-start gap-x-6 gap-y-2 mt-4 text-sm">
-                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.diary }}</strong> Watched</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.total_titles }}</strong> Watched</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.movie_titles }}</strong> Movies · <strong class="text-[var(--text-hi)] font-semibold">{{ stats.tv_titles }}</strong> TV</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.watch_events }}</strong> Watch events</span>
+                        <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ stats.tracking }}</strong> Tracking</span>
                         <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ reviews|length }}</strong> Reviews</span>
                         <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold" id="header-lists-count">0</strong> Lists</span>
                         <span class="text-[var(--text-mid)]"><strong class="text-[var(--text-hi)] font-semibold">{{ current_user.followers_count or 0 }}</strong> Followers</span>
@@ -224,6 +229,48 @@
                     <p class="text-xs text-[var(--text-mid)] leading-relaxed">Suggestions based on your activity.</p>
                     <span class="metric-label">View all →</span>
                 </a>
+            </div>
+
+            <!-- Your TV Progress (Phase 6: existing TV tracking data
+                 surfaced compactly — no second tracking system, no
+                 duplicated progress math; empty state when no progress) -->
+            <div class="surface-primary p-6 mb-6">
+                <h3 class="text-xl font-semibold mb-1 text-[var(--text-hi)]" style="font-family: var(--font-display)">Your TV Progress</h3>
+                {% if tv_progress %}
+                    <p class="text-sm text-[var(--text-mid)] mb-4">
+                        Watching {{ stats.watching }} show{{ 's' if stats.watching != 1 }}
+                        · Tracked {{ stats.tracking }} · Watched {{ stats.tv_titles }}
+                    </p>
+                    <ul class="grid gap-3 sm:grid-cols-2">
+                        {% for row in tv_progress %}
+                        <li class="surface-secondary rounded-lg p-4">
+                            <div class="flex items-baseline justify-between gap-3">
+                                <a href="/tv/{{ row.show_id }}" class="font-semibold text-[var(--text-hi)] hover:text-[var(--accent-hi)]">{{ row.title }}</a>
+                                <span class="text-xs font-slate text-[var(--text-low)]">{{ row.status_label }}</span>
+                            </div>
+                            {% if row.next_label %}
+                                <p class="text-xs text-[var(--text-mid)] mt-1">{{ row.next_label }}</p>
+                            {% endif %}
+                            {% if row.percent is not none %}
+                                <div class="mt-2 h-1.5 rounded-full bg-[var(--line)] overflow-hidden"
+                                     role="progressbar" aria-valuenow="{{ row.percent }}"
+                                     aria-valuemin="0" aria-valuemax="100"
+                                     aria-label="{{ row.title }}: {{ row.percent }}% watched">
+                                    <div class="h-full rounded-full bg-[var(--accent)]" style="width: {{ row.percent }}%"></div>
+                                </div>
+                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">{{ row.percent }}% watched</p>
+                            {% else %}
+                                <p class="text-xs font-slate text-[var(--text-low)] mt-1">No episode progress yet</p>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-sm text-[var(--text-mid)] mt-2">
+                        You're not tracking any shows yet.
+                        <a href="/tv/my-shows" class="text-[var(--accent-hi)] hover:text-[var(--accent)]">Browse TV shows →</a>
+                    </p>
+                {% endif %}
             </div>
 
             <!-- C. Taste DNA (canonical TasteProfile presentation;
@@ -466,13 +513,13 @@
                 </div>
             </div>
 
-            <!-- Quick stats strip (server-rendered counts; no private
-                 statistics values — those arrive via /api/statistics) -->
             <!-- Quick stats strip -->
             <div class="surface-secondary p-6 mb-6">
-                <div class="grid grid-cols-4 gap-3 text-center">
+                <div class="grid grid-cols-3 md:grid-cols-6 gap-3 text-center">
+                    <div><div class="metric-value">{{ stats.total_titles }}</div><div class="metric-label">TITLES</div></div>
+                    <div><div class="metric-value">{{ stats.watch_events }}</div><div class="metric-label">WATCH EVENTS</div></div>
+                    <div><div class="metric-value">{{ stats.tracking }}</div><div class="metric-label">TRACKING</div></div>
                     <div><div class="metric-value">{{ stats.diary }}</div><div class="metric-label">DIARY</div></div>
-                    <div><div class="metric-value">{{ stats.watching }}</div><div class="metric-label">TRACKING</div></div>
                     <div><div class="metric-value">{{ stats.watchlist }}</div><div class="metric-label">WATCHLIST</div></div>
                     <div><div class="metric-value">{{ stats.viewed }}</div><div class="metric-label">VIEWED</div></div>
                 </div>
@@ -583,34 +630,6 @@
             </div>
         </div>
     </div>
-    <script>
-        // Profile dropdown toggle — same behavior/ids as base.html
-        // (aria-expanded, outside-click, Escape), for this standalone page.
-        document.addEventListener('DOMContentLoaded', function() {
-            const profileButton = document.getElementById('profile-button');
-            const profileMenu = document.getElementById('profile-menu');
-            if (!profileButton || !profileMenu) return;
-
-            profileButton.addEventListener('click', function() {
-                const willOpen = profileMenu.classList.contains('hidden');
-                profileMenu.classList.toggle('hidden', !willOpen);
-                profileButton.setAttribute('aria-expanded', String(willOpen));
-            });
-            document.addEventListener('click', function(event) {
-                if (!profileButton.contains(event.target) && !profileMenu.contains(event.target)) {
-                    profileMenu.classList.add('hidden');
-                    profileButton.setAttribute('aria-expanded', 'false');
-                }
-            });
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && !profileMenu.classList.contains('hidden')) {
-                    profileMenu.classList.add('hidden');
-                    profileButton.setAttribute('aria-expanded', 'false');
-                    profileButton.focus();
-                }
-            });
-        });
-    </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     <script src="{{ url_for('static', filename='js/taste-dna.js') }}"></script>

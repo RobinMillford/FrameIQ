@@ -3,6 +3,13 @@
  * Handles collaborators, categories, and analytics
  */
 class ListAdvancedManager {
+    csrfHeader() {
+        return {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        };
+    }
+
     constructor(listId) {
         this.listId = listId;
         this.init();
@@ -109,9 +116,7 @@ class ListAdvancedManager {
         try {
             const response = await fetch(`/api/lists/${this.listId}/collaborators`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.csrfHeader(),
                 body: JSON.stringify({ username, role })
             });
             
@@ -134,7 +139,8 @@ class ListAdvancedManager {
         
         try {
             const response = await fetch(`/api/lists/${this.listId}/collaborators/${userId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: this.csrfHeader()
             });
             
             const data = await response.json();
@@ -160,9 +166,7 @@ class ListAdvancedManager {
         try {
             const response = await fetch(`/api/lists/${this.listId}/collaborators/${userId}/role`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.csrfHeader(),
                 body: JSON.stringify({ role: newRole.toLowerCase() })
             });
             
@@ -287,9 +291,7 @@ class ListAdvancedManager {
         try {
             const response = await fetch(`/api/lists/${this.listId}/categories`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.csrfHeader(),
                 body: JSON.stringify({ category_id: categoryId })
             });
             
@@ -310,7 +312,8 @@ class ListAdvancedManager {
     async removeCategory(categoryId, categoryName) {
         try {
             const response = await fetch(`/api/lists/${this.listId}/categories/${categoryId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: this.csrfHeader()
             });
             
             const data = await response.json();

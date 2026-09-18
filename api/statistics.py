@@ -52,11 +52,15 @@ Source-of-truth semantics:
                    links its review (DiaryEntry.review_id) and counting
                    both would double-count one user/title rating.
                    Likes, feedback, TMDb scores are never ratings here.
-  TV               DiaryEntry rows with media_type='tv' are the TV
-                   watch events. TVEpisodeWatch/TVShowProgress are the
-                   episode-tracking subsystem and are deliberately NOT
-                   merged — that would double-count a TV event through
-                   two tables. No show/season completion metric is
+  TV               episode-level. TVEpisodeWatch rows ARE the TV watch
+                   events (one row per watched episode — the write path
+                   routes/tv_tracking.py mark_episode_watched_core creates
+                   them; routes/diary.py rejects TV quick-logs, so the
+                   product cannot create a TV DiaryEntry). DiaryEntry rows
+                   keep their stored media_type for the split (legacy
+                   TV-typed rows, if any, stay visible as title-level TV
+                   events). TVShowProgress rows are tracking state — never
+                   watch events. No show/season completion metric is
                    fabricated.
   GENRES           MediaItem.genres (persisted comma-separated labels)
                    split deterministically; each label counts once per
@@ -89,7 +93,8 @@ Design invariants:
 """
 from datetime import date, datetime
 
-from sqlalchemy import case, distinct, extract, func
+from sqlalchemy import (case, column, distinct, extract, func,
+                        literal_column, select)
 
 from models.base import db
 from models.director import Director, MediaDirector
@@ -511,6 +516,168 @@ def _windowed(query, lower, upper):
     return query
 
 
+def _merged_ratings(user_id, lower, upper, tv_episode_ids):
+    """Query 2 — rating distribution over merged movie + episode ratings.
+
+    Movie event ratings (DiaryEntry.rating) plus episode ratings
+    (TVEpisodeWatch.rating), folded into one flat bucket projection —
+    never double-counted: one row per source row.
+    """
+    rating_rows = (
+        _windowed(
+            db.session.query(DiaryEntry.rating, func.count(DiaryEntry.id))
+            .filter(DiaryEntry.user_id == user_id)
+            .filter(DiaryEntry.rating.isnot(None)),
+            lower, upper,
+        )
+        .group_by(DiaryEntry.rating)
+        .all()
+    )
+    ratings_flat = [
+        float(rating) for rating, count in rating_rows
+        for _ in range(int(count))
+    ]
+    if tv_episode_ids:
+        tv_rating_rows = (
+            db.session.query(TVEpisodeWatch.rating, func.count())
+            .filter(TVEpisodeWatch.id.in_(tv_episode_ids))
+            .filter(TVEpisodeWatch.rating.isnot(None))
+            .group_by(TVEpisodeWatch.rating)
+            .all()
+        )
+        ratings_flat.extend(
+            float(rating) for rating, count in tv_rating_rows
+            for _ in range(int(count)))
+    return ratings_flat
+
+
+def _monthly_trend_buckets(user_id, lower, upper, tv_episode_ids):
+    """Query 4 — merged (year-month → event_count) buckets.
+
+    Diary rows via one grouped statement; episode rows fold in through
+    the ids Query 1 already resolved. Additive accumulation: both
+    sources can hit the same calendar month.
+    """
+    trend_rows = (
+        _windowed(
+            db.session.query(
+                extract("year", DiaryEntry.watched_date).label("y"),
+                extract("month", DiaryEntry.watched_date).label("m"),
+                func.count(DiaryEntry.id),
+            ).filter(DiaryEntry.user_id == user_id),
+            lower, upper,
+        )
+        .group_by("y", "m")
+        .all()
+    )
+    tv_trend_rows = []
+    if tv_episode_ids:
+        tv_trend_rows = (
+            db.session.query(
+                extract("year", TVEpisodeWatch.watched_date).label("y"),
+                extract("month", TVEpisodeWatch.watched_date).label("m"),
+                func.count(),
+            )
+            .filter(TVEpisodeWatch.id.in_(tv_episode_ids))
+            .group_by("y", "m")
+            .all()
+        )
+    by_bucket = {}
+    for y, m, c in list(trend_rows) + list(tv_trend_rows):
+        key = f"{int(y):04d}-{int(m):02d}"
+        # Additive fold: both sources can hit the same calendar month.
+        by_bucket[key] = by_bucket.get(key, 0) + int(c)
+    return by_bucket
+
+
+def _tv_episode_ids(user_id, lower, upper):
+    """Windowed TVEpisodeWatch ids for the merged event set (id-only).
+
+    Called at most once per get_statistics() and only when the Query 1
+    aggregate already proved the user has episode rows in the window.
+    """
+    q = db.session.query(TVEpisodeWatch.id).filter(
+        TVEpisodeWatch.user_id == user_id)
+    if lower is not None:
+        q = q.filter(TVEpisodeWatch.watched_date >= lower)
+    if upper is not None:
+        q = q.filter(TVEpisodeWatch.watched_date < upper)
+    return [row[0] for row in q.all()]
+
+
+def _merged_event_aggregates(user_id, lower, upper):
+    """Query 1 — event aggregates over the merged movie/TV event set.
+
+    Movie watch events are DiaryEntry rows; TV watch events are
+    TVEpisodeWatch rows (see the TV note in the module docstring).
+    The two sources are UNION ALL-ed inside one subquery — tagged with
+    their origin — so the aggregate remains a single bounded statement
+    and rewatch/hours semantics apply uniformly to both sources.
+    Internal MediaItem ids are used for joins and distinct-title
+    counting only and never leave this module.
+
+    Returns (total_events, distinct_titles, rewatch_count,
+             runtime_covered, runtime_sum, tv_event_count).
+    """
+    movie_events = (
+        select(
+            DiaryEntry.id.label("event_id"),
+            DiaryEntry.media_id.label("media_id"),
+            DiaryEntry.is_rewatch.label("is_rewatch"),
+            literal_column("0").label("source"),
+        )
+        .where(DiaryEntry.user_id == user_id)
+    )
+    if lower is not None:
+        movie_events = movie_events.where(
+            DiaryEntry.watched_date >= lower)
+    if upper is not None:
+        movie_events = movie_events.where(
+            DiaryEntry.watched_date < upper)
+    tv_events = (
+        select(
+            TVEpisodeWatch.id.label("event_id"),
+            MediaItem.id.label("media_id"),
+            TVEpisodeWatch.is_rewatch.label("is_rewatch"),
+            literal_column("1").label("source"),
+        )
+        .select_from(TVEpisodeWatch)
+        .join(MediaItem, TVEpisodeWatch.show_id == MediaItem.tmdb_id)
+        .where(TVEpisodeWatch.user_id == user_id)
+    )
+    if lower is not None:
+        tv_events = tv_events.where(
+            TVEpisodeWatch.watched_date >= lower)
+    if upper is not None:
+        tv_events = tv_events.where(
+            TVEpisodeWatch.watched_date < upper)
+    events = (
+        db.session.query(
+            func.count().label("total_events"),
+            func.count(func.distinct(column("media_id"))).label(
+                "distinct_titles"),
+            func.sum(case((column("is_rewatch").is_(True), 1),
+                          else_=0)).label("rewatch_count"),
+            func.count(MediaItem.runtime).label("runtime_covered"),
+            func.coalesce(func.sum(MediaItem.runtime), 0).label(
+                "runtime_sum"),
+            func.sum(case((column("source") == 1, 1), else_=0)).label(
+                "tv_event_count"),
+        )
+        .select_from(movie_events.union_all(tv_events).subquery())
+        .outerjoin(MediaItem, column("media_id") == MediaItem.id)
+        .one()
+    )
+    return (
+        int(events.total_events or 0),
+        int(events.distinct_titles or 0),
+        int(events.rewatch_count or 0),
+        int(events.runtime_covered or 0),
+        int(events.runtime_sum or 0),
+        int(events.tv_event_count or 0),
+    )
+
+
 def _tv_windowed(query, lower, upper):
     """Apply the same half-open window to a TVEpisodeWatch query.
 
@@ -529,7 +696,9 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
                    year=None, lifetime=False):
     """Compute the canonical statistics presentation model for a user.
 
-    Exactly 8 bounded SQL statements regardless of history size.
+    Exactly 8 bounded SQL statements for episode-less histories (and
+    at most 9 when episode rows exist — the extra statement is the
+    id-only TV projection reused by every TV fold).
     Returns a compact, deterministic, JSON-ready dict of aggregate
     statistics — never ORM rows, never database IDs. A user with no
     watch events in the window gets the full neutral zero-shape
@@ -539,48 +708,31 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         start_date, end_date, year, lifetime)
 
     # ── Query 1 — event aggregates (single SQL-side GROUP-less pass) ────
-    # One outer join to MediaItem gives events, distinct titles,
-    # explicit rewatch flags, runtime coverage, and summed runtime.
+    # Merged movie (DiaryEntry) + TV (TVEpisodeWatch) event set — see
+    # _merged_event_aggregates.
     (total_events, distinct_titles, rewatch_count,
-     runtime_covered, runtime_sum) = (
-        _windowed(
-            db.session.query(
-                func.count(DiaryEntry.id),
-                func.count(distinct(DiaryEntry.media_id)),
-                func.sum(case(
-                    (DiaryEntry.is_rewatch.is_(True), 1), else_=0)),
-                func.count(MediaItem.runtime),
-                func.coalesce(func.sum(MediaItem.runtime), 0),
-            )
-            .select_from(DiaryEntry)
-            .outerjoin(MediaItem, DiaryEntry.media_id == MediaItem.id)
-            .filter(DiaryEntry.user_id == user_id),
-            lower, upper,
-        ).one()
-    )
-    total_events = int(total_events or 0)
-    distinct_titles = int(distinct_titles or 0)
-    rewatch_count = int(rewatch_count or 0)
-    runtime_covered = int(runtime_covered or 0)
+     runtime_covered, runtime_sum, tv_event_count) = (
+        _merged_event_aggregates(user_id, lower, upper))
     runtime_missing = total_events - runtime_covered
 
+    # Id list for the TV half of the merged event set. The count comes
+    # from the same aggregate statement above (no extra roundtrip when
+    # the user has no episode rows — the overwhelmingly common case);
+    # only users WITH episode rows pay one additional id-only SELECT.
+    # TVShowProgress rows are tracking state, never counted here.
+    tv_episode_ids = []
+    if tv_event_count > 0:
+        tv_episode_ids = _tv_episode_ids(user_id, lower, upper)
+        assert len(tv_episode_ids) == tv_event_count
+
     # ── Query 2 — rating distribution (≤ 10 distinct buckets) ──────────
-    rating_rows = (
-        _windowed(
-            db.session.query(DiaryEntry.rating, func.count(DiaryEntry.id))
-            .filter(DiaryEntry.user_id == user_id)
-            .filter(DiaryEntry.rating.isnot(None)),
-            lower, upper,
-        )
-        .group_by(DiaryEntry.rating)
-        .all()
-    )
-    ratings_flat = [
-        float(rating) for rating, count in rating_rows
-        for _ in range(int(count))
-    ]
+    # Merged sources: movie event ratings + episode ratings (one row
+    # per source row — never double-counted).
+    ratings_flat = _merged_ratings(user_id, lower, upper, tv_episode_ids)
 
     # ── Query 3 — media-type split (2 stored values) ───────────────────
+    # Diary rows keep their stored media_type (legacy TV-typed rows stay
+    # visible); TVEpisodeWatch rows are added to the tv bucket.
     type_rows = (
         _windowed(
             db.session.query(DiaryEntry.media_type, func.count(DiaryEntry.id))
@@ -590,23 +742,12 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         .group_by(DiaryEntry.media_type)
         .all()
     )
+    media_split = {t: int(c) for t, c in type_rows}
+    media_split["tv"] = media_split.get("tv", 0) + len(tv_episode_ids)
 
     # ── Query 4 — monthly trend (GROUP BY year+month) ──────────────────
-    trend_rows = (
-        _windowed(
-            db.session.query(
-                extract("year", DiaryEntry.watched_date).label("y"),
-                extract("month", DiaryEntry.watched_date).label("m"),
-                func.count(DiaryEntry.id),
-            ).filter(DiaryEntry.user_id == user_id),
-            lower, upper,
-        )
-        .group_by("y", "m")
-        .all()
-    )
-    by_bucket = {
-        f"{int(y):04d}-{int(m):02d}": int(c) for y, m, c in trend_rows
-    }
+    by_bucket = _monthly_trend_buckets(
+        user_id, lower, upper, tv_episode_ids)
     if kind == "year":
         monthly = [
             {"month": f"{resolved_year:04d}-{mm:02d}",
@@ -640,15 +781,17 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         row["titles"] = title_genres.get(row["name"], 0)
 
     # ── Daily activity (see _daily_projection: 6th bounded query) ─────
-    # SQL-side GROUP BY watched_date (§8) — only the date column and a
-    # count are materialized, never per-event ORM rows. Rewatches are
-    # simply additional events for their date. Rows fold through the
-    # pure helper for the deterministic series and the derived
-    # active-day metrics. ``watched_date`` is NOT NULL by model
-    # constraint, so a HAVING-free grouped read is complete; the helper
-    # still skips any unexpected NULL defensively.
-    daily_activity = build_daily_watch_counts(
-        _daily_projection(user_id, lower, upper))
+    # Movie/diary events via the grouped projection; TVEpisodeWatch rows
+    # are folded into the same watched-date series through the ids the
+    # UNION ALL already resolved (no per-episode queries, no N+1).
+    daily_rows = list(_daily_projection(user_id, lower, upper))
+    if tv_episode_ids:
+        daily_rows.extend(
+            db.session.query(TVEpisodeWatch.watched_date, func.count())
+            .filter(TVEpisodeWatch.id.in_(tv_episode_ids))
+            .group_by(TVEpisodeWatch.watched_date)
+            .all())
+    daily_activity = build_daily_watch_counts(daily_rows)
 
     # ── People: directors (see _director_rows: 7th bounded query) ──────
     # Local-persistence aggregation only (§2): DiaryEntry → MediaItem →
@@ -677,10 +820,8 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
     return {
         "total_watch_events": total_events,
         "distinct_titles": distinct_titles,
-        "movies_watched": int(dict(
-            (t, c) for t, c in type_rows).get("movie", 0) or 0),
-        "tv_watch_events": int(dict(
-            (t, c) for t, c in type_rows).get("tv", 0) or 0),
+        "movies_watched": media_split.get("movie", 0),
+        "tv_watch_events": media_split.get("tv", 0),
         "total_hours_watched": hours_watched(runtime_sum),
         "runtime_covered_events": runtime_covered,
         "runtime_missing_events": runtime_missing,
@@ -691,8 +832,7 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
         "rewatch_rate": rewatch_rate(rewatch_count, total_events),
         "top_genres": top_genres,
         "monthly_watch_counts": monthly,
-        "media_type_distribution": media_type_distribution(
-            {t: c for t, c in type_rows}),
+        "media_type_distribution": media_type_distribution(media_split),
         "daily_activity": daily_activity,
         "active_watch_days": len(daily_activity),
         "max_daily_watch_events": max(

@@ -72,17 +72,43 @@ def prefetch_list_data(user_lists):
     ).all()
     analytics_by_list = {a.list_id: a for a in analytics_rows}
 
+    # 6. Like counts (Lists V2; one grouped query).
+    like_rows = db.session.query(
+        ListLike.list_id,
+        db.func.count(ListLike.id).label('cnt'),
+    ).filter(
+        ListLike.list_id.in_(list_ids)
+    ).group_by(ListLike.list_id).all()
+    likes = {row.list_id: row.cnt for row in like_rows}
+
+    # 7. Comment counts (Lists V2; one grouped query, non-deleted only).
+    comment_rows = db.session.query(
+        ListComment.list_id,
+        db.func.count(ListComment.id).label('cnt'),
+    ).filter(
+        ListComment.list_id.in_(list_ids),
+        ListComment.is_deleted.is_(False),
+    ).group_by(ListComment.list_id).all()
+    comments = {row.list_id: row.cnt for row in comment_rows}
+
     for user_list in lists:
         user_list._item_count = counts.get(user_list.id, 0)
         user_list._prefetched_collaborators = collabs_by_list.get(user_list.id, [])
         user_list._prefetched_categories = cats_by_list.get(user_list.id, [])
         user_list._prefetched_user = users_by_id.get(user_list.user_id)
         user_list._prefetched_analytics = analytics_by_list.get(user_list.id)
+        user_list._prefetched_like_count = likes.get(user_list.id, 0)
+        user_list._prefetched_comment_count = comments.get(user_list.id, 0)
 
 
 class UserList(db.Model):
     """User-created custom lists of movies/TV shows"""
     __tablename__ = 'user_list'
+
+    # Ranked/unranked presentation mode (Lists V2). Existing lists default
+    # to 'unranked'; switching modes never mutates item positions.
+    TYPE_RANKED = 'ranked'
+    TYPE_UNRANKED = 'unranked'
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
@@ -91,6 +117,8 @@ class UserList(db.Model):
     is_public = db.Column(db.Boolean, default=True)
     cover_image = db.Column(db.String(500))  # Week 2: Cover image URL
     slug = db.Column(db.String(250), unique=True, index=True)  # Week 2: Shareable URL slug
+    list_type = db.Column(db.String(20), nullable=False, default=TYPE_UNRANKED,
+                          server_default=TYPE_UNRANKED)  # Lists V2
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -171,6 +199,9 @@ class UserList(db.Model):
             'is_public': self.is_public,
             'cover_image': self.cover_image,  # Week 2
             'slug': self.slug,  # Week 2
+            'list_type': self.list_type,  # Lists V2 (additive)
+            'like_count': getattr(self, '_prefetched_like_count', None) or 0,  # Lists V2 (additive)
+            'comment_count': getattr(self, '_prefetched_comment_count', None) or 0,  # Lists V2 (additive)
             'collaborators': self._collaborator_dicts(),  # Week 2b
             'categories': self._category_dicts(),  # Week 2b
             'analytics': self._analytics_dict(),  # Week 2b
@@ -333,7 +364,12 @@ class UserListItem(db.Model):
     list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
     media_id = db.Column(db.Integer, db.ForeignKey('media_item.id'), nullable=False, index=True)
     media_type = db.Column(db.String(20), nullable=False)  # 'movie' or 'tv'
-    position = db.Column(db.Integer)  # For ordering items in the list
+    # Lists V2: explicit manual ordering. NOT NULL — the migration backfills
+    # deterministic positions for existing rows. Uniqueness within a list is
+    # enforced transactionally by the reorder API (two-phase update), not by
+    # a hard UNIQUE constraint, so concurrent drags can never hit transient
+    # constraint violations mid-reorder.
+    position = db.Column(db.Integer, nullable=False, default=0, server_default='0')
     note = db.Column(db.Text)  # Optional note about why this item is in the list
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -343,15 +379,24 @@ class UserListItem(db.Model):
     # Constraints
     __table_args__ = (
         db.UniqueConstraint('list_id', 'media_id', 'media_type', name='unique_list_media'),
+        # Lists V2: canonical ordering scan (position ASC within a list).
+        db.Index('idx_user_list_item_list_position', 'list_id', 'position'),
     )
 
     def to_dict(self):
-        """Convert list item to dictionary for JSON responses"""
+        """Convert list item to dictionary for JSON responses.
+
+        ``media.id`` stays the public TMDb id (legacy contract);
+        ``media.internal_id`` is additive (Lists V2) and keys the
+        user_viewed / user_watchlist junction tables.
+        """
         return {
             'id': self.id,
             'list_id': self.list_id,
+            'media_type': self.media_type,  # Lists V2 (additive, top level)
             'media': {
                 'id': self.media.tmdb_id,
+                'internal_id': self.media.id,
                 'title': self.media.title,
                 'poster_path': self.media.poster_path,
                 'media_type': self.media_type
@@ -363,3 +408,64 @@ class UserListItem(db.Model):
 
     def __repr__(self):
         return f'<UserListItem {self.id} in List {self.list_id}>'
+
+
+class ListLike(db.Model):
+    """Lists V2: a user's like (heart) on a list. One per user per list."""
+    __tablename__ = 'list_like'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    user = db.relationship('User', backref=db.backref('list_likes', lazy='dynamic'))
+    list = db.relationship('UserList', backref=db.backref('likes', lazy='dynamic',
+                                                          cascade='all, delete-orphan'))
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'list_id', name='unique_user_list_like'),
+    )
+
+    def __repr__(self):
+        return f'<ListLike User:{self.user_id} List:{self.list_id}>'
+
+
+class ListComment(db.Model):
+    """Lists V2: discussion on a list (flat, newest-last, soft-delete).
+
+    Mirrors MediaComment conventions: plain text content, author deletion,
+    list-owner moderation, no nested replies.
+    """
+    __tablename__ = 'list_comment'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    list_id = db.Column(db.Integer, db.ForeignKey('user_list.id'), nullable=False, index=True)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_deleted = db.Column(db.Boolean, default=False)
+
+    user = db.relationship('User', backref=db.backref('list_comments', lazy='dynamic'))
+    list = db.relationship('UserList', backref=db.backref('comments', lazy='dynamic',
+                                                          cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        """Comment dict; author identity only (no emails/IDs beyond user id)."""
+        user = self.user
+        return {
+            'id': self.id,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'profile_picture': user.profile_picture
+            },
+            'content': self.content,
+            'created_at': self.created_at.isoformat(),
+            'is_author': current_user.is_authenticated and self.user_id == current_user.id,
+            'can_moderate': current_user.is_authenticated and self.list.user_id == current_user.id
+        }
+
+    def __repr__(self):
+        return f'<ListComment {self.id} by User:{self.user_id} on List:{self.list_id}>'

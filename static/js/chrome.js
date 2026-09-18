@@ -425,6 +425,82 @@
         const searchBtn = document.getElementById('nav-search-button');
         if (searchBtn) searchBtn.addEventListener('click', openPalette);
 
+        initHeaderChrome();
+
         if (window.lucide) lucide.createIcons();
     });
+    /* ── Shared header chrome (profile dropdown + mobile drawer) ───── */
+    /*
+     * Header interaction previously lived in an inline script in
+     * base.html only, so every standalone template (profile,
+     * watchlist, viewed, wishlist, search, ...) rendered the shared
+     * nav markup with no way to open the profile menu. This is the
+     * single global initializer: it runs wherever chrome.js runs and
+     * tolerates absent elements, so base-derived and standalone
+     * pages share one contract.
+     */
+    function initHeaderChrome() {
+        const profileButton = document.getElementById('profile-button');
+        const profileMenu = document.getElementById('profile-menu');
+
+        if (profileButton && profileMenu) {
+            profileButton.addEventListener('click', function () {
+                const willOpen = profileMenu.classList.contains('hidden');
+                profileMenu.classList.toggle('hidden', !willOpen);
+                profileButton.setAttribute('aria-expanded', String(willOpen));
+            });
+            document.addEventListener('click', function (event) {
+                if (!profileButton.contains(event.target) &&
+                    !profileMenu.contains(event.target)) {
+                    profileMenu.classList.add('hidden');
+                    profileButton.setAttribute('aria-expanded', 'false');
+                }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !profileMenu.classList.contains('hidden')) {
+                    profileMenu.classList.add('hidden');
+                    profileButton.setAttribute('aria-expanded', 'false');
+                    profileButton.focus();
+                }
+            });
+        }
+
+        // Mobile navigation drawer (base.html)
+        const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+        const mobileNavClose = document.getElementById('mobile-nav-close');
+        const mobileNavDrawer = document.getElementById('mobile-nav-drawer');
+
+        function openMobileNav() {
+            mobileNavDrawer.classList.add('open');
+            mobileNavDrawer.setAttribute('aria-hidden', 'false');
+            mobileNavToggle.setAttribute('aria-expanded', 'true');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeMobileNav() {
+            mobileNavDrawer.classList.remove('open');
+            mobileNavDrawer.setAttribute('aria-hidden', 'true');
+            mobileNavToggle.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+        }
+
+        if (mobileNavToggle && mobileNavDrawer) {
+            mobileNavToggle.addEventListener('click', openMobileNav);
+        }
+        if (mobileNavClose && mobileNavDrawer) {
+            mobileNavClose.addEventListener('click', closeMobileNav);
+        }
+        mobileNavDrawer?.querySelectorAll('a').forEach((link) => {
+            link.addEventListener('click', closeMobileNav);
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && mobileNavDrawer?.classList.contains('open')) {
+                closeMobileNav();
+                mobileNavToggle?.focus();
+            }
+        });
+        mobileNavDrawer?.addEventListener('click', function (e) {
+            if (e.target === mobileNavDrawer) closeMobileNav();
+        });
+    }
 })();

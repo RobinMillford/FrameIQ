@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ user_list.title }} - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
@@ -10,39 +11,40 @@
     <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body {
-            font-family: Inter, sans-serif;
-            background-color:  var(--bg-base);
-            color: white;
-        }
-        
-        .media-card {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        
-        .media-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        /* Week 2: Drag and drop styles */
-        .list-item {
-            cursor: move;
-        }
-        
-        .list-item.dragging {
-            opacity: 0.5;
-        }
+        body { font-family: Inter, sans-serif; background-color: var(--bg-base); color: #F5F7FA; }
+
+        .media-card { transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
+        .media-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.35); }
+
+        /* Drag & drop */
+        .list-item { cursor: default; }
+        .list-item[draggable="true"] { cursor: grab; }
+        .list-item.dragging { opacity: 0.5; cursor: grabbing; }
+        .drag-insertion { border-top: 3px solid var(--accent) !important; }
+
+        /* Watched-state badge */
+        .watch-badge { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+                       padding: 3px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; }
+        .watch-badge.watched  { background: rgba(34,197,94,0.14);  color: #7ee2a8; }
+        .watch-badge.watching { background: rgba(250,204,21,0.14); color: #f4d466; }
+        .watch-badge.unwatched{ background: rgba(255,255,255,0.06); color: #AEB6C4; }
+
+        /* Rank badge (ranked mode) */
+        .rank-badge { font-family: 'Archivo', Inter, sans-serif; font-weight: 800; font-size: 1.35rem;
+                      color: var(--accent); line-height: 1; }
+
+        /* Comments */
+        .comment-card { background: rgba(42,50,66,0.55); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
     </style>
 </head>
-<body>
-    <!-- Week 2: Hidden list data for JS -->
+<body {% if user_list.list_type == 'ranked' %}data-list-type="ranked"{% endif %}>
+    <!-- Hidden list data for JS -->
     <div data-list-id="{{ user_list.id }}" style="display: none;">
         <input type="hidden" id="list-slug" value="{{ user_list.slug }}">
     </div>
 
     <!-- Navigation -->
-    <nav class=" shadow-lg">
+    <nav class="bg-[rgba(10,13,18,0.96)] shadow-lg border-b border-[rgba(255,255,255,0.08)]">
         <div class="container mx-auto px-4 py-3">
             <div class="flex justify-between items-center">
                 <div class="flex items-center space-x-6">
@@ -50,28 +52,33 @@
                     <a href="/discover" class="text-gray-300 hover:text-[var(--accent)] transition-colors">
                         <i class="fas fa-compass"></i> Discover
                     </a>
+                    <a href="/lists" class="text-gray-300 hover:text-[var(--accent)] transition-colors">
+                        <i class="fas fa-list"></i> Lists
+                    </a>
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if current_user.is_authenticated %}
                         <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">
                             <i class="fas fa-user"></i> {{ current_user.username }}
                         </a>
+                    {% else %}
+                        <a href="{{ url_for('auth.login') }}" class="text-white hover:text-[var(--accent)]">Log in</a>
                     {% endif %}
                 </div>
             </div>
         </div>
     </nav>
 
-    <div class="container mx-auto px-4 py-8">
-        <!-- Week 2: Cover Image Section -->
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Cover Image -->
         {% if user_list.cover_image %}
         <div class="mb-8 rounded-lg overflow-hidden relative">
-            <img id="list-cover" src="{{ user_list.cover_image }}" alt="{{ user_list.title }}" 
+            <img id="list-cover" src="{{ user_list.cover_image }}" alt="{{ user_list.title }}"
                  class="w-full h-64 object-cover">
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
         </div>
         {% endif %}
-        
+
         <!-- List Header -->
         <div class="mb-8">
             <div class="flex items-center gap-2 text-sm text-[var(--text-mid)] mb-4">
@@ -79,57 +86,92 @@
                 <i class="fas fa-chevron-right text-xs"></i>
                 <span>{{ user_list.title }}</span>
             </div>
-            
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
+
+            <div class="flex flex-col lg:flex-row justify-between lg:items-start gap-4">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-2">
                         <h1 class="text-4xl font-bold text-[var(--accent)]">{{ user_list.title }}</h1>
                         {% if not user_list.is_public %}
                         <span class="text-sm bg-gray-700 text-gray-300 px-3 py-1 rounded">
                             <i class="fas fa-lock"></i> Private
                         </span>
                         {% endif %}
+                        {% if user_list.list_type == 'ranked' %}
+                        <span class="text-sm bg-[rgba(250,204,21,0.14)] text-[#f4d466] px-3 py-1 rounded">
+                            <i class="fas fa-trophy"></i> Ranked
+                        </span>
+                        {% endif %}
                     </div>
-                    
+
                     {% if user_list.description %}
                     <p class="text-[var(--text-mid)] mb-4">{{ user_list.description }}</p>
                     {% endif %}
-                    
-                    <!-- Week 2b: Categories -->
+
+                    <!-- Categories -->
                     <div id="list-categories" class="flex flex-wrap gap-2 mb-4">
-                        <!-- Categories will be loaded by JavaScript -->
+                        <!-- Loaded by list-advanced.js -->
                     </div>
-                    
-                    <div class="flex items-center gap-4 text-sm text-[var(--text-mid)]">
+
+                    <div class="flex flex-wrap items-center gap-4 text-sm text-[var(--text-mid)]">
                         <span><i class="fas fa-user"></i> {{ user_list.user.username }}</span>
                         <span><i class="fas fa-film"></i> {{ items|length }} items</span>
+                        {% if liked_count is defined and liked_count %}
+                        <span id="like-count-static"><i class="fas fa-heart text-red-400"></i> {{ liked_count }}</span>
+                        {% endif %}
                         <span><i class="fas fa-clock"></i> Created {{ user_list.created_at.strftime('%b %d, %Y') }}</span>
                     </div>
                 </div>
-                
-                <div class="flex gap-2 flex-wrap">
-                    <!-- Week 2: Share Button (for all users) -->
+
+                <div class="flex gap-2 flex-wrap shrink-0">
+                    <!-- Lists V2: Like (authenticated, public lists) -->
+                    {% if current_user.is_authenticated and (user_list.is_public or current_user.id == user_list.user_id) %}
+                    <button id="like-list-btn" type="button"
+                            aria-pressed="{{ 'true' if liked_by_me else 'false' }}"
+                            aria-label="Like this list"
+                            class="px-4 py-2 rounded-lg border transition-colors
+                                   {{ 'bg-red-600/20 border-red-500/40 text-red-300' if liked_by_me else 'bg-white/[0.04] border-[rgba(255,255,255,0.12)] text-gray-300 hover:border-red-400/40' }}">
+                        <i class="fas fa-heart"></i>
+                        <span id="like-count">{{ liked_count if liked_count is defined and liked_count else 0 }}</span>
+                    </button>
+                    {% endif %}
+
+                    <!-- Lists V2: Clone -->
+                    {% if current_user.is_authenticated and current_user.id != user_list.user_id %}
+                    <button id="clone-list-btn" type="button"
+                            class="bg-white/[0.04] hover:bg-white/[0.08] border border-[rgba(255,255,255,0.12)] text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-clone"></i> Clone
+                    </button>
+                    {% endif %}
+
+                    <!-- Share -->
                     <button id="share-list-btn" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-share-alt"></i> Share
                     </button>
-                    
-                    {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-                    <!-- Week 2: Cover Upload Button -->
-                    <button id="upload-cover-btn" class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
+
+                    {% if can_edit %}
+                    <!-- Owner/editor controls -->
+                    <div id="list-mode-form" class="flex items-center gap-2">
+                        <label for="list-mode-select" class="text-sm text-[var(--text-mid)]">Mode</label>
+                        <select id="list-mode-select"
+                                class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+                            <option value="unranked" {% if user_list.list_type != 'ranked' %}selected{% endif %}>Unranked</option>
+                            <option value="ranked" {% if user_list.list_type == 'ranked' %}selected{% endif %}>Ranked</option>
+                        </select>
+                    </div>
+
+                    <button id="upload-cover-btn" class="bg-white/[0.04] hover:bg-white/[0.08] border border-[rgba(255,255,255,0.12)] text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-image"></i> Cover
                     </button>
                     <input type="file" id="cover-image-input" accept="image/*" style="display: none;">
-                    
-                    <!-- Week 2b: Collaborators Button -->
+
                     <button id="add-collaborator-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-users"></i> Collaborators
                     </button>
-                    
-                    <!-- Week 2b: Categories Button -->
+
                     <button id="add-category-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-tags"></i> Categories
                     </button>
-                    
+
                     <button class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-edit"></i> Edit
                     </button>
@@ -140,46 +182,70 @@
                 </div>
             </div>
         </div>
-        
-        <!-- Week 2b: Collaborators Section (owner only) -->
-        {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-        <div class="mb-8  rounded-lg p-6 border border-gray-700">
+
+        {% if can_edit %}
+        <!-- Owner/editor panels -->
+        <div class="mb-8 rounded-lg p-6 border border-gray-700">
             <h2 class="text-xl font-bold text-white mb-4">
                 <i class="fas fa-users"></i> Collaborators
             </h2>
             <div id="collaborators-list" class="space-y-2">
-                <!-- Loaded by JavaScript -->
                 <p class="text-[var(--text-mid)] text-sm">Loading...</p>
             </div>
         </div>
-        
-        <!-- Week 2b: Analytics Section (owner/collaborators only) -->
+
         <div id="analytics-panel" class="mb-8">
-            <!-- Loaded by JavaScript if user has permission -->
+            <!-- Loaded by list-advanced.js if user has permission -->
+        </div>
+
+        <!-- Bulk toolbar -->
+        <div id="bulk-toolbar" class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(42,50,66,0.55)] px-4 py-3">
+            <label class="flex items-center gap-2 text-sm text-[var(--text-mid)]">
+                <input type="checkbox" id="bulk-select-all" class="w-4 h-4 accent-[var(--accent)]">
+                Select all
+            </label>
+            <button id="bulk-remove-btn" type="button" disabled
+                    class="px-3 py-1.5 rounded-lg text-sm bg-red-600/20 border border-red-500/40 text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fas fa-trash"></i> Remove selected
+            </button>
+            <select id="bulk-move-target" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm">
+                <option value="">Move to…</option>
+                {% for other in current_user.lists if other.id != user_list.id %}
+                <option value="{{ other.id }}">{{ other.title }}</option>
+                {% endfor %}
+            </select>
+            <button id="bulk-move-btn" type="button" disabled
+                    class="px-3 py-1.5 rounded-lg text-sm bg-white/[0.04] border border-[rgba(255,255,255,0.12)] text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fas fa-arrows-alt"></i> Move selected
+            </button>
         </div>
         {% endif %}
 
         <!-- List Items -->
         {% if items %}
-        <!-- Week 2: Drag-and-drop container (only for list owner) -->
         <div id="list-items-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {% for item in items %}
             {% set media = item.media %}
-            <div class="list-item media-card  rounded-lg overflow-hidden border border-gray-700 hover:border-[var(--accent)] relative group"
+            {% set wstate = watched_map.get(item.id) if watched_map else None %}
+            {% set wprog = progress_map.get(item.id) if progress_map else None %}
+            <div class="list-item media-card rounded-lg overflow-hidden border border-gray-700 hover:border-[var(--accent)] relative group"
                  data-item-id="{{ item.id }}"
-                 {% if current_user.is_authenticated and current_user.id == user_list.user_id %}draggable="true"{% endif %}>
+                 {% if can_edit %}draggable="true"{% endif %}
+                 tabindex="0" role="listitem"
+                 aria-label="{{ 'Rank ' + loop.index|string + ': ' if user_list.list_type == 'ranked' }}{{ media.title }}{% if wstate %}, {{ wstate }}{% endif %}">
                 <a href="/{{ item.media_type }}/{{ media.tmdb_id }}" class="block">
                     <div class="relative">
-                        {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-                        <!-- Week 2: Drag handle -->
-                        <div class="absolute top-2 left-2 bg-gray-700 bg-opacity-75 text-gray-300 p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            <i class="fas fa-grip-vertical"></i>
+                        <!-- Rank badge (ranked mode) -->
+                        {% if user_list.list_type == 'ranked' %}
+                        <div class="absolute top-2 left-2 z-10 rank-badge-container bg-black/60 rounded-lg px-2 py-1">
+                            <span class="rank-badge" aria-hidden="true">{{ loop.index }}</span>
+                            <span class="sr-only">Rank {{ loop.index }}</span>
                         </div>
                         {% endif %}
-                        
+
                         {% if media.poster_path %}
-                        <img src="https://image.tmdb.org/t/p/w500{{ media.poster_path }}" 
-                             alt="{{ media.title }}" 
+                        <img src="https://image.tmdb.org/t/p/w500{{ media.poster_path }}"
+                             alt="{{ media.title }}"
                              class="w-full aspect-[2/3] object-cover"
                              onerror="this.src='/static/images/no-poster.svg'">
                         {% else %}
@@ -187,27 +253,72 @@
                             <i class="fas fa-film text-4xl text-[var(--text-mid)]"></i>
                         </div>
                         {% endif %}
-                        
+
                         {% if media.rating %}
-                        <div class="absolute top-2 right-2 bg-black bg-opacity-75 text-yellow-400 px-2 py-1 rounded text-sm font-bold">
+                        <div class="absolute bottom-2 left-2 bg-black bg-opacity-75 text-yellow-400 px-2 py-1 rounded text-sm font-bold">
                             <i class="fas fa-star"></i> {{ "%.1f"|format(media.rating) }}
                         </div>
                         {% endif %}
                     </div>
-                    
+
                     <div class="p-3">
                         <h3 class="font-semibold text-white text-sm line-clamp-2 mb-1">{{ media.title }}</h3>
                         {% if media.release_date %}
-                        <p class="text-xs text-[var(--text-mid)]">{{ media.release_date.year }}</p>
+                        <p class="text-xs text-[var(--text-mid)] mb-2">{{ media.release_date.year }}</p>
+                        {% endif %}
+
+                        <!-- Watched-state badge (Lists V2) -->
+                        {% if wstate %}
+                        <span class="watch-badge {{ wstate }}">
+                            {% if wstate == 'watched' %}
+                            <i class="fas fa-check" aria-hidden="true"></i> Watched
+                            {% elif wstate == 'watching' %}
+                            <i class="fas fa-eye" aria-hidden="true"></i> Watching
+                            {% else %}
+                            Unwatched
+                            {% endif %}
+                        </span>
+                        {% if wprog %}
+                        <span class="sr-only">, {{ wprog.percent }} percent watched</span>
+                        {% endif %}
+                        {% if wprog %}
+                        <div class="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
+                            <div class="h-full bg-[var(--accent)]" style="width: {{ wprog.percent }}%;"></div>
+                        </div>
+                        {% endif %}
+                        {% endif %}
+
+                        <!-- Keyboard reorder buttons (editor only; drag is never the only mechanism) -->
+                        {% if can_edit %}
+                        <div class="mt-3 flex gap-1" role="group" aria-label="Reorder {{ media.title }}">
+                            <button type="button" data-move="-1" title="Move up"
+                                    class="flex-1 py-1.5 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-[rgba(255,255,255,0.12)] text-xs text-gray-300"
+                                    aria-label="Move {{ media.title }} up"><i class="fas fa-arrow-up"></i></button>
+                            <button type="button" data-move="1" title="Move down"
+                                    class="flex-1 py-1.5 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-[rgba(255,255,255,0.12)] text-xs text-gray-300"
+                                    aria-label="Move {{ media.title }} down"><i class="fas fa-arrow-down"></i></button>
+                            <button type="button" data-move="top" title="Move to top"
+                                    class="flex-1 py-1.5 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-[rgba(255,255,255,0.12)] text-xs text-gray-300"
+                                    aria-label="Move {{ media.title }} to top"><i class="fas fa-angle-double-up"></i></button>
+                            <button type="button" data-move="bottom" title="Move to bottom"
+                                    class="flex-1 py-1.5 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-[rgba(255,255,255,0.12)] text-xs text-gray-300"
+                                    aria-label="Move {{ media.title }} to bottom"><i class="fas fa-angle-double-down"></i></button>
+                        </div>
                         {% endif %}
                     </div>
                 </a>
-                
-                <!-- Delete button (only show if user owns the list) -->
-                {% if current_user.is_authenticated and current_user.id == user_list.user_id %}
-                <button onclick="removeFromList(event, {{ user_list.id }}, {{ item.id }}, '{{ media.title }}')" 
+
+                {% if can_edit %}
+                <!-- Bulk select checkbox -->
+                <label class="absolute top-2 right-2 z-20 bg-black/60 rounded p-1.5"
+                       aria-label="Select {{ media.title }} for bulk actions">
+                    <input type="checkbox" class="bulk-check w-4 h-4 accent-[var(--accent)]" data-item-id="{{ item.id }}">
+                </label>
+
+                <!-- Remove button -->
+                <button onclick="removeFromList(event, {{ user_list.id }}, {{ item.id }}, '{{ media.title|replace("'", "\\'") }}')"
                         class="absolute bottom-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                        title="Remove from list">
+                        title="Remove from list" aria-label="Remove {{ media.title }} from list">
                     <i class="fas fa-times"></i>
                 </button>
                 {% endif %}
@@ -215,39 +326,88 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-16  rounded-lg border border-gray-700">
+        <div class="text-center py-16 rounded-lg border border-gray-700">
             <i class="fas fa-film text-6xl text-[var(--text-mid)] mb-4"></i>
             <h3 class="text-2xl font-bold text-[var(--text-mid)] mb-2">No Items Yet</h3>
             <p class="text-[var(--text-mid)] mb-6">Start adding movies and TV shows to this list</p>
-            <a href="{{ url_for('main.index') }}" class="inline-block bg-gradient-to-r from-[var(--accent)] to-[var(--accent)] hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+            <a href="{{ url_for('main.index') }}" class="inline-block bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 <i class="fas fa-search"></i> Browse Content
             </a>
         </div>
         {% endif %}
+
+        <!-- Comments (Lists V2) -->
+        {% if user_list.is_public or (current_user.is_authenticated and current_user.id == user_list.user_id) %}
+        <section class="mt-12" aria-labelledby="comments-heading">
+            <h2 id="comments-heading" class="text-2xl font-bold text-white mb-4">
+                <i class="fas fa-comments"></i> Comments
+            </h2>
+
+            {% if current_user.is_authenticated %}
+            <form id="comment-form" class="mb-6 flex gap-2">
+                <label for="comment-input" class="sr-only">Add a comment</label>
+                <input type="text" id="comment-input" maxlength="2000"
+                       placeholder="Share your thoughts on this list…"
+                       class="flex-1 bg-gray-800 border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                <button type="submit"
+                        class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors">
+                    Post
+                </button>
+            </form>
+            {% else %}
+            <p class="text-sm text-[var(--text-mid)] mb-6">
+                <a href="{{ url_for('auth.login') }}" class="text-[var(--accent)] hover:underline">Log in</a> to join the discussion.
+            </p>
+            {% endif %}
+
+            <div id="comments-list" class="space-y-3">
+                {% for comment in comments %}
+                <div class="comment-card p-4" data-comment-id="{{ comment.id }}">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold text-white">{{ comment.user.username }}</p>
+                            <p class="text-xs text-[var(--text-mid)] mb-2">{{ comment.created_at.strftime('%b %d, %Y') }}</p>
+                            <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">{{ comment.content }}</p>
+                        </div>
+                        {% if comment.is_author or comment.can_moderate %}
+                        <button type="button" data-delete-comment="{{ comment.id }}"
+                                class="text-[var(--text-mid)] hover:text-red-400 shrink-0"
+                                aria-label="Delete comment by {{ comment.user.username }}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-sm text-[var(--text-mid)]">No comments yet. Be the first to share your thoughts.</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
     </div>
-    
-    <!-- Week 2: Share Modal -->
-    <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-        <div class=" rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+
+    <!-- Share Modal -->
+    <div id="share-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[1200]">
+        <div class="rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700 bg-[rgba(10,13,18,0.96)]">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-[var(--accent)]">
                     <i class="fas fa-share-alt"></i> Share List
                 </h2>
-                <button onclick="document.getElementById('share-modal').classList.add('hidden')" 
-                        class="text-[var(--text-mid)] hover:text-white">
+                <button onclick="document.getElementById('share-modal').classList.add('hidden')"
+                        class="text-[var(--text-mid)] hover:text-white" aria-label="Close share dialog">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            
+
             <div class="mb-6">
-                <label class="block text-sm font-semibold mb-2 text-gray-300">Shareable Link</label>
+                <label class="block text-sm font-semibold mb-2 text-gray-300" for="share-url">Shareable Link</label>
                 <div class="flex gap-2">
-                    <input type="text" 
-                           id="share-url" 
+                    <input type="text"
+                           id="share-url"
                            readonly
                            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                            value="">
-                    <button id="copy-link-btn" 
+                    <button id="copy-link-btn"
                             class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
                         <i class="fas fa-copy"></i> Copy
                     </button>
@@ -258,85 +418,84 @@
             </div>
         </div>
     </div>
-    
-    <!-- Week 2b: Add Collaborator Modal -->
-    <div id="add-collaborator-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-        <div class=" rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700">
+
+    <!-- Add Collaborator Modal -->
+    <div id="add-collaborator-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[1200]">
+        <div class="rounded-lg p-8 max-w-md w-full mx-4 border border-gray-700 bg-[rgba(10,13,18,0.96)]">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-green-400">
                     <i class="fas fa-user-plus"></i> Add Collaborator
                 </h2>
-                <button onclick="listAdvancedManager.closeAddCollaboratorModal()" 
-                        class="text-[var(--text-mid)] hover:text-white">
+                <button onclick="listAdvancedManager.closeAddCollaboratorModal()"
+                        class="text-[var(--text-mid)] hover:text-white" aria-label="Close collaborator dialog">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            
+
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-semibold mb-2 text-gray-300">Username</label>
-                    <input type="text" 
-                           id="collaborator-username" 
+                    <label class="block text-sm font-semibold mb-2 text-gray-300" for="collaborator-username">Username</label>
+                    <input type="text"
+                           id="collaborator-username"
                            placeholder="Enter username"
                            class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
                 </div>
-                
+
                 <div>
-                    <label class="block text-sm font-semibold mb-2 text-gray-300">Role</label>
-                    <select id="collaborator-role" 
+                    <label class="block text-sm font-semibold mb-2 text-gray-300" for="collaborator-role">Role</label>
+                    <select id="collaborator-role"
                             class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
                         <option value="editor">Editor (can add/remove items)</option>
                         <option value="viewer">Viewer (can only view)</option>
                     </select>
                 </div>
-                
-                <button onclick="listAdvancedManager.addCollaborator()" 
+
+                <button onclick="listAdvancedManager.addCollaborator()"
                         class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
                     <i class="fas fa-plus"></i> Add Collaborator
                 </button>
             </div>
         </div>
     </div>
-    
-    <!-- Week 2b: Category Selection Modal -->
-    <div id="category-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 overflow-y-auto">
-        <div class=" rounded-lg p-8 max-w-4xl w-full mx-4 my-8 border border-gray-700">
+
+    <!-- Category Selection Modal -->
+    <div id="category-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[1200] overflow-y-auto">
+        <div class="rounded-lg p-8 max-w-4xl w-full mx-4 my-8 border border-gray-700 bg-[rgba(10,13,18,0.96)]">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold text-yellow-400">
                     <i class="fas fa-tags"></i> Add Categories
                 </h2>
-                <button onclick="listAdvancedManager.closeCategoryModal()" 
-                        class="text-[var(--text-mid)] hover:text-white">
+                <button onclick="listAdvancedManager.closeCategoryModal()"
+                        class="text-[var(--text-mid)] hover:text-white" aria-label="Close categories dialog">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            
+
             <div id="category-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <!-- Categories loaded by JavaScript -->
+                <!-- Categories loaded by list-advanced.js -->
             </div>
         </div>
     </div>
-    
-    <script src="{{ url_for('static', filename='js/list-enhancements.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/list-advanced.js') }}"></script>
+
     <script>
         async function removeFromList(event, listId, itemId, title) {
             // Prevent the card click from navigating
             event.preventDefault();
             event.stopPropagation();
-            
+
             if (!confirm(`Remove "${title}" from this list?`)) {
                 return;
             }
-            
+
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
             try {
                 const response = await fetch(`/api/lists/${listId}/remove/${itemId}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': csrf }
                 });
-                
+
                 const data = await response.json();
                 if (response.ok) {
-                    // Reload the page to show updated list
                     window.location.reload();
                 } else {
                     alert(data.error || 'Failed to remove item');
@@ -346,6 +505,9 @@
             }
         }
     </script>
+    <script src="{{ url_for('static', filename='js/list-enhancements.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/list-advanced.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/lists-v2.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>
