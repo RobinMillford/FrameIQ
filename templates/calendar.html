@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>My Calendar - FrameIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <style>
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-base);
+            color: var(--text-hi);
+            min-height: 100vh;
+        }
+
+        .cal-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .cal-group {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px;
+            background: rgba(42, 50, 66, 0.82);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
+        .cal-group button {
+            border: 0;
+            background: transparent;
+            color: var(--text-mid);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            padding: 7px 14px;
+            border-radius: 9px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 160ms ease, color 160ms ease;
+        }
+
+        .cal-group button:hover { color: var(--text-hi); }
+
+        .cal-group button.active {
+            background: var(--accent);
+            color: #000;
+            font-weight: 600;
+        }
+
+        .cal-group button:focus-visible {
+            outline: 2px solid var(--accent-hi);
+            outline-offset: 2px;
+        }
+
+        /* Month grid */
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .cal-dow {
+            font-size: 0.6875rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-low);
+            font-family: var(--font-mono);
+            text-align: center;
+            padding: 4px 0;
+        }
+
+        .cal-cell {
+            background: rgba(42, 50, 66, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            min-height: 96px;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow: hidden;
+        }
+
+        .cal-cell-today {
+            border-color: rgba(246, 183, 60, 0.55);
+            background: rgba(246, 183, 60, 0.08);
+        }
+
+        .cal-daynum {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-mid);
+        }
+
+        .cal-cell-today .cal-daynum { color: var(--accent-hi); font-weight: 700; }
+
+        .cal-cell-events { display: flex; flex-direction: column; gap: 3px; }
+
+        .cal-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            text-align: left;
+            background: rgba(10, 13, 18, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 5px 8px;
+            font-size: 0.75rem;
+            color: var(--text-hi);
+            cursor: pointer;
+            min-height: 30px;
+            transition: border-color 160ms ease, background 160ms ease;
+        }
+
+        .cal-chip:hover { border-color: rgba(246, 183, 60, 0.5); }
+        .cal-chip:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
+        .cal-chip-watched { opacity: 0.55; }
+
+        .cal-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            flex: 0 0 auto;
+        }
+
+        .cal-dot-tv { background: #4C9BE8; }
+        .cal-dot-movie { background: var(--accent); }
+
+        .cal-chip-type {
+            margin-left: auto;
+            font-family: var(--font-mono);
+            font-size: 0.5625rem;
+            letter-spacing: 0.08em;
+            color: var(--text-low);
+            flex: 0 0 auto;
+        }
+
+        .cal-chip-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cal-truncate { max-width: 100%; }
+
+        .cal-more {
+            font-size: 0.6875rem;
+            color: var(--text-low);
+            padding-left: 4px;
+        }
+
+        /* Agenda */
+        .cal-agenda-day { margin-bottom: 20px; }
+
+        .cal-agenda-date {
+            font-size: 0.8125rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent-hi);
+            font-family: var(--font-mono);
+            margin-bottom: 8px;
+        }
+
+        .cal-agenda-item { padding: 10px 12px; font-size: 0.875rem; min-height: 44px; }
+
+        .cal-agenda-time {
+            margin-left: auto;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-mid);
+        }
+
+        /* Coming-up strip + counts */
+        .cal-strip-title {
+            font-family: var(--font-mono);
+            font-size: 0.6875rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-low);
+            align-self: center;
+            margin-right: 4px;
+        }
+
+        .cal-empty {
+            text-align: center;
+            padding: 72px 16px;
+            color: var(--text-mid);
+        }
+
+        .cal-empty i { font-size: 2.5rem; opacity: 0.4; margin-bottom: 12px; }
+        .cal-empty-title { font-size: 1.05rem; font-weight: 600; color: var(--text-hi); }
+        .cal-empty-sub { font-size: 0.8125rem; margin-top: 4px; color: var(--text-mid); }
+
+        /* Mobile: month grid becomes horizontally scrollable; agenda is primary */
+        @media (max-width: 767px) {
+            .cal-grid { grid-template-columns: repeat(7, 130px); overflow-x: auto; }
+            .cal-cell { min-height: 84px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation (shared chrome) -->
+    {% include "partials/nav_simple.html" with with_diary=True %}
+
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-[var(--text-hi)]" style="font-family: var(--font-display);">My Calendar</h1>
+            <p class="text-[var(--text-mid)] mt-1">Episodes from shows you track and releases from your watchlist.</p>
+        </div>
+
+        <!-- Quick filters + counts (client-side; no extra API calls) -->
+        <div class="cal-toolbar mb-4">
+            <div class="cal-group" id="cal-quick-group" role="group" aria-label="Quick ranges">
+                <button id="cal-quick-today" type="button">Today</button>
+                <button id="cal-quick-week" type="button">This Week</button>
+                <button id="cal-quick-month" type="button">This Month</button>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-[var(--text-mid)]" aria-live="polite">
+                <span id="cal-count-tv">0 episodes</span>
+                <span id="cal-count-movie">0 movie releases</span>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="cal-toolbar mb-6">
+            <div class="cal-group" id="cal-view-group" role="group" aria-label="Calendar view">
+                <button type="button" data-view="agenda" class="active" aria-pressed="true">Agenda</button>
+                <button type="button" data-view="month" aria-pressed="false">Month</button>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <div class="cal-group" id="cal-type-group" role="group" aria-label="Event type">
+                    <button type="button" data-type="all" class="active" aria-pressed="true">All</button>
+                    <button type="button" data-type="tv" aria-pressed="false">TV</button>
+                    <button type="button" data-type="movie" aria-pressed="false">Movies</button>
+                </div>
+                <div class="cal-group" id="cal-scope-group" role="group" aria-label="Scope">
+                    <button type="button" data-scope="all" class="active" aria-pressed="true">Everything</button>
+                    <button type="button" data-scope="watchlist" aria-pressed="false">Watchlist</button>
+                    <button type="button" data-scope="tracking" aria-pressed="false">Tracking</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Coming up -->
+        <div id="cal-coming-up"
+             class="surface-secondary px-4 py-3 mb-6 flex flex-wrap gap-2 items-center hidden"></div>
+
+        <div class="flex items-center justify-between mb-4">
+            <h2 id="cal-month-label" class="text-lg font-semibold text-[var(--text-hi)]"></h2>
+        </div>
+
+        <!-- Month view -->
+        <div id="cal-month" class="surface-primary p-4 hidden"></div>
+
+        <!-- Agenda view -->
+        <div id="cal-agenda" class="space-y-2"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+</body>
+</html>

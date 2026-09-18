@@ -38,9 +38,14 @@
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-3xl font-bold text-[var(--accent)]">My Watchlist</h1>
-            <a href="{{ url_for('main.index') }}" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded transition duration-300">
-                Back to Home
-            </a>
+            <div class="flex items-center gap-2">
+                <a href="{{ url_for('calendar.calendar_page', scope='watchlist', type='movie') }}" class="bg-[var(--bg-elevated)] hover:bg-black text-[var(--text-hi)] border border-[var(--line-hi)] py-2 px-4 rounded transition duration-300" aria-label="View watchlist releases on your calendar">
+                    View on Calendar &rarr;
+                </a>
+                <a href="{{ url_for('main.index') }}" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded transition duration-300">
+                    Back to Home
+                </a>
+            </div>
         </div>
         
         {% with messages = get_flashed_messages() %}

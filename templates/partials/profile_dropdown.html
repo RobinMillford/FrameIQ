@@ -34,6 +34,9 @@
         {% if with_diary %}<a href="/diary" role="menuitem" class="fi-menu-item">
             <i class="fas fa-book-open" aria-hidden="true"></i> Diary
         </a>{% endif %}
+        <a href="{{ url_for('calendar.calendar_page') }}" role="menuitem" class="fi-menu-item">
+            <i class="fas fa-calendar" aria-hidden="true"></i> Calendar
+        </a>
         <hr class="fi-menu-sep">
         <a href="{{ url_for('auth.edit_profile') }}" role="menuitem" class="fi-menu-item">
             <i class="fas fa-gear" aria-hidden="true"></i> Settings
