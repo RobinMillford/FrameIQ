@@ -78,7 +78,7 @@ class StatsDashboard {
                 datasets: [{
                     data: this.data.genre_distribution.data,
                     backgroundColor: [
-                        '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#f59e0b'
+                        '#F6B73C', '#FFD066', '#B98A2E', '#8A6620', '#5C430F'
                     ],
                     borderWidth: 0,
                     hoverOffset: 10
@@ -119,8 +119,8 @@ class StatsDashboard {
                 datasets: [{
                     label: 'Count',
                     data: this.data.rating_distribution.data,
-                    backgroundColor: 'rgba(99, 102, 241, 0.6)',
-                    borderColor: '#6366f1',
+                    backgroundColor: 'rgba(246, 183, 60, 0.55)',
+                    borderColor: '#F6B73C',
                     borderWidth: 1,
                     borderRadius: 4
                 }]
@@ -162,7 +162,7 @@ class StatsDashboard {
                 labels: ['Movies', 'TV Shows'],
                 datasets: [{
                     data: [stats.movies_watched, stats.tv_watched],
-                    backgroundColor: ['#6366f1', '#10b981'],
+                    backgroundColor: ['#F6B73C', '#4C9BE8'],
                     borderWidth: 0
                 }]
             },
@@ -196,13 +196,13 @@ class StatsDashboard {
             data: {
                 labels: this.data.monthly_activity.labels,
                 datasets: [{
-                    label: 'Reviews',
+                    label: 'Reviews per month',
                     data: this.data.monthly_activity.data,
-                    borderColor: '#6366f1',
-                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    borderColor: '#4C9BE8',
+                    backgroundColor: 'rgba(76, 155, 232, 0.12)',
                     fill: true,
                     tension: 0.4,
-                    pointBackgroundColor: '#6366f1',
+                    pointBackgroundColor: '#4C9BE8',
                     pointBorderColor: '#fff',
                     pointHoverRadius: 6
                 }]
@@ -231,17 +231,19 @@ class StatsDashboard {
     showEmptyState(canvas, message) {
         const parent = canvas.parentElement;
         if (!parent) return;
-        
+
         // Hide canvas
         canvas.style.display = 'none';
-        
-        // Add message
+
+        // Add message (DOM-safe: message is a static literal)
         const emptyDiv = document.createElement('div');
         emptyDiv.className = 'absolute inset-0 flex flex-col items-center justify-center text-gray-500 text-sm italic';
-        emptyDiv.innerHTML = `
-            <i class="fas fa-chart-pie mb-2 opacity-50"></i>
-            <span>${message}</span>
-        `;
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-chart-pie mb-2 opacity-50';
+        const span = document.createElement('span');
+        span.textContent = message;
+        emptyDiv.appendChild(icon);
+        emptyDiv.appendChild(span);
         parent.appendChild(emptyDiv);
     }
 }

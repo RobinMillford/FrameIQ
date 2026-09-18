@@ -75,11 +75,34 @@ def wishlist():
 @main.route('/viewed')
 @login_required
 def viewed():
-    """Display user's viewing history"""
-    viewed_items = current_user.viewed_media
-    watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+    """Display user's viewing history.
 
-    return render_template('viewed.html', viewed=viewed_items,
+    This surface is a WATCHED-TITLE COLLECTION (not an event history —
+    the chronological journal is the Diary). Its movie half comes from
+    the canonical ``user_viewed`` state; its TV half is derived at read
+    time from ``TVEpisodeWatch`` — distinct shows with >= 1 watched
+    episode (Phases 1/4 semantics: titles, not episodes; tracking
+    without episode data contributes nothing). This is why TV watches
+    previously never appeared here: ``user_viewed`` only receives
+    movie quick-log/diary writes (routes/diary.py), never TV writes.
+    """
+    from api.tv_watch_titles import tv_watch_titles
+
+    def _hydrate(missing_show_ids):
+        # Reuse the existing cached-TMDb hydrator (network only for
+        # shows missing from the local MediaItem cache; results are
+        # persisted so later requests are served locally).
+        from routes.tv_tracking import _hydrate_missing_show_metadata
+
+        _hydrate_missing_show_metadata(missing_show_ids, {})
+
+    viewed_items = list(current_user.viewed_media)
+    tv_titles = tv_watch_titles(current_user.id, hydrate=_hydrate)
+
+    watchlist_ids, wishlist_ids, viewed_ids = \
+        get_user_collection_ids(current_user)
+
+    return render_template('viewed.html', viewed=viewed_items + tv_titles,
                            user_watchlist_ids=watchlist_ids,
                            user_wishlist_ids=wishlist_ids,
                            user_viewed_ids=viewed_ids)

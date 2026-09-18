@@ -223,7 +223,7 @@ def test_contract_unchanged_phase10(user):
         "rating_distribution", "rewatch_count", "rewatch_rate",
         "top_genres", "monthly_watch_counts", "media_type_distribution",
         "daily_activity", "active_watch_days", "max_daily_watch_events",
-        "directors", "actors", "season_quality",
+        "directors", "actors", "season_quality", "tv_shows_watched",
     }
     assert set(s.keys()) == expected
     # long-standing unavailability semantics unchanged

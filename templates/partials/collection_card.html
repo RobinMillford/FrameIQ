@@ -19,6 +19,15 @@
         {% if item.release_date %}
             <p class="text-[var(--text-mid)] text-sm mb-2">{{ item.release_date }}</p>
         {% endif %}
+        {% if item.episodes_watched %}
+            {# TV watched-title card (derived at read time from
+               TVEpisodeWatch) — movie MediaItem objects never carry
+               this field, so the block is skipped for them. #}
+            <p class="text-[var(--text-mid)] text-xs mb-2">
+                {{ item.episodes_watched }} episode{{ 's' if item.episodes_watched != 1 }} watched
+                {%- if item.last_watched %} · Last: {{ item.last_watched.strftime('%Y-%m-%d') }}{% endif %}
+            </p>
+        {% endif %}
         {% if item.rating %}
             <div class="flex items-center mb-3">
                 <svg class="w-4 h-4 text-yellow-400 mr-1" fill="currentColor" viewBox="0 0 20 20">

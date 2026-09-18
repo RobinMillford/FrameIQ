@@ -9,6 +9,7 @@ import time
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 import requests
@@ -16,8 +17,11 @@ import os
 
 from extensions import limiter
 from models import db, User, DiaryEntry, MediaItem, user_viewed
+from models.tv import TVEpisodeWatch
 
 logger = logging.getLogger(__name__)
+
+_EPOCH_DT = datetime(1970, 1, 1)  # sort fallback for NULL created_at
 
 diary = Blueprint('diary', __name__)
 
@@ -252,68 +256,268 @@ def diary_page():
     return render_template('diary.html')
 
 
+def _tv_event_dict(row, user, tv_media):
+    """Serialize a TVEpisodeWatch row as an additive diary event dict.
+
+    Same top-level keys as DiaryEntry.to_dict() (diary.html and
+    profile-page.js consume the shared shape) plus an ``episode``
+    object with season/number/name/notes. ``tv_media`` maps show tmdb
+    id → MediaItem (batch-hydrated by the caller, no per-event query).
+    """
+    media = tv_media.get(row.show_id)
+    return {
+        "id": row.id,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "profile_picture": user.profile_picture,
+        },
+        "media": {
+            "id": row.show_id,
+            "title": media.title if media else "Unknown Show",
+            "poster_path": media.poster_path if media else None,
+            "media_type": "tv",
+        },
+        "watched_date": row.watched_date.isoformat(),
+        "rating": row.rating,
+        "review_id": None,
+        "is_rewatch": bool(row.is_rewatch),
+        "created_at": row.created_at.isoformat()
+        if row.created_at else None,
+        "episode": {
+            "season": row.season_number,
+            "number": row.episode_number,
+            "name": row.episode_name,
+            "notes": row.notes,
+        },
+    }
+
+
+def _count_diary_events(user_id, year=None, month=None):
+    """Bounded COUNT over both diary sources with the same filters."""
+    movie_q = db.session.query(func.count(DiaryEntry.id)).filter(
+        DiaryEntry.user_id == user_id)
+    tv_q = db.session.query(func.count(TVEpisodeWatch.id)).filter(
+        TVEpisodeWatch.user_id == user_id)
+    if year:
+        movie_q = movie_q.filter(
+            db.extract('year', DiaryEntry.watched_date) == year)
+        tv_q = tv_q.filter(
+            db.extract('year', TVEpisodeWatch.watched_date) == year)
+    if month:
+        movie_q = movie_q.filter(
+            db.extract('month', DiaryEntry.watched_date) == month)
+        tv_q = tv_q.filter(
+            db.extract('month', TVEpisodeWatch.watched_date) == month)
+    return (movie_q.scalar() or 0) + (tv_q.scalar() or 0)
+
+
+def _hydrate_diary_page(page_items):
+    """Batch-load display metadata for one diary page.
+
+    Movies: one joinedload query (to_dict() must not lazy-load).
+    TV: one id IN MediaItem lookup. Returns the tv_media map —
+    no per-event queries regardless of page composition.
+    """
+    movie_rows = [e[4] for e in page_items if e[3] == "movie"]
+    if movie_rows:
+        db.session.query(DiaryEntry).options(
+            joinedload(DiaryEntry.user), joinedload(DiaryEntry.media)
+        ).filter(DiaryEntry.id.in_([r.id for r in movie_rows])).all()
+
+    tv_rows = [e[4] for e in page_items if e[3] == "tv"]
+    if not tv_rows:
+        return {}
+    show_ids = {r.show_id for r in tv_rows}
+    return dict(
+        db.session.query(MediaItem.tmdb_id, MediaItem)
+        .filter(MediaItem.tmdb_id.in_(show_ids),
+                MediaItem.media_type == "tv")
+        .all())
+
+
+def _serialize_diary_page(page_items, user, tv_media):
+    """Mixed movie/TV page items → stable JSON entries."""
+    entries = []
+    for _, _, _, kind, row in page_items:
+        if kind == "movie":
+            entries.append(row.to_dict())
+        else:
+            entries.append(_tv_event_dict(row, user, tv_media))
+    return entries
+
+
 @diary.route('/api/diary', methods=['GET'])
 @login_required
 def get_diary_entries():  # noqa: F811 — defined below the quick-log helpers
-    """Get diary entries for the current user"""
+    """Unified diary event stream (Phase 5/6).
+
+    The diary is the CHRONOLOGICAL WATCH-EVENT JOURNAL: movie
+    DiaryEntry rows + TVEpisodeWatch rows merged into one deterministic
+    descending stream (tie-break: created_at/id, newer first).
+    Previously this endpoint returned only ``diary_entries`` — TV
+    episode watches (which never create DiaryEntry rows — see the
+    TV note in routes/tv_tracking.py) were structurally invisible.
+
+    Contract preserved for existing consumers (diary.html,
+    profile-page.js): entries/total/pages/has_next/has_prev, same
+    entry dict fields. TV events are ADDITIVE dicts with the same
+    keys (id/user/media/watched_date/rating/is_rewatch/created_at)
+    plus episode fields. No DiaryEntry rows are fabricated.
+
+    Pagination stays correct WITHOUT loading full histories: for page
+    N, each source can affect the window with at most N*per_page+1
+    rows (the merged prefix before the window holds (N-1)*per_page
+    items across ALL sources, plus per_page window items). Fetch that
+    bounded prefix per source, merge-sort, and slice — the sorted
+    pool's [start:start+per_page] slice is exactly the true window.
+    """
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
 
-    # Build query
-    query = current_user.diary_entries.order_by(DiaryEntry.watched_date.desc(), DiaryEntry.created_at.desc())
+    def _movie_rows(offset, limit):
+        q = (
+            db.session.query(DiaryEntry)
+            .filter(DiaryEntry.user_id == current_user.id)
+            .order_by(DiaryEntry.watched_date.desc(),
+                      DiaryEntry.created_at.desc(), DiaryEntry.id.desc())
+        )
+        if year:
+            q = q.filter(db.extract('year', DiaryEntry.watched_date) == year)
+        if month:
+            q = q.filter(db.extract('month', DiaryEntry.watched_date) == month)
+        return q.offset(offset).limit(limit).all()
 
-    # Filter by year/month if provided
-    if year:
-        query = query.filter(db.extract('year', DiaryEntry.watched_date) == year)
-    if month:
-        query = query.filter(db.extract('month', DiaryEntry.watched_date) == month)
+    def _tv_rows(offset, limit):
+        q = (
+            db.session.query(TVEpisodeWatch)
+            .filter(TVEpisodeWatch.user_id == current_user.id)
+            .order_by(TVEpisodeWatch.watched_date.desc(),
+                      TVEpisodeWatch.created_at.desc(),
+                      TVEpisodeWatch.id.desc())
+        )
+        if year:
+            q = q.filter(
+                db.extract('year', TVEpisodeWatch.watched_date) == year)
+        if month:
+            q = q.filter(
+                db.extract('month', TVEpisodeWatch.watched_date) == month)
+        return q.offset(offset).limit(limit).all()
 
-    # Paginate
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    # Bounded prefix fetch (see docstring): page N needs at most
+    # N*per_page+1 rows per source to fill the merged window exactly.
+    limit = page * per_page + 1
+    movie_page = _movie_rows(0, limit)
+    tv_page = _tv_rows(0, limit)
 
-    # Eager-load user/media so to_dict() doesn't lazy-load per entry (N+1)
-    db.session.query(DiaryEntry).options(
-        joinedload(DiaryEntry.user), joinedload(DiaryEntry.media)
-    ).filter(DiaryEntry.id.in_([e.id for e in pagination.items])).all()
+    events = (
+        [(row.watched_date, row.created_at or _EPOCH_DT, row.id,
+          "movie", row) for row in movie_page]
+        + [(row.watched_date, row.created_at or _EPOCH_DT, row.id,
+            "tv", row) for row in tv_page]
+    )
+    # Global deterministic order: date desc, created_at desc, kind,
+    # id desc. created_at is DateTime (tz-naive UTC in both models)
+    # so the key tuples are directly comparable.
+    events.sort(
+        key=lambda e: (e[0], e[1], e[3], e[2]), reverse=True)
 
+    start = (page - 1) * per_page
+    page_items = events[start:start + per_page]
+    has_next = len(events) > start + per_page
+    has_prev = page > 1
+
+    tv_media = _hydrate_diary_page(page_items)
+    entries = _serialize_diary_page(page_items, current_user, tv_media)
+
+    # Totals: two bounded COUNT statements (page payloads are already
+    # bounded above; the counts give stable pagination numbers).
+    total = _count_diary_events(current_user.id, year, month)
     return jsonify({
-        'entries': [entry.to_dict() for entry in pagination.items],
-        'total': pagination.total,
-        'pages': pagination.pages,
+        'entries': entries,
+        'total': total,
+        'pages': max(1, -(-total // per_page)),
         'current_page': page,
-        'has_next': pagination.has_next,
-        'has_prev': pagination.has_prev
+        'has_next': has_next,
+        'has_prev': has_prev,
     }), 200
 
 
 @diary.route('/api/users/<int:user_id>/diary', methods=['GET'])
 def get_user_diary(user_id):
-    """Get diary entries for a specific user (public view)"""
+    """Get diary entries for a specific user (public view).
+
+    Same unified movie + TV event stream as the private /api/diary,
+    scoped to the target user (no user_id parameter bypass — the id
+    is the URL argument, exactly as before).
+    """
     user = User.query.get_or_404(user_id)
 
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
 
-    # Query diary entries
-    query = user.diary_entries.order_by(DiaryEntry.watched_date.desc(), DiaryEntry.created_at.desc())
+    def _movie_rows(offset, limit):
+        q = (
+            db.session.query(DiaryEntry)
+            .filter(DiaryEntry.user_id == user.id)
+            .order_by(DiaryEntry.watched_date.desc(),
+                      DiaryEntry.created_at.desc(), DiaryEntry.id.desc())
+        )
+        if year:
+            q = q.filter(db.extract('year', DiaryEntry.watched_date) == year)
+        if month:
+            q = q.filter(db.extract('month', DiaryEntry.watched_date) == month)
+        return q.offset(offset).limit(limit).all()
 
-    # Paginate
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    def _tv_rows(offset, limit):
+        q = (
+            db.session.query(TVEpisodeWatch)
+            .filter(TVEpisodeWatch.user_id == user.id)
+            .order_by(TVEpisodeWatch.watched_date.desc(),
+                      TVEpisodeWatch.created_at.desc(),
+                      TVEpisodeWatch.id.desc())
+        )
+        if year:
+            q = q.filter(
+                db.extract('year', TVEpisodeWatch.watched_date) == year)
+        if month:
+            q = q.filter(
+                db.extract('month', TVEpisodeWatch.watched_date) == month)
+        return q.offset(offset).limit(limit).all()
 
-    # Eager-load user/media so to_dict() doesn't lazy-load per entry (N+1)
-    db.session.query(DiaryEntry).options(
-        joinedload(DiaryEntry.user), joinedload(DiaryEntry.media)
-    ).filter(DiaryEntry.id.in_([e.id for e in pagination.items])).all()
+    # Bounded prefix fetch, identical to the private stream.
+    limit = page * per_page + 1
+    movie_page = _movie_rows(0, limit)
+    tv_page = _tv_rows(0, limit)
+
+    events = (
+        [(row.watched_date, row.created_at or _EPOCH_DT, row.id,
+          "movie", row) for row in movie_page]
+        + [(row.watched_date, row.created_at or _EPOCH_DT, row.id,
+            "tv", row) for row in tv_page]
+    )
+    events.sort(
+        key=lambda e: (e[0], e[1], e[3], e[2]), reverse=True)
+
+    start = (page - 1) * per_page
+    page_items = events[start:start + per_page]
+    has_next = len(events) > start + per_page
+
+    tv_media = _hydrate_diary_page(page_items)
+    entries = _serialize_diary_page(page_items, user, tv_media)
+    total = _count_diary_events(user.id, year, month)
 
     return jsonify({
-        'entries': [entry.to_dict() for entry in pagination.items],
-        'total': pagination.total,
-        'pages': pagination.pages,
+        'entries': entries,
+        'total': total,
+        'pages': max(1, -(-total // per_page)),
         'current_page': page,
-        'has_next': pagination.has_next,
-        'has_prev': pagination.has_prev,
+        'has_next': has_next,
+        'has_prev': page > 1,
         'user': {
             'id': user.id,
             'username': user.username,

@@ -30,79 +30,23 @@
         }
     </style>
 </head>
-<body class="pt-24 pb-12">
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 glass-effect">
-        <div class="container mx-auto px-4 py-4">
-            <div class="flex justify-between items-center">
-                <a href="/" class="flex items-center group">
-                    <span class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent group-hover:from-cyan-300 group-hover:to-blue-400 transition-all">FrameIQ</span>
-                </a>
-                <div class="hidden md:flex space-x-8">
-                    <a href="/" class="hover:text-cyan-400 transition-colors">Home</a>
-                    <a href="/movies" class="hover:text-cyan-400 transition-colors">Movies</a>
-                    <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
-                    <a href="/diary" class="text-cyan-400 font-medium">Diary</a>
-                </div>
-                <div class="flex items-center space-x-3">
-                    {% if current_user.is_authenticated %}
-                        <a href="/profile" class="hidden sm:flex items-center space-x-2 /50 hover:bg-gray-700/50 px-3 py-1.5 rounded-full border border-gray-700 transition-all">
-                            <i class="fas fa-user-circle text-[var(--text-mid)]"></i>
-                            <span class="text-sm font-medium">{{ current_user.username }}</span>
-                        </a>
-                    {% else %}
-                        <a href="/login" class="hidden sm:block text-sm font-medium hover:text-cyan-400">Login</a>
-                    {% endif %}
-                    <button id="mobile-menu-button" class="md:hidden p-2 rounded-lg hover:bg-gray-700/50 transition-colors" aria-label="Menu">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Mobile menu -->
-    <div id="mobile-menu" class="fixed top-16 left-0 right-0 z-40 hidden" style="background:rgba(10,47,53,0.97);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.1)">
-        <div class="container mx-auto px-4 py-4 flex flex-col space-y-4">
-            <a href="/" class="hover:text-cyan-400 transition-colors">Home</a>
-            <a href="/movies" class="hover:text-cyan-400 transition-colors">Movies</a>
-            <a href="/tv_shows" class="hover:text-cyan-400 transition-colors">TV Shows</a>
-            <a href="/diary" class="text-cyan-400 font-medium">Diary</a>
-            {% if current_user.is_authenticated %}
-                <a href="/profile" class="hover:text-cyan-400 transition-colors">Profile</a>
-            {% else %}
-                <a href="/login" class="hover:text-cyan-400 transition-colors">Login</a>
-            {% endif %}
-        </div>
-    </div>
-    <script>
-        (function() {
-            var btn = document.getElementById('mobile-menu-button');
-            var menu = document.getElementById('mobile-menu');
-            if (btn && menu) {
-                btn.addEventListener('click', function() { menu.classList.toggle('hidden'); });
-                document.addEventListener('click', function(e) {
-                    if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.add('hidden');
-                });
-            }
-        })();
-    </script>
+<body class="pb-12">
+    <!-- Navigation (shared chrome) -->
+    {% include "partials/nav_simple.html" with with_diary=True %}
 
     <div class="container mx-auto px-4">
         <div class="diary-container">
             <div class="mb-8">
-                <h1 class="text-4xl font-bold mb-2">My Diary</h1>
-                <p class="text-[var(--text-mid)]">Your chronological watch history</p>
+                <h1 class="text-4xl font-bold text-[var(--text-hi)]" style="font-family: var(--font-display);">My Diary</h1>
+                <p class="text-[var(--text-mid)]">Your chronological movie + TV watch events</p>
             </div>
 
             <!-- Filter Options -->
-            <div class="glass-effect rounded-lg p-4 mb-6 flex gap-4">
-                <select id="year-filter" class=" text-white px-4 py-2 rounded-lg border border-gray-700">
+            <div class="glass-effect rounded-lg p-4 mb-6 flex flex-wrap gap-4">
+                <select id="year-filter" class="bg-[var(--bg-elevated)] text-white px-4 py-2 rounded-lg border border-[var(--line-hi)]" aria-label="Filter by year">
                     <option value="">All Years</option>
                 </select>
-                <select id="month-filter" class=" text-white px-4 py-2 rounded-lg border border-gray-700">
+                <select id="month-filter" class="bg-[var(--bg-elevated)] text-white px-4 py-2 rounded-lg border border-[var(--line-hi)]" aria-label="Filter by month">
                     <option value="">All Months</option>
                     <option value="1">January</option>
                     <option value="2">February</option>
@@ -123,13 +67,13 @@
             <div id="diary-entries" class="space-y-4">
                 <!-- Entries will be loaded here via JavaScript -->
                 <div class="flex justify-center py-20">
-                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[var(--accent)]"></div>
                 </div>
             </div>
 
             <!-- Load More -->
             <div class="text-center mt-8">
-                <button id="load-more" class="bg-transparent border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-white px-8 py-3 rounded-xl transition-all duration-300 hidden">
+                <button id="load-more" class="bg-transparent border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-black px-8 py-3 rounded-xl transition-all duration-300 hidden">
                     Load More
                 </button>
             </div>
@@ -150,49 +94,98 @@
                 const data = await response.json();
 
                 if (page === 1) {
-                    document.getElementById('diary-entries').innerHTML = '';
+                    document.getElementById('diary-entries').replaceChildren();
                 }
 
                 if (data.entries.length === 0 && page === 1) {
-                    document.getElementById('diary-entries').innerHTML = `
-                        <div class="text-center py-20">
-                            <i class="fas fa-book-open text-6xl text-[var(--text-mid)] mb-4"></i>
-                            <p class="text-[var(--text-mid)] text-lg">Your diary is empty. Start logging your watches!</p>
-                        </div>
-                    `;
+                    const wrap = document.createElement('div');
+                    wrap.className = 'text-center py-20';
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-book-open text-6xl text-[var(--text-mid)] mb-4';
+                    const msg = document.createElement('p');
+                    msg.className = 'text-[var(--text-mid)] text-lg';
+                    msg.textContent = 'Your diary is empty. Start logging your watches!';
+                    wrap.appendChild(icon);
+                    wrap.appendChild(msg);
+                    document.getElementById('diary-entries').appendChild(wrap);
                     return;
                 }
 
                 data.entries.forEach(entry => {
-                    const entryHtml = `
-                        <div class="glass-effect rounded-lg p-4 flex gap-4 hover:bg-white/10 transition-all">
-                            <img src="https://image.tmdb.org/t/p/w200${entry.media.poster_path}" 
-                                 alt="${entry.media.title}" 
-                                 class="w-20 h-32 object-cover rounded">
-                            <div class="flex-1">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="text-lg font-semibold">${entry.media.title}</h3>
-                                        <p class="text-sm text-[var(--text-mid)]">Watched on ${new Date(entry.watched_date).toLocaleDateString()}</p>
-                                        ${entry.is_rewatch ? '<span class="text-xs bg-yellow-600 text-white px-2 py-1 rounded mt-1 inline-block">Rewatch</span>' : ''}
-                                    </div>
-                                    ${entry.rating ? `<div class="text-yellow-400 text-lg">★ ${entry.rating}</div>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    document.getElementById('diary-entries').insertAdjacentHTML('beforeend', entryHtml);
+                    // Unified movie + TV stream (server merges DiaryEntry
+                    // + TVEpisodeWatch). All dynamic values are untrusted
+                    // — built with createElement/textContent, never HTML
+                    // string interpolation.
+                    const card = document.createElement('div');
+                    card.className = 'glass-effect rounded-lg p-4 flex gap-4 hover:bg-white/10 transition-all';
+
+                    const img = document.createElement('img');
+                    if (entry.media.poster_path) {
+                        img.src = 'https://image.tmdb.org/t/p/w200' + entry.media.poster_path;
+                    }
+                    img.alt = entry.media.title || 'Poster';
+                    img.className = 'w-20 h-32 object-cover rounded';
+
+                    const body = document.createElement('div');
+                    body.className = 'flex-1';
+
+                    const head = document.createElement('div');
+                    head.className = 'flex justify-between items-start';
+
+                    const left = document.createElement('div');
+
+                    const title = document.createElement('h3');
+                    title.className = 'text-lg font-semibold';
+                    title.textContent = entry.media.title || 'Untitled';
+
+                    const sub = document.createElement('p');
+                    sub.className = 'text-sm text-[var(--text-mid)]';
+                    const when = entry.watched_date
+                        ? new Date(entry.watched_date).toLocaleDateString()
+                        : '';
+                    if (entry.episode) {
+                        sub.textContent = 'S' + entry.episode.season +
+                            'E' + entry.episode.number +
+                            ' \u00b7 Watched on ' + when;
+                    } else {
+                        sub.textContent = 'Watched on ' + when;
+                    }
+
+                    left.appendChild(title);
+                    left.appendChild(sub);
+
+                    if (entry.is_rewatch) {
+                        const tag = document.createElement('span');
+                        tag.className = 'text-xs bg-yellow-600 text-white px-2 py-1 rounded mt-1 inline-block';
+                        tag.textContent = 'Rewatch';
+                        left.appendChild(tag);
+                    }
+
+                    head.appendChild(left);
+
+                    if (entry.rating) {
+                        const stars = document.createElement('div');
+                        stars.className = 'text-yellow-400 text-lg';
+                        stars.textContent = '\u2605 ' + entry.rating;
+                        head.appendChild(stars);
+                    }
+
+                    body.appendChild(head);
+                    card.appendChild(img);
+                    card.appendChild(body);
+                    document.getElementById('diary-entries').appendChild(card);
                 });
 
                 hasMore = data.has_next;
                 document.getElementById('load-more').classList.toggle('hidden', !hasMore);
 
             } catch (error) {
-                document.getElementById('diary-entries').innerHTML = `
-                    <div class="text-center py-20 text-red-400">
-                        <p>Error loading diary entries. Please try again.</p>
-                    </div>
-                `;
+                const wrap = document.createElement('div');
+                wrap.className = 'text-center py-20 text-red-400';
+                const msg = document.createElement('p');
+                msg.textContent = 'Error loading diary entries. Please try again.';
+                wrap.appendChild(msg);
+                document.getElementById('diary-entries').appendChild(wrap);
             }
         }
 

@@ -115,8 +115,12 @@
     });
 
     document.addEventListener('click', function (e) {
+        // panel.contains: the panel may be portal-hosted at <body> level
+        // (chrome.js header-layering contract), so "inside the menu"
+        // clicks no longer sit under #notif-root.
         if (!panel.classList.contains('hidden') &&
-            !document.getElementById('notif-root').contains(e.target)) {
+            !document.getElementById('notif-root').contains(e.target) &&
+            !panel.contains(e.target)) {
             togglePanel(false);
         }
     });
