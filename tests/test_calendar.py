@@ -359,6 +359,76 @@ class TestMixedAndFilters:
         assert _get(client, "?scope=world").status_code == 400
 
 
+# ─────────────────────────── 10A gap coverage ───────────────────────
+
+class TestRangeValidation:
+    def test_reversed_range_rejected(self, db, client):
+        """10A §D: start <= end is a contract rule — a reversed window
+        is a client bug and must be rejected, not silently swapped."""
+        u = _user(db)
+        _login(client, u)
+        resp = _get(client, "?start=2026-10-31&end=2026-10-01")
+        assert resp.status_code == 400
+        assert "end" in resp.get_json()["error"].lower()
+
+    def test_boundary_dates_inclusive_next_day_excluded(self, db, client):
+        """§D/§20: inclusive externally — start and end dates appear,
+        the day after end does not (half-open internally)."""
+        u = _user(db)
+        s = _show(db)
+        _track(db, u, s)
+        _upcoming(db, s, 1, 1, date(2026, 10, 1))   # == start
+        _upcoming(db, s, 1, 2, date(2026, 10, 31))  # == end
+        _upcoming(db, s, 1, 3, date(2026, 11, 1))   # end + 1 day
+        db.session.commit()
+
+        _login(client, u)
+        events = _get(
+            client, "?start=2026-10-01&end=2026-10-31").get_json()["events"]
+        assert [e["episode_number"] for e in events] == [1, 2]
+
+
+class TestResponseContract:
+    def test_event_serialization_shape_pinned(self, db, client):
+        """§E: stable, documented key-set — additive changes only."""
+        u = _user(db)
+        s = _show(db)
+        _track(db, u, s)
+        _upcoming(db, s, 1, 1, _TODAY + timedelta(days=2), name="Ep")
+        db.session.commit()
+        _login(client, u)
+        ev = _get(client).get_json()["events"][0]
+        assert set(ev.keys()) == {
+            "id", "event_type", "media_type", "title", "poster", "date",
+            "time", "tmdb_id", "season_number", "episode_number",
+            "release_type", "status", "source", "is_tracked",
+            "is_watchlisted", "watched", "detail_url", "metadata"}
+
+    def test_no_external_tmdb_calls_in_request_path(self, db, client):
+        """§H: calendar is read-only over local data — zero external
+        TMDb calls, even with 20 events (10 TV + 10 watchlist movies)."""
+        u = _user(db)
+        s = _show(db)
+        _track(db, u, s)
+        for i in range(10):
+            _upcoming(db, s, 1, i + 1, _TODAY + timedelta(days=i + 1))
+            _watchlist(db, u, _movie(db, release=_TODAY + timedelta(days=i + 1)))
+        db.session.commit()
+
+        calls = []
+        import api.tmdb.cache as tmdb_cache_mod
+        orig = tmdb_cache_mod.cached_tmdb_request
+        tmdb_cache_mod.cached_tmdb_request = (
+            lambda *a, **k: calls.append(a))
+        try:
+            _login(client, u)
+            data = _get(client).get_json()
+        finally:
+            tmdb_cache_mod.cached_tmdb_request = orig
+        assert data["meta"]["counts"]["total"] == 20
+        assert calls == []
+
+
 # ─────────────────────────── security ───────────────────────────────
 
 class TestSecurity:
@@ -374,6 +444,37 @@ class TestSecurity:
                   "?user=%d" % other.id,
                   "?uid=%d" % other.id):
             assert _get(client, q).get_json()["events"] == []
+
+    def test_isolation_both_users_data_present(self, db, client):
+        """§5/§6: scoping by absence-of-leak is weaker than by
+        cross-visibility — prove each user sees exactly their own
+        events when BOTH users have tracked episodes. Sequential
+        logins on one client (parallel test clients proved flaky in
+        this sandbox — the session identity leaked across clients)."""
+        ua, ub = _user(db), _user(db)
+        sa, sb = _show(db), _show(db)
+        _track(db, ua, sa)
+        _track(db, ub, sb)
+        _upcoming(db, sa, 1, 1, _TODAY + timedelta(days=2), name="ForA")
+        _upcoming(db, sb, 1, 1, _TODAY + timedelta(days=3), name="ForB")
+        db.session.commit()
+
+        _login(client, ua)
+        ea = _get(client).get_json()["events"]
+        assert [e["metadata"]["episode_name"] for e in ea] == ["ForA"]
+        client.get("/logout")
+
+        _login(client, ub)
+        eb = _get(client).get_json()["events"]
+        assert [e["metadata"]["episode_name"] for e in eb] == ["ForB"]
+
+    def test_tv_upcoming_page_still_renders(self, db, client):
+        """§F/§13: legacy /tv/upcoming regression — route registered,
+        renders successfully for an authenticated user."""
+        u = _user(db)
+        _login(client, u)
+        resp = client.get("/tv/upcoming")
+        assert resp.status_code == 200
 
     def test_calendar_page_requires_auth(self, client):
         resp = client.get("/calendar")
