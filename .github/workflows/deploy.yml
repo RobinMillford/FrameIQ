@@ -142,13 +142,16 @@ jobs:
             # /calendar 302s to login when unauthenticated — that is the
             # expected, correct behavior and passes.
             for path in /calendar /tv/upcoming; do
-              CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://127.0.0.1:8002${path}" || true)"
-              case "$CODE" in
-                2*|3*) echo "smoke $path → $CODE (OK)" ;;
-                *) echo "::error::smoke $path → ${CODE:-none} (5xx or unreachable)"
-                   docker compose logs --tail=100 web || true
-                   exit 1 ;;
-              esac
+              CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+                --max-time 15 \
+                "http://127.0.0.1:8002${path}" || true)"
+              if [[ "$CODE" =~ ^2[0-9][0-9]$ || "$CODE" =~ ^3[0-9][0-9]$ ]]; then
+                echo "smoke $path -> $CODE (OK)"
+              else
+                echo "::error::smoke $path -> ${CODE:-none} (5xx or unreachable)"
+                docker compose logs --tail=100 web || true
+                exit 1
+              fi
             done
 
             # ── Startup / log failure scan (targeted, not a blanket grep) ──

@@ -54,7 +54,7 @@ def api_calendar():
         return jsonify({'error': 'Invalid date format; expected YYYY-MM-DD'}), 400
 
     if end < start:
-        start, end = end, start
+        return jsonify({'error': 'end must be on or after start'}), 400
 
     start, end, capped = clamp_range(start, end)
     if start > today and not raw_start:
