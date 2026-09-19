@@ -105,6 +105,14 @@ jobs:
             fi
             echo "VPS is at verified SHA: $ACTUAL"
 
+            # ── Schema-changing deployments: run the explicit migration
+            # BEFORE recreating web (one-off container, named script only —
+            # never a blind migrates/*.py sweep). SKIP_SCHEMA_GUARD=1 here
+            # is the guard's documented operator escape hatch for the
+            # one-off migration container; it is NEVER set for the
+            # running application below.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm web python migrates/migrate_movie_release_dates.py
+
             # Build the web image and recreate only the web service.
             # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.
             docker compose up -d --build web

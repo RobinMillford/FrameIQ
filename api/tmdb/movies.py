@@ -80,6 +80,36 @@ def fetch_movies_by_genre(genre_id, max_movies=50):
     return data.get('results', [])[:max_movies]
 
 
+def fetch_movie_release_dates(movie_id):
+    """Per-region release dates for one movie (Feature 10B).
+
+    TMDb returns {results: [{iso_3166_1, release_dates: [{...}]}]}; each
+    entry carries release_date ('YYYY-MM-DD' or '') and type (1-6).
+    Returns a list of (region, type, date) tuples for entries with a
+    parseable date — everything else is skipped, never invented.
+    """
+    url = ("https://api.themoviedb.org/3/movie/%d/release_dates"
+           "?api_key=%s" % (movie_id, TMDB_API_KEY))
+    data = cached_tmdb_request(url)
+    results = data.get("results", []) if isinstance(data, dict) else []
+    parsed = []
+    for region_block in results:
+        region = region_block.get("iso_3166_1")
+        if not region:
+            continue
+        for entry in region_block.get("release_dates", []):
+            raw = entry.get("release_date") or ""
+            rtype = entry.get("type")
+            try:
+                rdate = datetime.strptime(raw, "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                continue          # empty/missing/malformed → not a date
+            if not isinstance(rtype, int):
+                continue
+            parsed.append((region, rtype, rdate))
+    return parsed
+
+
 def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=credits,videos,recommendations,reviews"
     data = cached_tmdb_request(url, max_retries=max_retries - 1)

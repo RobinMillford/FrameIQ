@@ -14,6 +14,7 @@ Submodules:
                     ListAnalytics, ListView, UserListItem
     social        — DiaryEntry, Tag, UserMediaTag, MediaLike, MediaComment
     tv            — TVShowProgress, TVEpisodeWatch, UpcomingEpisode
+    movie_release — MovieReleaseDate (Feature 10B release cache)
     watch         — WatchProgress
     taste_profile — TasteProfile
     director      — Director, MediaDirector
@@ -58,6 +59,7 @@ from models.tv import (                                       # noqa: F401
     TVEpisodeWatch,
     UpcomingEpisode,
 )
+from models.movie_release import MovieReleaseDate             # noqa: F401
 from models.watch import WatchProgress                        # noqa: F401
 from models.director import Director, MediaDirector          # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
@@ -84,6 +86,7 @@ __all__ = [
     'ListAnalytics', 'ListView', 'UserListItem', 'ListLike', 'ListComment',
     'DiaryEntry', 'Tag', 'UserMediaTag', 'MediaLike', 'MediaComment',
     'TVShowProgress', 'TVEpisodeWatch', 'UpcomingEpisode',
+    'MovieReleaseDate',
     'WatchProgress',
     'UserStreamingService',
     'TasteProfile',

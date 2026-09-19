@@ -315,12 +315,15 @@ def test_enrichment_failure_blocks_compute(wf):
 
 
 def test_no_new_scheduler_introduced():
-    # Still exactly three scheduled workflows in the repo, and this
-    # feature has exactly one workflow file.
+    # Scheduled-workflow allow-list. Feature 10B added one deliberate
+    # entry: sync-watchlist-release-data.yml (bounded watchlist movie
+    # release sync for the unified calendar). Everything else stays
+    # forbidden — no director/feedback/recommendation analytics jobs.
     workflow_dir = _WORKFLOW.parent
     scheduled = [p.name for p in workflow_dir.glob("*.yml")
                  if "cron:" in p.read_text()]
     assert sorted(scheduled) == ["sync-upcoming-episodes.yml",
+                                 "sync-watchlist-release-data.yml",
                                  "taste-profile-nightly.yml"]
     assert not (workflow_dir / "director-enrichment.yml").exists()
     assert not (workflow_dir / "director-nightly.yml").exists()
@@ -429,11 +432,14 @@ def test_schedule_and_concurrency_unchanged(wf):
 
 
 def test_no_new_scheduler_introduced_phase18():
-    # Still exactly two scheduled workflows; no extra analytics workflow.
+    # Allow-list updated for Feature 10B (see
+    # test_no_new_scheduler_introduced above): the watchlist release
+    # sync is the one sanctioned addition; still no analytics jobs.
     workflow_dir = _WORKFLOW.parent
     scheduled = [p.name for p in workflow_dir.glob("*.yml")
                  if "cron:" in p.read_text()]
     assert sorted(scheduled) == ["sync-upcoming-episodes.yml",
+                                 "sync-watchlist-release-data.yml",
                                  "taste-profile-nightly.yml"]
     assert not (workflow_dir / "feedback-analytics.yml").exists()
     assert not (workflow_dir / "recommendation-analytics.yml").exists()
