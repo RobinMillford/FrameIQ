@@ -106,10 +106,21 @@ jobs:
           echo "Checking changes: ${BASE_SHA}..${GITHUB_SHA}"
           git diff --check "${BASE_SHA}" "${GITHUB_SHA}" --
 
-          if git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" -- \
-              '*.py' '*.js' '*.html' '*.css' '*.yml' '*.yaml' '*.json' '*.md' |
-              grep -E '^\+.*(<<<<<<<|=======|>>>>>>>)'; then
-            echo "Conflict markers detected in added lines."
+          # Scan ADDED lines for 7-char conflict-marker runs. The regex
+          # is written as (<{7}|={7}|>{7}) so this workflow never contains
+          # a literal marker sequence — the scanner must not match its own
+          # detection logic in its own diff. The added-line anchor is
+          # ^\+([^+].*)? : the [^+] head excludes '+++' diff metadata,
+          # while the optional group keeps a marker starting immediately
+          # after '+' detectable (a plain ^\+[^+].* would consume the
+          # first marker char and only ever see 6 of the 7). '|| true'
+          # handles grep's exit 1 (no match) under set -e/pipefail.
+          DIFF="$(git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" -- \
+            '*.py' '*.js' '*.html' '*.css' '*.yml' '*.yaml' '*.json' '*.md')"
+          MARKERS="$(printf '%s\n' "${DIFF}" | grep -E '^\+([^+].*)?(<{7}|={7}|>{7})' || true)"
+          if [[ -n "${MARKERS}" ]]; then
+            echo "Conflict markers detected in added lines:"
+            printf '%s\n' "${MARKERS}"
             exit 1
           fi
           echo "Whitespace/conflict-marker gate: clean"
