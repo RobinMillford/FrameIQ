@@ -1,17 +1,30 @@
 name: CI
 
+# Full verification gate. Every push to main/develop (and the active
+# master-feature-roadmap feature branch) plus every PR to main runs the
+# complete validation below. deploy.yml is coupled to THIS workflow's
+# success on main via workflow_run — a red/cancelled run here can never
+# reach production.
+
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, master-feature-roadmap]
   pull_request:
     branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      # Full history: the whitespace/diff gate compares against the pushed
+      # commit's parent (github.event.before), which does not exist in a
+      # default depth-1 checkout (fatal: bad object <parent-sha>).
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -23,12 +36,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest pytest-cov flake8
 
-      - name: Lint (errors only)
+      - name: Compile Python
         run: |
+          # Byte-compiles every .py file in the repo; exits non-zero on
+          # any syntax error. Compilation only — nothing is executed.
+          python -m compileall -q .
+
+      - name: Validate migrations
+        run: |
+          # Syntax-only (py_compile) — migrations are never EXECUTED in CI.
+          files=(migrates/*.py)
+          if [ -e "${files[0]}" ]; then
+            python -m py_compile "${files[@]}"
+            echo "Validated ${#files[@]} migration script(s)"
+          else
+            echo "No migration scripts found — nothing to validate"
+          fi
+
+      - name: Validate JavaScript
+        run: |
+          # Syntax check only (node --check) — browser code is never executed.
+          find static/js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          echo "All static/js files pass node --check"
+
+      - name: Flake8 (errors-only baseline)
+        run: |
+          # Deliberate baseline limitation: the repo still carries
+          # pre-existing style/complexity findings (e.g. C901/E712 in
+          # auth.py/diary.py/analytics.py), so full-config flake8 is not
+          # a CI gate yet. E9/F63/F7/F82 keep true syntax errors and
+          # undefined names FATAL. --exit-zero is deliberately NOT used:
+          # a real E9-class failure still fails this step.
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
             --exclude=venv,env,.venv,__pycache__,.git,migrations,migrates
 
-      - name: Run tests
+      - name: Full test suite
         env:
           # conftest sets these via setdefault; providing them here ensures
           # the CI environment doesn't inherit a stale DATABASE_URL.
@@ -42,3 +84,43 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || 'test' }}
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short
+
+      - name: Whitespace/conflict-marker gate over the code actually being tested
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          # Handle the initial commit / missing before-SHA case.
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          # Make absolutely sure the base object exists in the runner.
+          git cat-file -e "${BASE_SHA}^{commit}"
+
+          echo "Checking changes: ${BASE_SHA}..${GITHUB_SHA}"
+          git diff --check "${BASE_SHA}" "${GITHUB_SHA}" --
+
+          # Scan ADDED lines for 7-char conflict-marker runs. The regex
+          # is written as (<{7}|={7}|>{7}) so this workflow never contains
+          # a literal marker sequence — the scanner must not match its own
+          # detection logic in its own diff. The added-line anchor is
+          # ^\+([^+].*)? : the [^+] head excludes '+++' diff metadata,
+          # while the optional group keeps a marker starting immediately
+          # after '+' detectable (a plain ^\+[^+].* would consume the
+          # first marker char and only ever see 6 of the 7). '|| true'
+          # handles grep's exit 1 (no match) under set -e/pipefail.
+          DIFF="$(git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" -- \
+            '*.py' '*.js' '*.html' '*.css' '*.yml' '*.yaml' '*.json' '*.md')"
+          MARKERS="$(printf '%s\n' "${DIFF}" | grep -E '^\+([^+].*)?(<{7}|={7}|>{7})' || true)"
+          if [[ -n "${MARKERS}" ]]; then
+            echo "Conflict markers detected in added lines:"
+            printf '%s\n' "${MARKERS}"
+            exit 1
+          fi
+          echo "Whitespace/conflict-marker gate: clean"
