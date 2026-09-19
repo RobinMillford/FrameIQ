@@ -1,21 +1,164 @@
+# Production deployment — gated on green CI.
+#
+# This workflow NEVER runs because a push happened. It runs only after the
+# "CI" workflow (ci-cd.yml) COMPLETES, and the job-level condition below
+# enforces that the CI run was:
+#   - workflow name = CI
+#   - branch        = main        (PRs/develop/feature branches never deploy)
+#   - conclusion    = success     (failure/cancelled/timed_out never deploy)
+#
+# The commit deployed is exactly github.event.workflow_run.head_sha — the
+# SHA the CI run actually verified — not whatever happens to be origin/main
+# HEAD at deploy time. The VPS resets to that SHA and re-verifies it.
+#
+# Structure deliberately mirrors the proven SSH patterns from
+# sync-upcoming-episodes.yml / taste-profile-nightly.yml: script_stop
+# (never swallow a failed command) + explicit command timeouts.
+#
+# Future schema-changing deployments: insert an explicit migration step
+# (docker compose run --rm web python migrates/<name>.py — those scripts
+# self-manage SKIP_SCHEMA_GUARD) between the checkout step and the
+# build/recreate step below. Do not blindly run every migrates/*.py.
+
 name: Deploy to VPS
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize production deployments. Queued, never cancelled — a newer
+  # commit waits for the in-flight deployment to finish.
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # The gate: every non-success CI conclusion (failure, cancelled,
+    # timed_out, ...) and every non-main branch skips deployment entirely.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+
     steps:
-      - name: Deploy via SSH
+      - name: Capture CI-verified SHA
+        id: sha
+        run: |
+          echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          echo "Deploying the exact commit CI verified: ${{ github.event.workflow_run.head_sha }}"
+
+      # ── 1. Pre-flight: VPS tree must be clean before anything is reset ──
+      - name: Pre-flight check (clean VPS working tree)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script_stop: true
           script: |
+            set -euo pipefail
             cd /home/deployer/FrameIQ
-            git pull origin main
-            docker compose up -d --build
+            git fetch origin main
+            git checkout main -q
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "::error::VPS working tree is dirty — refusing to reset (inspect manually)"
+              git status --porcelain
+              exit 1
+            fi
+            echo "VPS tree clean; origin/main fetched; ready to deploy"
+
+      # ── 2. Deploy exactly the CI-verified SHA, build, recreate web ──────
+      # Startup inside the container runs db.create_all() + the read-only
+      # schema parity guard (utils/schema_guard.py): an incompatible schema
+      # fails boot, which fails the container check below. SKIP_SCHEMA_GUARD
+      # is never set for the running application.
+      - name: Deploy and verify (exact SHA)
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          VERIFIED_SHA: ${{ steps.sha.outputs.sha }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m
+          script_stop: true
+          envs: VERIFIED_SHA
+          script: |
+            set -euo pipefail
+            cd /home/deployer/FrameIQ
+
+            # Exact-SHA deployment: never move past what CI actually tested.
+            git checkout main -q
+            git reset --hard "$VERIFIED_SHA"
+            ACTUAL="$(git rev-parse HEAD)"
+            if [ "$ACTUAL" != "$VERIFIED_SHA" ]; then
+              echo "::error::VPS HEAD ($ACTUAL) != CI-verified SHA ($VERIFIED_SHA)"
+              exit 1
+            fi
+            echo "VPS is at verified SHA: $ACTUAL"
+
+            # Build the web image and recreate only the web service.
+            # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.
+            docker compose up -d --build web
             docker image prune -f
+
+            # ── Container verification ─────────────────────────────────
+            sleep 10
+            docker compose ps
+            STATE="$(docker inspect -f '{{.State.Status}}' frameiq-web-1)"
+            if [ "$STATE" != "running" ]; then
+              echo "::error::web container state is '$STATE' (expected running)"
+              docker compose logs --tail=50 web || true
+              exit 1
+            fi
+
+            # ── Application health (public URL, as a real client sees it) ──
+            for i in 1 2 3 4 5; do
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://frameiq.studio/health || true)"
+              if [ "$CODE" = "200" ]; then
+                echo "health: 200 OK"
+                break
+              fi
+              if [ "$i" = "5" ]; then
+                echo "::error::/health did not return 200 (last code: ${CODE:-none})"
+                docker compose logs --tail=100 web || true
+                exit 1
+              fi
+              echo "health attempt $i returned '${CODE:-none}' — retrying"
+              sleep 6
+            done
+
+            # ── Smoke: route registration / non-5xx (unauthenticated) ──
+            # Loopback origin bypasses any CDN/WAF layer so a bot-challenge
+            # page can never be mistaken for an application failure.
+            # /calendar 302s to login when unauthenticated — that is the
+            # expected, correct behavior and passes.
+            for path in /calendar /tv/upcoming; do
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://127.0.0.1:8002${path}" || true)"
+              case "$CODE" in
+                2*|3*) echo "smoke $path → $CODE (OK)" ;;
+                *) echo "::error::smoke $path → ${CODE:-none} (5xx or unreachable)"
+                   docker compose logs --tail=100 web || true
+                   exit 1 ;;
+              esac
+            done
+
+            # ── Startup / log failure scan (targeted, not a blanket grep) ──
+            sleep 5
+            docker compose logs --since=3m --tail=200 web || true
+            LOGS="$(docker compose logs --since=3m --tail=200 web 2>/dev/null || true)"
+            if printf '%s' "$LOGS" | grep -E 'SchemaMismatchError|Worker failed to boot|AssertionError|CRITICAL|Exception in worker process'; then
+              echo "::error::startup/application failure pattern detected in web logs"
+              exit 1
+            fi
+            echo "Log scan clean (rate-limit 429 bot traffic is not a failure)."
+
+            echo "DEPLOY SUCCESS: $ACTUAL is live and verified healthy."

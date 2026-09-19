@@ -1,14 +1,21 @@
 name: CI
 
+# Full verification gate. Every push to main/develop (and the active
+# master-feature-roadmap feature branch) plus every PR to main runs the
+# complete validation below. deploy.yml is coupled to THIS workflow's
+# success on main via workflow_run — a red/cancelled run here can never
+# reach production.
+
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, master-feature-roadmap]
   pull_request:
     branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -23,12 +30,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest pytest-cov flake8
 
-      - name: Lint (errors only)
+      - name: Compile Python
         run: |
+          # Byte-compiles every .py file in the repo; exits non-zero on
+          # any syntax error. Compilation only — nothing is executed.
+          python -m compileall -q .
+
+      - name: Validate migrations
+        run: |
+          # Syntax-only (py_compile) — migrations are never EXECUTED in CI.
+          files=(migrates/*.py)
+          if [ -e "${files[0]}" ]; then
+            python -m py_compile "${files[@]}"
+            echo "Validated ${#files[@]} migration script(s)"
+          else
+            echo "No migration scripts found — nothing to validate"
+          fi
+
+      - name: Validate JavaScript
+        run: |
+          # Syntax check only (node --check) — browser code is never executed.
+          find static/js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          echo "All static/js files pass node --check"
+
+      - name: Flake8 (errors-only baseline)
+        run: |
+          # Deliberate baseline limitation: the repo still carries
+          # pre-existing style/complexity findings (e.g. C901/E712 in
+          # auth.py/diary.py/analytics.py), so full-config flake8 is not
+          # a CI gate yet. E9/F63/F7/F82 keep true syntax errors and
+          # undefined names FATAL. --exit-zero is deliberately NOT used:
+          # a real E9-class failure still fails this step.
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
             --exclude=venv,env,.venv,__pycache__,.git,migrations,migrates
 
-      - name: Run tests
+      - name: Full test suite
         env:
           # conftest sets these via setdefault; providing them here ensures
           # the CI environment doesn't inherit a stale DATABASE_URL.
@@ -42,3 +78,17 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || 'test' }}
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short
+
+      - name: Git diff check
+        run: |
+          # Whitespace/conflict-marker gate over the code actually being
+          # verified: the pushed commit range on push events, the working
+          # tree otherwise. Exits non-zero on any finding.
+          BEFORE="${{ github.event.before }}"
+          ZERO=0000000000000000000000000000000000000000
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "$ZERO" ]; then
+            git diff --check "$BEFORE" "${{ github.sha }}"
+          else
+            git diff --check
+          fi
+          echo "git diff check: clean"
