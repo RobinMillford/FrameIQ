@@ -18,7 +18,13 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      # Full history: the whitespace/diff gate compares against the pushed
+      # commit's parent (github.event.before), which does not exist in a
+      # default depth-1 checkout (fatal: bad object <parent-sha>).
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -79,16 +85,31 @@ jobs:
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short
 
-      - name: Git diff check
+      - name: Whitespace/conflict-marker gate over the code actually being tested
+        shell: bash
         run: |
-          # Whitespace/conflict-marker gate over the code actually being
-          # verified: the pushed commit range on push events, the working
-          # tree otherwise. Exits non-zero on any finding.
-          BEFORE="${{ github.event.before }}"
-          ZERO=0000000000000000000000000000000000000000
-          if [ -n "$BEFORE" ] && [ "$BEFORE" != "$ZERO" ]; then
-            git diff --check "$BEFORE" "${{ github.sha }}"
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
           else
-            git diff --check
+            BASE_SHA="${{ github.event.before }}"
           fi
-          echo "git diff check: clean"
+
+          # Handle the initial commit / missing before-SHA case.
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          # Make absolutely sure the base object exists in the runner.
+          git cat-file -e "${BASE_SHA}^{commit}"
+
+          echo "Checking changes: ${BASE_SHA}..${GITHUB_SHA}"
+          git diff --check "${BASE_SHA}" "${GITHUB_SHA}" --
+
+          if git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" -- \
+              '*.py' '*.js' '*.html' '*.css' '*.yml' '*.yaml' '*.json' '*.md' |
+              grep -E '^\+.*(<<<<<<<|=======|>>>>>>>)'; then
+            echo "Conflict markers detected in added lines."
+            exit 1
+          fi
+          echo "Whitespace/conflict-marker gate: clean"
