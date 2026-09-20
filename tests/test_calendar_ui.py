@@ -1,4 +1,4 @@
-"""Unified calendar UI (Feature 10C) — focused suite.
+"""Unified calendar UI (Features 10C–10D) — focused suite.
 
 Covers templates/calendar.html (shell) and static/js/calendar.js
 (renderer) with the repo's established source/template testing
@@ -20,6 +20,10 @@ conventions (no browser framework — see tests/test_statistics_ui.py):
 - live: /calendar renders for the authenticated user and requires
   auth (the existing 10A/10B suites own the /api/calendar, /tv/calendar
   and /tv/upcoming regressions)
+- week view (10D): Monday-based 7-day range math, canonical meta.today
+  Today jump, deterministic in-day ordering with time-less-last, dense
+  days reusing the shared dialog, mobile scrolling-grid parity, and
+  toggle/filters restored from URL state
 """
 import json
 import os
@@ -60,6 +64,9 @@ _EXPOSURE = """
     globalThis.__addMonths = addMonths;
     globalThis.__sow = startOfWeek;
     globalThis.__cal = { initFromUrl: initFromUrl };
+    globalThis.__computeRange = computeRange;
+    globalThis.__todayIso = todayIso;
+    globalThis.__sortEvents = sortEvents;
     globalThis.__prevMonth = function () {
         state.anchor = addMonths(state.anchor, -1);
     };
@@ -76,7 +83,8 @@ _SANDBOX_DOM = """{
         addEventListener: function () {},
         documentElement: { dataset: {} }
     },
-    window: { location: { search: '' } },
+    window: { location: { search: '' },
+              history: { replaceState: function () {} } },
     URLSearchParams: URLSearchParams,
     console: console
 }"""
@@ -140,7 +148,7 @@ def test_calendar_shell_has_all_renderer_hooks():
                    'cal-prev', 'cal-next', 'cal-today', 'cal-month-label',
                    'cal-surface', 'cal-month', 'cal-agenda',
                    'cal-coming-up', 'cal-count-tv', 'cal-count-movie',
-                   'cal-unknown', 'cal-nav-group'):
+                   'cal-unknown', 'cal-nav-group', 'cal-week'):
         assert 'id="%s"' % dom_id in template, dom_id
 
 
@@ -181,8 +189,10 @@ def test_navigation_controls_are_accessible_buttons():
     template = _read(TEMPLATE)
     nav = _section(template, 'id="cal-nav-group"', '</div>')
     assert nav.count('<button') == 3
-    assert 'aria-label="Previous month"' in nav
-    assert 'aria-label="Next month"' in nav
+    # 10D: one shared nav for Month/Week/Agenda — labels are view-neutral
+    assert 'aria-label="Previous"' in nav
+    assert 'aria-label="Next"' in nav
+    assert 'aria-label="Previous month"' not in nav
 
 
 # ═══════════════════ Renderer: fetch discipline ═══════════════════
@@ -285,20 +295,21 @@ def test_agenda_window_is_bounded():
     assert int(match.group(1)) <= 61
 
 
-def test_url_state_parsing_accepts_only_canonical_values():
+def test_url_state_parsing_accepts_week_and_rejects_invalid_values():
     got = _eval_js(
         "(function(){"
         " __st.view='agenda'; __st.type='all'; __st.scope='all';"
-        " window.location={search:'?view=month&type=movie&scope=watchlist'};"
+        " window.location={search:'?view=week&type=movie&scope=watchlist'};"
         " __cal.initFromUrl();"
         " var good=[__st.view,__st.type,__st.scope];"
-        " window.location={search:'?view=week&type=bogus&scope=hack'};"
+        " window.location={search:'?view=decade&type=bogus&scope=hack'};"
         " __cal.initFromUrl();"
         " return {good:good,bad:[__st.view,__st.type,__st.scope]};"
         "})()")
-    assert got['good'] == ['month', 'movie', 'watchlist']
+    # 10D: view=week is now a canonical URL value
+    assert got['good'] == ['week', 'movie', 'watchlist']
     # invalid URL values leave state untouched
-    assert got['bad'] == ['month', 'movie', 'watchlist']
+    assert got['bad'] == ['week', 'movie', 'watchlist']
 
 
 # ═══════════════════ Renderer: rendering safety & states ═══════════════════
@@ -446,10 +457,203 @@ def test_calendar_page_renders_for_authenticated_user(db, client):
     resp = client.get('/calendar')
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    for dom_id in ('cal-surface', 'cal-month', 'cal-agenda',
+    for dom_id in ('cal-surface', 'cal-month', 'cal-week', 'cal-agenda',
                    'cal-nav-group', 'cal-unknown', 'cal-month-label'):
         assert dom_id in html
 
 
 def test_calendar_page_requires_auth(client):
     assert client.get('/calendar').status_code in (302, 401)
+
+
+# ═══════════════════ Feature 10D: Week view + polish ═══════════════════
+
+def test_view_toggle_offers_month_week_agenda():
+    template = _read(TEMPLATE)
+    toolbar = _section(template, 'id="cal-view-group"',
+                       'id="cal-type-group"')
+    for value in ('month', 'week', 'agenda'):
+        assert 'data-view="%s"' % value in toolbar
+
+
+def test_url_view_week_is_canonical():
+    got = _eval_js(
+        "(function(){"
+        " __st.view='agenda';"
+        " window.location={search:'?view=week'};"
+        " __cal.initFromUrl();"
+        " return __st.view;"
+        "})()")
+    assert got == 'week'
+
+
+def test_invalid_view_falls_back_to_state_default():
+    got = _eval_js(
+        "(function(){"
+        " __st.view='agenda';"
+        " window.location={search:'?view=decade'};"
+        " __cal.initFromUrl();"
+        " return __st.view;"
+        "})()")
+    assert got == 'agenda'
+
+
+def test_week_range_is_exactly_seven_days():
+    got = _eval_js(
+        "(function(){"
+        " __st.view='week'; __st.anchor=new Date(2026,9,5);"
+        " __computeRange();"
+        " return {n: Math.round((__st.rangeEnd-__st.rangeStart)/86400000)+1,"
+        "         s: __iso(__st.rangeStart), e: __iso(__st.rangeEnd)};"
+        "})()")
+    assert got == {'n': 7, 's': '2026-10-05', 'e': '2026-10-11'}
+
+
+def test_prev_and_next_week_move_by_seven_days():
+    got = _eval_js(
+        "(function(){"
+        " __st.view='week'; __st.anchor=new Date(2026,9,5);"
+        " __st.anchor=__addDays(__st.anchor,-7); __computeRange();"
+        " var prev={s:__iso(__st.rangeStart),e:__iso(__st.rangeEnd)};"
+        " __st.anchor=__addDays(__st.anchor,14); __computeRange();"
+        " var next={s:__iso(__st.rangeStart),e:__iso(__st.rangeEnd)};"
+        " return {prev:prev,next:next};"
+        "})()")
+    assert got['prev'] == {'s': '2026-09-28', 'e': '2026-10-04'}
+    assert got['next'] == {'s': '2026-10-12', 'e': '2026-10-18'}
+
+
+def test_week_anchor_snaps_to_monday_for_any_displayed_date():
+    # October 1 2026 is a Thursday — the week view must still start Monday.
+    got = _eval_js(
+        "(function(){"
+        " __st.view='week'; __st.anchor=new Date(2026,9,1);"
+        " __computeRange();"
+        " return {s:__iso(__st.rangeStart),"
+        "         dow:__st.rangeStart.getDay()};"
+        "})()")
+    assert got == {'s': '2026-09-28', 'dow': 1}
+
+
+def test_today_jumps_to_the_week_containing_meta_today():
+    # Canonical server today (meta.today), never a UTC-converted local
+    # timestamp (§I).
+    got = _eval_js(
+        "(function(){"
+        " __st.meta={today:'2026-10-07'};"  # a Wednesday
+        " var t=__pik(__todayIso());"
+        " var ws=__sow(t);"
+        " return {s:__iso(ws), e:__iso(__addDays(ws,6))};"
+        "})()")
+    assert got == {'s': '2026-10-05', 'e': '2026-10-11'}
+
+
+def test_view_toggle_preserves_filters_and_shared_state():
+    js = _js()
+    start = js.index("bindGroup('cal-view-group'")
+    end = js.index('});', js.index('load();', start))
+    handler = js[start:end]
+    assert 'state.type =' not in handler
+    assert 'state.scope =' not in handler
+    assert 'state.events =' not in handler, 'shared state survives toggles'
+
+
+def test_quick_week_opens_the_week_view():
+    js = _js()
+    block = js[js.index("on('cal-quick-week'"):]
+    block = block[:block.index('});')]
+    assert "state.view = 'week'" in block
+    assert "markActive('cal-view-group', 'view', 'week')" in block
+
+
+def test_all_views_share_one_fetch_cache_and_sequence():
+    js = _js()
+    assert js.count('fetch(') == 1
+    assert 'cacheKey()' in js
+    assert 'AbortController' in js
+    assert js.count('new AbortController()') == 1
+    assert re.search(r"var VIEWS = \['month', 'week', 'agenda'\];", js)
+    # view dispatch covers exactly the canonical trio
+    assert re.search(r"if \(state\.view === 'month'\) renderMonth\(\);", js)
+    assert re.search(r"else if \(state\.view === 'week'\) renderWeek\(\);", js)
+    assert re.search(r"else renderAgenda\(\);", js)
+
+
+def test_week_day_cells_are_labelled_and_today_marked():
+    js = _js()
+    assert 'fmtWeekDay(' in js
+    # current-day indication not colour-only: aria-label suffix + text
+    assert "', today'" in js
+    assert '\\u00b7 Today' in js
+    assert 'cal-week-daynum' in _read(TEMPLATE)
+
+
+def test_week_sorts_chronologically_with_deterministic_ties():
+    got = _eval_js(
+        "(function(){"
+        " var evs=["
+        "  {id:'c',event_type:'movie_release',time:null},"
+        "  {id:'b',event_type:'tv_episode',time:'9:00 PM'},"
+        "  {id:'a',event_type:'episode',time:'8:00 PM'},"
+        "  {id:'d',event_type:'episode',time:'10:00 PM'}"
+        " ];"
+        " return __sortEvents(evs).map(function(e){return e.id;});"
+        "})()")
+    # 8 PM, 9 PM, 10 PM; the time-less event last (never "00:00"-placed)
+    assert got == ['a', 'b', 'd', 'c']
+
+
+def test_missing_time_never_fabricates_a_display_value():
+    js = _js()
+    assert 'if (ev.time)' in js
+    for fake in ('00:00', '12:00 AM'):
+        assert fake not in js
+
+
+def test_dense_week_day_uses_bounded_plus_n_reusing_the_dialog():
+    js = _js()
+    match = re.search(r'WEEK_CHUNK\s*=\s*(\d+)', js)
+    assert match and 2 <= int(match.group(1)) <= 6
+    assert js.count("el('button', 'cal-more'") == 2  # month + week
+    # exactly one dialog system, shared by month and week
+    assert js.count('openDayDialog(') >= 3  # definition + both callers
+    assert js.count("el('div', 'cal-dialog-overlay") == 1
+
+
+def test_week_mobile_uses_the_shared_scrolling_grid():
+    template = _read(TEMPLATE)
+    mobile = template[template.index('@media (max-width: 767px)'):
+                      template.index('</style>')]
+    # same mobile strategy as month: 130px scrollable columns — the
+    # overflow lives inside the grid, never on the page (§G)
+    assert 'repeat(7, 130px)' in mobile
+    assert 'overflow-x: auto' in mobile
+    assert 'cal-week-grid' in mobile
+    js = _js()
+    assert "el('div', 'cal-grid cal-week-grid')" in js
+
+
+def test_empty_month_and_week_ranges_get_an_empty_note():
+    js = _js()
+    assert 'appendEmptyNote' in js
+    assert re.search(
+        r"if \(!state\.events\.length\) appendEmptyNote\(host\);", js)
+
+
+def test_init_restores_active_control_state_from_url():
+    js = _js()
+    assert "markActive('cal-view-group', 'view', state.view)" in js
+    assert "markActive('cal-type-group', 'type', state.type)" in js
+    assert "markActive('cal-scope-group', 'scope', state.scope)" in js
+
+
+def test_week_label_shows_the_week_range():
+    js = _js()
+    assert 'fmtWeekRange(state.rangeStart, state.rangeEnd)' in js
+
+
+def test_week_dialog_rows_are_keyboard_activatable():
+    js = _js()
+    # dialog rows are the same <button> chips used in every view
+    assert "el('button', 'cal-chip'" in js
+    assert 'dialogTrigger.focus' in js

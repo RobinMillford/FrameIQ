@@ -1,5 +1,5 @@
 /**
- * Unified personal entertainment calendar (Features 10A–10C).
+ * Unified personal entertainment calendar (Features 10A–10D).
  *
  * One bounded request per view state to FrameIQ's own /api/calendar
  * (authenticated, user-scoped — no user_id parameter exists). All
@@ -16,19 +16,28 @@
  * client-side response cache keyed by start|end|type|scope, and
  * server-canonical "today" from meta.today (never a UTC-converted
  * local timestamp).
+ *
+ * Feature 10D adds: Week view (Monday-based 7-day layout sharing the
+ * month grid CSS, chip vocabulary, mobile scrolling columns and the
+ * same +N day dialog — a day/event layout, not an artificial hourly
+ * timeline), canonical meta.today-driven Today for every view, a
+ * view-aware range label, deterministic in-day event ordering (timed
+ * events first, time-less last, type/id tie-breaks), and toggle/filters
+ * that restore their active state from URL.
  */
 (function () {
     'use strict';
 
-    var VIEWS = ['month', 'agenda'];
+    var VIEWS = ['month', 'week', 'agenda'];
     var TYPES = ['all', 'tv', 'movie'];
     var SCOPES = ['all', 'watchlist', 'tracking'];
     var MONTH_CHUNK = 3;      // visible chips per month cell before "+N more"
+    var WEEK_CHUNK = 4;       // visible chips per week day before "+N more"
     var AGENDA_WINDOW = 30;   // agenda days per window (within the 62-day cap)
     var CACHE_MAX = 24;       // bounded client cache of fetched view states
 
     var state = {
-        view: 'agenda',       // 'month' | 'agenda'
+        view: 'agenda',       // 'month' | 'week' | 'agenda'
         type: 'all',          // all | tv | movie
         scope: 'all',         // all | watchlist | tracking
         anchor: null,         // Date — month (month view) / window start (agenda)
@@ -81,6 +90,15 @@
         return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     }
 
+    function fmtWeekDay(d) {
+        return d.toLocaleDateString(undefined, { weekday: 'short' }) +
+            ' ' + d.getDate();
+    }
+
+    function fmtWeekRange(s, e) {
+        return fmtDay(s) + ' \u2013 ' + fmtDay(e);
+    }
+
     function todayIso() {
         // Server-canonical when available (meta.today is part of every
         // calendar response); local date only as a pre-first-load fallback.
@@ -122,6 +140,12 @@
             // include leading/trailing week context for the grid
             state.rangeStart = startOfWeek(first);
             state.rangeEnd = addDays(startOfWeek(last), 6);
+        } else if (state.view === 'week') {
+            // A normal week: Monday..Sunday, 7 days inclusive — far
+            // inside the API's 62-day cap (§Q).
+            var ws = startOfWeek(anchor);
+            state.rangeStart = ws;
+            state.rangeEnd = addDays(ws, 6);
         } else {
             state.rangeStart = new Date(anchor);
             state.rangeEnd = addDays(anchor, AGENDA_WINDOW);
@@ -221,12 +245,56 @@
         surface.classList.toggle('cal-loading', busy);
     }
 
+    // One canonical host map: Month/Week/Agenda share navigation,
+    // filters, fetch discipline and visibility handling (§D).
+    var VIEW_HOSTS = {
+        month: 'cal-month',
+        week: 'cal-week',
+        agenda: 'cal-agenda',
+    };
+
+    function showOnly(view) {
+        Object.keys(VIEW_HOSTS).forEach(function (v) {
+            var node = document.getElementById(VIEW_HOSTS[v]);
+            if (node) node.classList.toggle('hidden', v !== view);
+        });
+    }
+
     function eventsByDate() {
         var map = {};
         state.events.forEach(function (ev) {
             (map[ev.date] = map[ev.date] || []).push(ev);
         });
         return map;
+    }
+
+    function timeMinutes(t) {
+        // Tolerant parse for ordering only — never shown (§P display
+        // uses the API's own time verbatim when present).
+        var m = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(String(t).trim());
+        if (!m) return null;
+        var h = Number(m[1]);
+        if (m[3]) {
+            if (h === 12) h = 0;
+            if (/pm/i.test(m[3])) h += 12;
+        }
+        return h * 60 + Number(m[2]);
+    }
+
+    function sortEvents(list) {
+        // Chronological within a day: timed events first in time order,
+        // time-less events after (no fabricated midnight placement);
+        // deterministic type/id tie-breaks — never row order (§E/§T).
+        return list.slice().sort(function (a, b) {
+            var ta = timeMinutes(a.time);
+            var tb = timeMinutes(b.time);
+            if (ta !== null && tb !== null && ta !== tb) return ta - tb;
+            if ((ta !== null) !== (tb !== null)) return ta !== null ? -1 : 1;
+            if (a.event_type !== b.event_type) {
+                return a.event_type < b.event_type ? -1 : 1;
+            }
+            return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+        });
     }
 
     function eventChip(ev, compact) {
@@ -262,8 +330,7 @@
     function renderMonth() {
         var host = document.getElementById('cal-month');
         host.replaceChildren();
-        host.classList.remove('hidden');
-        document.getElementById('cal-agenda').classList.add('hidden');
+        showOnly('month');
 
         var byDate = eventsByDate();
         var today = todayIso();
@@ -281,7 +348,8 @@
             var cell = el('div', 'cal-cell' +
                 (key === today ? ' cal-cell-today' : '') +
                 (inMonth ? '' : ' cal-cell-adjacent'));
-            cell.setAttribute('aria-label', fmtDay(cursor));
+            cell.setAttribute('aria-label',
+                fmtDay(cursor) + (key === today ? ', today' : ''));
             cell.appendChild(el('div', 'cal-daynum', String(cursor.getDate())));
             var list = el('div', 'cal-cell-events');
             (byDate[key] || []).slice(0, MONTH_CHUNK).forEach(function (ev) {
@@ -304,13 +372,63 @@
             cursor = addDays(cursor, 1);
         }
         host.appendChild(grid);
+        if (!state.events.length) appendEmptyNote(host);
+    }
+
+    function renderWeek() {
+        // Feature 10D: Monday-based 7-day layout reusing the month grid
+        // language — chips, +N bound, day dialog, mobile scrolling
+        // columns. A day/event layout, not an hourly scheduler: TV
+        // times exist only when the sync captured them and movie
+        // releases have no trustworthy time (§A/§E).
+        var host = document.getElementById('cal-week');
+        host.replaceChildren();
+        showOnly('week');
+
+        var byDate = eventsByDate();
+        var today = todayIso();
+        var grid = el('div', 'cal-grid cal-week-grid');
+        grid.setAttribute('role', 'grid');
+        grid.setAttribute('aria-label',
+            fmtWeekRange(state.rangeStart, state.rangeEnd));
+
+        var cursor = new Date(state.rangeStart);
+        while (cursor <= state.rangeEnd) {
+            var key = iso(cursor);
+            var isToday = key === today;
+            var cell = el('div', 'cal-cell' + (isToday ? ' cal-cell-today' : ''));
+            cell.setAttribute('aria-label',
+                fmtDay(cursor) + (isToday ? ', today' : ''));
+            cell.appendChild(el('div', 'cal-daynum cal-week-daynum',
+                fmtWeekDay(cursor) + (isToday ? ' \u00b7 Today' : '')));
+            var list = el('div', 'cal-cell-events');
+            var evs = sortEvents(byDate[key] || []);
+            evs.slice(0, WEEK_CHUNK).forEach(function (ev) {
+                list.appendChild(eventChip(ev, true));
+            });
+            if (evs.length > WEEK_CHUNK) {
+                var more = el('button', 'cal-more',
+                    '+' + (evs.length - WEEK_CHUNK) + ' more');
+                more.type = 'button';
+                more.setAttribute('aria-label',
+                    'Show all ' + evs.length + ' events on ' + fmtDay(cursor));
+                more.addEventListener('click', function (d, dayEvents) {
+                    return function () { openDayDialog(d, dayEvents, more); };
+                }(key, evs));
+                list.appendChild(more);
+            }
+            cell.appendChild(list);
+            grid.appendChild(cell);
+            cursor = addDays(cursor, 1);
+        }
+        host.appendChild(grid);
+        if (!state.events.length) appendEmptyNote(host);
     }
 
     function renderAgenda() {
         var host = document.getElementById('cal-agenda');
         host.replaceChildren();
-        host.classList.remove('hidden');
-        document.getElementById('cal-month').classList.add('hidden');
+        showOnly('agenda');
 
         var byDate = eventsByDate();
         var today = todayIso();
@@ -399,8 +517,7 @@
     /* ── empty / error / summary ─────────────────────────────────────── */
 
     function activeHost() {
-        return document.getElementById(
-            state.view === 'month' ? 'cal-month' : 'cal-agenda');
+        return document.getElementById(VIEW_HOSTS[state.view] || 'cal-agenda');
     }
 
     function renderEmpty(host) {
@@ -412,6 +529,14 @@
         wrap.appendChild(title);
         wrap.appendChild(sub);
         host.appendChild(wrap);
+    }
+
+    function appendEmptyNote(host) {
+        // Month/Week grids stay visible (today's position matters) and
+        // get a scoped empty message instead of a blank grid (§K).
+        var note = el('div', 'cal-empty cal-empty-note');
+        note.appendChild(el('p', 'cal-empty-sub', emptyCopy()));
+        host.appendChild(note);
     }
 
     function emptyCopy() {
@@ -496,9 +621,13 @@
     }
 
     function render() {
-        document.getElementById('cal-month-label').textContent =
-            fmtMonth(state.anchor);
-        if (state.view === 'month') renderMonth(); else renderAgenda();
+        var label = document.getElementById('cal-month-label');
+        label.textContent = state.view === 'week'
+            ? fmtWeekRange(state.rangeStart, state.rangeEnd)
+            : fmtMonth(state.anchor);
+        if (state.view === 'month') renderMonth();
+        else if (state.view === 'week') renderWeek();
+        else renderAgenda();
         renderSummary();
     }
 
@@ -535,9 +664,20 @@
             state.anchor.getMonth(), 1);
         initFromUrl();
         syncUrl();
+        // Restore the active states the shell hardcodes: URLs like
+        // ?view=month&type=movie must light up the matching controls —
+        // the pre-10D shell left Agenda/All/Everything lit regardless
+        // of URL state.
+        markActive('cal-view-group', 'view', state.view);
+        markActive('cal-type-group', 'type', state.type);
+        markActive('cal-scope-group', 'scope', state.scope);
 
         bindGroup('cal-view-group', 'view', function (v) {
             state.view = v;
+            // Entering Week mode anchors on the week start so navigation
+            // stays on Monday boundaries; type/scope filters and the
+            // displayed period ride along (§C/§D).
+            if (v === 'week') state.anchor = startOfWeek(state.anchor);
             syncUrl();
             // Re-anchor without refetching when the cached range already
             // covers the toggle; otherwise fetch the new window.
@@ -565,8 +705,13 @@
                 : addDays(state.anchor, 7));
         });
         on('cal-today', function () {
-            var now = new Date();
-            navigate(new Date(now.getFullYear(), now.getMonth(), 1));
+            // Canonical server today (meta.today) for every view — no
+            // UTC round-trip, safe for users ahead/behind the server
+            // clock (§I).
+            var t = parseIsoKey(todayIso());
+            navigate(state.view === 'week'
+                ? startOfWeek(t)
+                : new Date(t.getFullYear(), t.getMonth(), 1));
         });
 
         // Quick filters set view + anchor, then ONE load — never a
@@ -578,10 +723,10 @@
             navigate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
         });
         on('cal-quick-week', function () {
-            var now = new Date();
-            state.view = 'agenda';
-            markActive('cal-view-group', 'view', 'agenda');
-            navigate(startOfWeek(now));
+            // "This Week" opens the real Week view (Feature 10D).
+            state.view = 'week';
+            markActive('cal-view-group', 'view', 'week');
+            navigate(startOfWeek(parseIsoKey(todayIso())));
         });
         on('cal-quick-month', function () {
             var now = new Date();

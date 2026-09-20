@@ -178,6 +178,17 @@
 
         .cal-cell-adjacent { opacity: 0.5; }
 
+        /* Week view (Feature 10D): same grid language, taller day cells */
+        .cal-week-grid .cal-cell { min-height: 200px; }
+        .cal-week-daynum { color: var(--text-hi); font-weight: 600; }
+        .cal-week-grid .cal-cell-today .cal-week-daynum {
+            color: var(--accent-hi);
+            font-weight: 700;
+        }
+
+        /* Empty note under month/week grids */
+        .cal-empty-note { padding: 24px 8px; }
+
         /* Loading state: keep the shell, dim the surface, spin. */
         .cal-surface { position: relative; min-height: 220px; }
         .cal-surface.cal-loading > div { opacity: 0.35; pointer-events: none; }
@@ -315,10 +326,13 @@
         .cal-empty-title { font-size: 1.05rem; font-weight: 600; color: var(--text-hi); }
         .cal-empty-sub { font-size: 0.8125rem; margin-top: 4px; color: var(--text-mid); }
 
-        /* Mobile: month grid becomes horizontally scrollable; agenda is primary */
+        /* Mobile: month/week grids become horizontally scrollable 7-day
+           strips — the shared mobile strategy (§G); agenda is the dense
+           fallback */
         @media (max-width: 767px) {
             .cal-grid { grid-template-columns: repeat(7, 130px); overflow-x: auto; }
             .cal-cell { min-height: 84px; }
+            .cal-week-grid .cal-cell { min-height: 150px; }
         }
     </style>
 </head>
@@ -348,8 +362,9 @@
         <!-- Filters -->
         <div class="cal-toolbar mb-6">
             <div class="cal-group" id="cal-view-group" role="group" aria-label="Calendar view">
-                <button type="button" data-view="agenda" class="active" aria-pressed="true">Agenda</button>
                 <button type="button" data-view="month" aria-pressed="false">Month</button>
+                <button type="button" data-view="week" aria-pressed="false">Week</button>
+                <button type="button" data-view="agenda" class="active" aria-pressed="true">Agenda</button>
             </div>
             <div class="flex flex-wrap gap-3">
                 <div class="cal-group" id="cal-type-group" role="group" aria-label="Event type">
@@ -372,9 +387,9 @@
         <div class="flex items-center justify-between gap-3 mb-4">
             <h2 id="cal-month-label" class="text-lg font-semibold text-[var(--text-hi)]"></h2>
             <div class="cal-group" id="cal-nav-group" role="group" aria-label="Calendar navigation">
-                <button id="cal-prev" type="button" aria-label="Previous month">&#8249;</button>
+                <button id="cal-prev" type="button" aria-label="Previous">&#8249;</button>
                 <button id="cal-today" type="button">Today</button>
-                <button id="cal-next" type="button" aria-label="Next month">&#8250;</button>
+                <button id="cal-next" type="button" aria-label="Next">&#8250;</button>
             </div>
         </div>
 
@@ -384,6 +399,9 @@
         <div id="cal-surface" class="cal-surface">
             <!-- Month view -->
             <div id="cal-month" class="surface-primary p-4 hidden"></div>
+
+            <!-- Week view (Feature 10D) -->
+            <div id="cal-week" class="surface-primary p-4 hidden"></div>
 
             <!-- Agenda view -->
             <div id="cal-agenda" class="space-y-2"></div>
