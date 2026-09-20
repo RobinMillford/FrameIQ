@@ -29,7 +29,14 @@ jobs:
           script_stop: true
           script: |
             cd /home/deployer/FrameIQ
-            docker compose exec -T web python scripts/sync_watchlist_release_data.py
+            # One-off container from the built web image — NOT 'exec' into
+            # the running web service, which may predate the deploy that
+            # added this script (the 'can't open file' incident). Runs
+            # headless: shares compose config/env/network, needs no DB or
+            # Valkey process (connects to db over the network), and the
+            # gunicorn web service is never disturbed.
+            docker compose run --rm --no-deps web \
+              python scripts/sync_watchlist_release_data.py
 
       - name: Open issue on failure
         if: failure()
