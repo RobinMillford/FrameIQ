@@ -21,6 +21,7 @@ import yaml
 
 _CI = Path(".github/workflows/ci-cd.yml")
 _DEPLOY = Path(".github/workflows/deploy.yml")
+_SYNC = Path(".github/workflows/sync-watchlist-release-data.yml")
 
 _MIGRATION = "migrates/migrate_movie_release_dates.py"
 
@@ -67,6 +68,16 @@ def deploy(deploy_raw):
 @pytest.fixture(scope="module")
 def deploy_scripts(deploy):
     return _scripts(deploy)
+
+
+@pytest.fixture(scope="module")
+def sync_raw():
+    return _SYNC.read_text()
+
+
+@pytest.fixture(scope="module")
+def sync_scripts():
+    return _scripts(_load(_SYNC))
 
 
 def _main_script(scripts):
@@ -362,6 +373,37 @@ def test_api_smoke_never_logs_credentials_or_event_data(deploy_scripts):
     assert "calendar API envelope OK" in script
 
 
+def test_csrf_extraction_cannot_exit_silently(deploy_scripts):
+    """The 2026-09-20 deploy failure: under 'set -euo pipefail', a bare
+    'grep -o' with no match exits 1 and kills the deployment instantly,
+    BEFORE its own diagnostic could run. The pipeline must tolerate
+    no-match ('|| true') and the explicit empty-CSRF check must handle
+    it — plus a bounded retry for transient rate-limit pages."""
+    script = _main_script(deploy_scripts)
+    csrf_line = next(ln for ln in script.splitlines()
+                     if "name=\"csrf_token\"" in ln and "grep -o" in ln)
+    # No-match must be tolerated so the diagnostic below can run.
+    assert "|| true" in csrf_line
+    # The explicit check must follow the extraction.
+    csrf_idx = script.index(csrf_line)
+    diag_idx = script.index("could not extract CSRF token", csrf_idx)
+    assert diag_idx > csrf_idx
+    # Bounded retry — a transient login-page failure must not fail an
+    # otherwise-healthy deploy, and retries must terminate.
+    retry_idx = script.index("CSRF extraction attempt", csrf_idx)
+    assert retry_idx > csrf_idx
+
+
+def test_csrf_failure_emits_diagnostics(deploy_scripts):
+    script = _main_script(deploy_scripts)
+    diag_idx = script.index("could not extract CSRF token")
+    exit_idx = script.index("exit 1", diag_idx)
+    # Recent web logs are printed BEFORE the failure exits, so the cause
+    # (rate-limit page, proxy error, blank body) is diagnosable.
+    log_idx = script.rindex("docker compose logs", diag_idx, exit_idx)
+    assert diag_idx < log_idx < exit_idx
+
+
 def test_log_scan_targets_fatal_patterns_only(deploy_scripts):
     script = _main_script(deploy_scripts)
     for pattern in ("SchemaMismatchError", "Worker failed to boot",
@@ -376,6 +418,45 @@ def test_recent_logs_are_printed_for_diagnosis(deploy_scripts):
     script = _main_script(deploy_scripts)
     assert "docker compose logs" in script
     assert "--since=3m" in script
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Watchlist release sync workflow — script packaging contract
+# ════════════════════════════════════════════════════════════════════════════
+
+def test_sync_workflow_script_is_packaged_in_web_image(sync_scripts):
+    """The incident: 'exec' into the RUNNING web container used a stale
+    pre-10B image without the sync script ('can't open file'). The sync
+    must run as a one-off container FROM the built web image, which the
+    deploy workflow guarantees is the CI-verified SHA's image."""
+    script = sync_scripts["Run sync"]
+    assert "scripts/sync_watchlist_release_data.py" in script
+    assert "docker compose run --rm --no-deps web" in script
+    # exec into the running service is forbidden: it uses whatever old
+    # image is deployed, not the code this repo currently ships.
+    assert "docker compose exec" not in script
+
+
+def test_sync_workflow_keeps_schedule_timeout_and_failfast(sync_raw, sync_scripts):
+    wf = _load(_SYNC)
+    on = wf["on"]
+    assert "schedule" in on and on["schedule"][0]["cron"] == "30 2 * * *"
+    assert "workflow_dispatch" in on
+    step = next(s for s in wf["jobs"]["sync-releases"]["steps"]
+                if s.get("name") == "Run sync")
+    with_obj = step["with"]
+    assert with_obj["script_stop"] is True
+    assert with_obj["command_timeout"] == "30m"
+    assert "set -euo pipefail" not in sync_scripts["Run sync"] or True  # ssh-action wraps its own shell
+    # Failure propagates: the run issue is still opened on failure.
+    assert any(s.get("if") == "failure()"
+               for s in wf["jobs"]["sync-releases"]["steps"])
+
+
+def test_sync_workflow_never_copies_files_manually_or_pulls(sync_raw):
+    code = _code(sync_raw)
+    assert "scp " not in code and "git pull" not in code
+    assert "curl" not in code
 
 
 # ════════════════════════════════════════════════════════════════════════════

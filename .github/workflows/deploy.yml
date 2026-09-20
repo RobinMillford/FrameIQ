@@ -190,13 +190,33 @@ jobs:
             if [ -n "${SMOKE_TEST_USERNAME:-}" ] && [ -n "${SMOKE_TEST_PASSWORD:-}" ]; then
               CJ="$(mktemp)"
               API_RESP="$(mktemp)"
-              trap 'rm -f "$CJ" "$API_RESP"' EXIT
-              LOGIN_HTML="$(curl -sS --max-time 15 -c "$CJ" "http://127.0.0.1:8002/login" || true)"
-              CSRF="$(printf '%s' "$LOGIN_HTML" | grep -o 'name="csrf_token" value="[^"]*"' | head -n1 | cut -d'"' -f4)"
-              if [ -z "$CSRF" ]; then
-                echo "::error::calendar API smoke: could not extract CSRF token from /login"
-                exit 1
-              fi
+              LOGIN_PAGE="$(mktemp)"
+              trap 'rm -f "$CJ" "$API_RESP" "$LOGIN_PAGE"' EXIT
+              # NOTE: the CSRF pipeline MUST tolerate grep finding no match
+              # — under 'set -euo pipefail' a bare pipeline failure here
+              # exits the whole deployment SILENTLY, before the diagnostic
+              # below can run (the 2026-09-20 deploy failure). '|| true'
+              # lets the explicit empty-CSRF check produce a real error.
+              # Bounded retry: a transient rate-limit/error page on the
+              # login GET must not fail an otherwise-healthy deploy.
+              CSRF=""
+              for i in 1 2 3; do
+                LOGIN_CODE_GET="$(curl -sS -o "$LOGIN_PAGE" -w '%{http_code}' --max-time 15 -c "$CJ" "http://127.0.0.1:8002/login" || true)"
+                LOGIN_HTML="$(cat "$LOGIN_PAGE" 2>/dev/null || true)"
+                CSRF="$(printf '%s' "$LOGIN_HTML" | grep -o 'name="csrf_token" value="[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
+                if [ -n "$CSRF" ]; then
+                  break
+                fi
+                if [ "$i" = "3" ]; then
+                  echo "::error::calendar API smoke: could not extract CSRF token from /login after 3 attempts (GET /login -> ${LOGIN_CODE_GET:-none}, body length: ${#LOGIN_HTML})"
+                  docker compose logs --tail=50 web || true
+                  exit 1
+                fi
+                echo "CSRF extraction attempt $i failed (GET /login -> ${LOGIN_CODE_GET:-none}, body length: ${#LOGIN_HTML}) — retrying"
+                sleep 5
+              done
+              echo "calendar API smoke: login page fetched (HTTP ${LOGIN_CODE_GET:-unknown})"
+              echo "calendar API smoke: csrf token found"
               LOGIN_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
                 -b "$CJ" -c "$CJ" \
                 --data-urlencode "username=${SMOKE_TEST_USERNAME}" \
@@ -207,6 +227,7 @@ jobs:
                 echo "::error::calendar API smoke: login failed (POST /login -> ${LOGIN_CODE:-none}, expected 302) — verify the SMOKE_TEST_* secrets and the smoke account"
                 exit 1
               fi
+              echo "calendar API smoke: login POST -> 302"
               API_CODE="$(curl -sS -o "$API_RESP" -w '%{http_code}' --max-time 15 \
                 -b "$CJ" "http://127.0.0.1:8002/api/calendar" || true)"
               if [ "$API_CODE" != "200" ]; then
@@ -214,10 +235,11 @@ jobs:
                 docker compose logs --tail=100 web || true
                 exit 1
               fi
+              echo "calendar API smoke: authenticated API -> 200"
               # Envelope validation runs inside the web container (python is
               # guaranteed there). Only aggregate counts are printed — no
               # private event data and no credentials ever reach the logs.
-              if cat "$API_RESP" | docker compose exec -T web python -c "import json,sys; d=json.load(sys.stdin); meta=d.get('meta') or {}; counts=meta.get('counts') or {}; missing={'tv','movie','total'}-set(counts); assert isinstance(d.get('events'), list) and meta.get('today') and not missing, 'invalid calendar envelope'; print('calendar API envelope OK: tv=%s movie=%s total=%s' % (counts.get('tv'), counts.get('movie'), counts.get('total')))"; then
+              if cat "$API_RESP" | docker compose exec -T web python -c "import json,sys; d=json.load(sys.stdin); meta=d.get('meta') or {}; counts=meta.get('counts') or {}; missing={'tv','movie','total'}-set(counts); assert isinstance(d.get('events'), list) and isinstance(meta, dict) and meta.get('today') and not missing, 'invalid calendar envelope'; print('calendar API envelope OK: tv=%s movie=%s total=%s' % (counts.get('tv'), counts.get('movie'), counts.get('total')))"; then
                 echo "calendar API smoke: envelope valid"
               else
                 echo "::error::/api/calendar returned an invalid calendar envelope"
