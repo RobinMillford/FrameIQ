@@ -154,10 +154,123 @@
         .cal-truncate { max-width: 100%; }
 
         .cal-more {
+            border: 0;
+            background: transparent;
             font-size: 0.6875rem;
             color: var(--text-low);
-            padding-left: 4px;
+            padding: 2px 4px;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 6px;
         }
+
+        .cal-more:hover { color: var(--accent-hi); }
+        .cal-more:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
+
+        .cal-chip-seen {
+            font-family: var(--font-mono);
+            font-size: 0.5625rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-low);
+            flex: 0 0 auto;
+        }
+
+        .cal-cell-adjacent { opacity: 0.5; }
+
+        /* Loading state: keep the shell, dim the surface, spin. */
+        .cal-surface { position: relative; min-height: 220px; }
+        .cal-surface.cal-loading > div { opacity: 0.35; pointer-events: none; }
+        .cal-surface.cal-loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 28px;
+            height: 28px;
+            margin: -14px 0 0 -14px;
+            border: 3px solid rgba(246, 183, 60, 0.25);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: cal-spin 0.8s linear infinite;
+        }
+
+        @keyframes cal-spin { to { transform: rotate(360deg); } }
+
+        @media (prefers-reduced-motion: reduce) {
+            .cal-surface.cal-loading::after { animation-duration: 1.6s; }
+        }
+
+        /* Day dialog ("+N more") */
+        .cal-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .cal-dialog {
+            position: relative;
+            width: 100%;
+            max-width: 26rem;
+            max-height: 70vh;
+            overflow-y: auto;
+            background: rgba(24, 30, 40, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 18px;
+        }
+
+        .cal-dialog-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-hi);
+            margin-bottom: 12px;
+            padding-right: 32px;
+        }
+
+        .cal-dialog-list { display: flex; flex-direction: column; gap: 8px; }
+
+        .cal-dialog-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            border: 0;
+            background: transparent;
+            color: var(--text-mid);
+            font-size: 1.35rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+
+        .cal-dialog-close:hover { color: var(--text-hi); }
+        .cal-dialog-close:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
+
+        /* Error / retry */
+        .cal-retry {
+            display: inline-block;
+            margin-top: 14px;
+            border: 0;
+            background: var(--accent);
+            color: #000;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            padding: 8px 18px;
+            border-radius: 9px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .cal-retry:hover { filter: brightness(1.08); }
+        .cal-retry:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+
+        .cal-unknown-note { font-size: 0.75rem; color: var(--text-mid); }
 
         /* Agenda */
         .cal-agenda-day { margin-bottom: 20px; }
@@ -211,7 +324,7 @@
 </head>
 <body>
     <!-- Navigation (shared chrome) -->
-    {% include "partials/nav_simple.html" with with_diary=True %}
+    {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4 py-8 max-w-6xl">
         <div class="mb-6">
@@ -256,15 +369,25 @@
         <div id="cal-coming-up"
              class="surface-secondary px-4 py-3 mb-6 flex flex-wrap gap-2 items-center hidden"></div>
 
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center justify-between gap-3 mb-4">
             <h2 id="cal-month-label" class="text-lg font-semibold text-[var(--text-hi)]"></h2>
+            <div class="cal-group" id="cal-nav-group" role="group" aria-label="Calendar navigation">
+                <button id="cal-prev" type="button" aria-label="Previous month">&#8249;</button>
+                <button id="cal-today" type="button">Today</button>
+                <button id="cal-next" type="button" aria-label="Next month">&#8250;</button>
+            </div>
         </div>
 
-        <!-- Month view -->
-        <div id="cal-month" class="surface-primary p-4 hidden"></div>
+        <!-- Unknown release dates (10B meta) — informational only. -->
+        <p id="cal-unknown" class="cal-unknown-note hidden mb-3" role="status"></p>
 
-        <!-- Agenda view -->
-        <div id="cal-agenda" class="space-y-2"></div>
+        <div id="cal-surface" class="cal-surface">
+            <!-- Month view -->
+            <div id="cal-month" class="surface-primary p-4 hidden"></div>
+
+            <!-- Agenda view -->
+            <div id="cal-agenda" class="space-y-2"></div>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
