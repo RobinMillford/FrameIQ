@@ -149,10 +149,12 @@ def test_ci_full_history_checkout(ci_raw):
 
 def test_ci_conflict_gate_is_self_safe(ci_raw):
     # The scanner must not contain literal 7-char marker sequences, or it
-    # flags its own detection logic (the self-match incident).
-    assert "<<<<<<<" not in ci_raw
-    assert ">>>>>>>" not in ci_raw
-    assert "=======" not in ci_raw
+    # flags its own detection logic (the self-match incident). The runs
+    # below are built from single characters so THIS FILE can never
+    # contain a literal marker sequence itself — the 10E CI failure was
+    # exactly that self-trap.
+    for marker_run in (7 * "<", 7 * "=", 7 * ">"):
+        assert marker_run not in ci_raw
     # And it must still detect markers via the 7-char run classes.
     assert "(<{7}|={7}|>{7})" in ci_raw
 
