@@ -15,10 +15,11 @@
 # sync-upcoming-episodes.yml / taste-profile-nightly.yml: script_stop
 # (never swallow a failed command) + explicit command timeouts.
 #
-# Future schema-changing deployments: insert an explicit migration step
-# (docker compose run --rm web python migrates/<name>.py — those scripts
-# self-manage SKIP_SCHEMA_GUARD) between the checkout step and the
-# build/recreate step below. Do not blindly run every migrates/*.py.
+# Schema-changing deployments (Feature 10E order): build the verified-SHA
+# image FIRST, run the named idempotent migration in a one-off container,
+# and only then recreate web. Each schema-changing release adds its named
+# migration line before the web recreate, in order — never a blind
+# migrates/*.py sweep. Those scripts self-manage SKIP_SCHEMA_GUARD.
 
 name: Deploy to VPS
 
@@ -90,7 +91,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
           script_stop: true
-          envs: VERIFIED_SHA
+          envs: VERIFIED_SHA,SMOKE_TEST_USERNAME,SMOKE_TEST_PASSWORD
           script: |
             set -euo pipefail
             cd /home/deployer/FrameIQ
@@ -105,7 +106,30 @@ jobs:
             fi
             echo "VPS is at verified SHA: $ACTUAL"
 
-            # Build the web image and recreate only the web service.
+            # ── Dependency health BEFORE anything is migrated/recreated ──
+            DB_HEALTH="$(docker inspect -f '{{.State.Health.Status}}' frameiq-db-1)"
+            VALKEY_HEALTH="$(docker inspect -f '{{.State.Health.Status}}' frameiq-valkey-1)"
+            if [ "$DB_HEALTH" != "healthy" ] || [ "$VALKEY_HEALTH" != "healthy" ]; then
+              echo "::error::db health='$DB_HEALTH' / valkey health='$VALKEY_HEALTH' — both must be healthy before a deploy"
+              docker compose ps || true
+              exit 1
+            fi
+
+            # ── Schema-changing deployments (Feature 10E order): build the
+            # verified-SHA image FIRST (a migration script only exists in
+            # the code being deployed — running it from the previous
+            # deploy's image would fail on the first such deploy), then run
+            # the named idempotent migration in a one-off container, and
+            # only then recreate web. Named script only — never a blind
+            # migrates/*.py sweep; future schema-changing releases add
+            # their named migration line here, before the web recreate, in
+            # order. SKIP_SCHEMA_GUARD=1 is the guard's documented operator
+            # escape hatch for the one-off migration container; it is
+            # NEVER set for the running application below.
+            docker compose build web
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_movie_release_dates.py
+
+            # Recreate only the web service (rebuild is a cache hit).
             # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.
             docker compose up -d --build web
             docker image prune -f
@@ -153,6 +177,56 @@ jobs:
                 exit 1
               fi
             done
+
+            # ── Authenticated /api/calendar smoke (Feature 10E) ──────────
+            # Proves the unified calendar API's full envelope behind REAL
+            # authentication. Uses the dedicated SMOKE_TEST_USERNAME /
+            # SMOKE_TEST_PASSWORD GitHub secrets (a disposable production
+            # test account — never a real user's credentials). If they are
+            # not configured, this smoke is SKIPPED with the loud note
+            # below: authentication is never weakened or bypassed to make
+            # CI/CD pass. When configured, ANY failure here fails the
+            # deployment.
+            if [ -n "${SMOKE_TEST_USERNAME:-}" ] && [ -n "${SMOKE_TEST_PASSWORD:-}" ]; then
+              CJ="$(mktemp)"
+              API_RESP="$(mktemp)"
+              trap 'rm -f "$CJ" "$API_RESP"' EXIT
+              LOGIN_HTML="$(curl -sS --max-time 15 -c "$CJ" "http://127.0.0.1:8002/login" || true)"
+              CSRF="$(printf '%s' "$LOGIN_HTML" | grep -o 'name="csrf_token" value="[^"]*"' | head -n1 | cut -d'"' -f4)"
+              if [ -z "$CSRF" ]; then
+                echo "::error::calendar API smoke: could not extract CSRF token from /login"
+                exit 1
+              fi
+              LOGIN_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+                -b "$CJ" -c "$CJ" \
+                --data-urlencode "username=${SMOKE_TEST_USERNAME}" \
+                --data-urlencode "password=${SMOKE_TEST_PASSWORD}" \
+                --data-urlencode "csrf_token=${CSRF}" \
+                "http://127.0.0.1:8002/login" || true)"
+              if [ "$LOGIN_CODE" != "302" ]; then
+                echo "::error::calendar API smoke: login failed (POST /login -> ${LOGIN_CODE:-none}, expected 302) — verify the SMOKE_TEST_* secrets and the smoke account"
+                exit 1
+              fi
+              API_CODE="$(curl -sS -o "$API_RESP" -w '%{http_code}' --max-time 15 \
+                -b "$CJ" "http://127.0.0.1:8002/api/calendar" || true)"
+              if [ "$API_CODE" != "200" ]; then
+                echo "::error::/api/calendar -> ${API_CODE:-none} (expected 200)"
+                docker compose logs --tail=100 web || true
+                exit 1
+              fi
+              # Envelope validation runs inside the web container (python is
+              # guaranteed there). Only aggregate counts are printed — no
+              # private event data and no credentials ever reach the logs.
+              if cat "$API_RESP" | docker compose exec -T web python -c "import json,sys; d=json.load(sys.stdin); meta=d.get('meta') or {}; counts=meta.get('counts') or {}; missing={'tv','movie','total'}-set(counts); assert isinstance(d.get('events'), list) and meta.get('today') and not missing, 'invalid calendar envelope'; print('calendar API envelope OK: tv=%s movie=%s total=%s' % (counts.get('tv'), counts.get('movie'), counts.get('total')))"; then
+                echo "calendar API smoke: envelope valid"
+              else
+                echo "::error::/api/calendar returned an invalid calendar envelope"
+                docker compose logs --tail=100 web || true
+                exit 1
+              fi
+            else
+              echo "NOTE: SMOKE_TEST_USERNAME / SMOKE_TEST_PASSWORD are not configured — the authenticated /api/calendar smoke was SKIPPED (documented limitation; authentication is never disabled for smoke testing). Public /calendar and /tv/upcoming smokes still ran."
+            fi
 
             # ── Startup / log failure scan (targeted, not a blanket grep) ──
             sleep 5

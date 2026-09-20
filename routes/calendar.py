@@ -10,7 +10,8 @@ deterministic ordering. Parameters:
 
 No user_id parameter exists: the calendar is always the current
 session user's. Invalid dates are rejected with 400 rather than
-silently ignored.
+silently ignored. The movie-release region (Feature 10B) is the
+caller's own saved streaming_region — never a request parameter.
 """
 import logging
 from datetime import datetime
@@ -18,6 +19,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
+from api.availability import normalize_region
 from api.calendar import (MAX_RANGE_DAYS, clamp_range, default_range,
                           get_calendar_events)
 
@@ -64,10 +66,16 @@ def api_calendar():
     event_type = request.args.get('type', 'all')
     scope = request.args.get('scope', 'all')
 
+    # Feature 10B: movie release events resolve against the caller's own
+    # saved region (the canonical streaming_region preference). There is
+    # deliberately NO ?region= parameter — a caller cannot probe another
+    # region or another user's release calendar through this endpoint.
+    region = normalize_region(getattr(current_user, 'streaming_region', None))
+
     try:
         events, meta = get_calendar_events(
             current_user.id, start, end,
-            event_type=event_type, scope=scope)
+            event_type=event_type, scope=scope, region=region)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 

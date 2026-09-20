@@ -14,7 +14,7 @@ import inspect
 
 import pytest
 
-from models import db, User, TasteProfile, MediaItem
+from models import db, User, TasteProfile, MediaItem, DiaryEntry
 
 
 # ── module-unique data (suite convention: clean up everything) ───────────────
@@ -24,6 +24,10 @@ DOMAIN = 'foryouhome.test'
 @pytest.fixture(autouse=True)
 def _clean_home_rows(app):
     yield
+    # Purge diary rows before media (rowid-reuse contract — see
+    # test_watch.py): an orphaned DiaryEntry makes a later MediaItem
+    # ORM delete emit "SET media_id=NULL" and fail the FK constraint.
+    DiaryEntry.query.delete()
     TasteProfile.query.delete()
     MediaItem.query.delete()
     db.session.commit()

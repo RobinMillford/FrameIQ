@@ -29,7 +29,8 @@ from models import DiaryEntry, MediaItem, User
 from models.tv import TVEpisodeWatch
 from api.statistics import get_statistics
 
-_TMDB = count(9_900_000)  # module-local base (other suites: 9.6M/9.7M/9.8M)
+_TMDB = count(9_950_000)  # module-local base (calendar suite owns 9_900_000;
+# shared session DB — bases must never overlap)
 
 
 def _user(db):

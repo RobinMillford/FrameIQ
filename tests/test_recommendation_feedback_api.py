@@ -13,7 +13,7 @@ from datetime import datetime
 
 import pytest
 
-from models import db, User, MediaItem, RecommendationFeedback
+from models import db, User, MediaItem, RecommendationFeedback, DiaryEntry
 
 
 # ── module-unique data — every row this file creates is removed after each
@@ -27,6 +27,12 @@ def _clean_feedback_rows(app, sample_user):
     """Remove this module's feedback + media + users before sample_user's
     own teardown (ordering via dependency)."""
     yield
+    # DiaryEntry rows referencing MediaItems must go first: a leftover
+    # diary row whose media was already freed turns a later ORM
+    # MediaItem.delete() into "SET media_id=NULL" → IntegrityError
+    # (shared session DB reuses freed rowids — same purge contract as
+    # test_watch.py / test_continue_watching.py).
+    DiaryEntry.query.delete()
     RecommendationFeedback.query.delete()
     MediaItem.query.delete()
     db.session.commit()
