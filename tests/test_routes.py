@@ -71,7 +71,6 @@ def test_movie_detail_uses_current_user_list_relationship(monkeypatch, app, db):
             'id': current_user_id,
             'is_authenticated': True,
             'watchlist': [],
-            'wishlist': [],
             'viewed_media': [],
         },
     )())
@@ -268,7 +267,6 @@ def test_tv_detail_uses_current_user_list_relationship(monkeypatch, app, db):
             'id': current_user_id,
             'is_authenticated': True,
             'watchlist': [],
-            'wishlist': [],
             'viewed_media': [],
         },
     )())

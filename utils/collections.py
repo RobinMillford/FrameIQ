@@ -10,19 +10,18 @@ logger = logging.getLogger(__name__)
 
 
 def get_user_collection_ids(user):
-    """Return (watchlist_ids, wishlist_ids, viewed_ids) as sets of
-    (tmdb_id, media_type) tuples. Empty sets for anonymous users."""
+    """Return (watchlist_ids, viewed_ids) as sets of (tmdb_id, media_type)
+    tuples. Empty sets for anonymous users."""
     if not user.is_authenticated:
-        return set(), set(), set()
+        return set(), set()
     try:
         return (
             {(i.tmdb_id, i.media_type) for i in user.watchlist},
-            {(i.tmdb_id, i.media_type) for i in user.wishlist},
             {(i.tmdb_id, i.media_type) for i in user.viewed_media},
         )
     except Exception as e:
         logger.warning("Could not load collection ids: %s", e)
-        return set(), set(), set()
+        return set(), set()
 
 
 def _extract_runtime(media_type, data):

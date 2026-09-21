@@ -49,14 +49,12 @@ def movie_detail(movie_id):
         
         # Get user's lists if authenticated
         user_watchlist_ids = set()
-        user_wishlist_ids = set()
         user_viewed_ids = set()
         user_lists_with_movie = []
         diary_entries = []
         
         if current_user.is_authenticated:
             user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
-            user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
             # Find which lists contain this movie
@@ -83,7 +81,6 @@ def movie_detail(movie_id):
         return render_template('movie_detail.html', movie=movie,
                                taste_match=taste_match,
                                user_watchlist_ids=user_watchlist_ids,
-                               user_wishlist_ids=user_wishlist_ids,
                                user_viewed_ids=user_viewed_ids,
                                user_lists_with_movie=user_lists_with_movie,
                                diary_entries=diary_entries,
@@ -101,14 +98,12 @@ def tv_detail(show_id):
         
         # Get user's lists if authenticated
         user_watchlist_ids = set()
-        user_wishlist_ids = set()
         user_viewed_ids = set()
         user_lists_with_show = []
         diary_entries = []
         
         if current_user.is_authenticated:
             user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
-            user_wishlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.wishlist}
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
             # Find which lists contain this TV show
@@ -150,7 +145,6 @@ def tv_detail(show_id):
         return render_template('tv_detail.html', show=show,
                                taste_match=taste_match,
                                user_watchlist_ids=user_watchlist_ids,
-                               user_wishlist_ids=user_wishlist_ids,
                                user_viewed_ids=user_viewed_ids,
                                user_lists_with_show=user_lists_with_show,
                                diary_entries=diary_entries,

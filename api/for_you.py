@@ -6,7 +6,7 @@ The recommendation engine that consumes the PERSISTED TasteProfile
     TasteProfile (persisted, feedback-aware)
         ↓  bounded candidate generation (TMDb budget: 5 requests, hard cap)
     candidate merge / dedupe by (media_type, tmdb_id)
-        ↓  exclusions (watched / watchlist / wishlist / posterless / adult)
+        ↓  exclusions (watched / watchlist / posterless / adult)
     deterministic ranking (inspectable components, no hidden score)
         ↓  diversity (≤1 per director, ≤7 per dominant genre, media mix)
     small bounded availability bonus (≤12 probes)
@@ -31,8 +31,8 @@ Design invariants:
   COLD START IS A STATE, NOT AN ERROR — zero-signal users get
   personalized=False and the caller chooses the fallback rail.
 
-  EXCLUSIONS USE EXISTING IDENTITY — user_viewed/user_watchlist/
-  user_wishlist junction tables store MediaItem.id, so watched-state
+  EXCLUSIONS USE EXISTING IDENTITY — user_viewed/user_watchlist
+  junction tables store MediaItem.id, so watched-state
   exclusion happens via ONE joined query on MediaItem(tmdb_id) — no
   MediaItem rows are created, and TMDb-only candidates need none.
 
@@ -47,7 +47,7 @@ from collections import defaultdict, namedtuple
 
 from models import (
     db, User, MediaItem, DiaryEntry, Review, TasteProfile,
-    user_watchlist, user_wishlist, user_viewed,
+    user_watchlist, user_viewed,
 )
 from api.taste_profile import describe_profile
 
@@ -344,11 +344,10 @@ def _resolve_local_items(local_ids):
         MediaItem.title).all()}
 
 
-def _collect_watched_exclusions(watched_rows, wishlist_rows, watchlist_rows,
-                                id_map):
+def _collect_watched_exclusions(watched_rows, watchlist_rows, id_map):
     """Junction-table rows → (excluded keys, watchlisted keys)."""
     exclude_keys, watchlisted_keys = set(), set()
-    for r in list(watched_rows) + list(wishlist_rows):
+    for r in list(watched_rows):
         item = id_map.get(r.media_id)
         if item:
             exclude_keys.add((item.media_type, item.tmdb_id))
@@ -399,7 +398,7 @@ def _select_seeds(seed_pool):
 def _load_local_state(user_id):
     """One joined exclusion read + one seeds read.
 
-    Read 1: exclusion state — watched/watchlist/wishlist junction rows and
+    Read 1: exclusion state — watched/watchlist junction rows and
     diary entries, all joined to MediaItem ONCE, yielding (media_type,
     tmdb_id) exclusion keys plus watchlisted keys for the intent bonus.
     Read 2: seed selection — top positive diary/review evidence (TMDb ids
@@ -407,13 +406,11 @@ def _load_local_state(user_id):
 
     No N+1: two major queries total, joined, bounded.
     """
-    # ── Read 1: exclusions (watched ∪ watchlist ∪ wishlist ∪ diary) ──
+    # ── Read 1: exclusions (watched ∪ watchlist ∪ diary) ──
     watched_rows = db.session.execute(
         user_viewed.select().where(user_viewed.c.user_id == user_id)).all()
     watchlist_rows = db.session.execute(
         user_watchlist.select().where(user_watchlist.c.user_id == user_id)).all()
-    wishlist_rows = db.session.execute(
-        user_wishlist.select().where(user_wishlist.c.user_id == user_id)).all()
     diary_rows = (
         DiaryEntry.query.with_entities(
             DiaryEntry.media_id, DiaryEntry.media_type, DiaryEntry.rating,
@@ -430,13 +427,12 @@ def _load_local_state(user_id):
 
     all_local_ids = {r.media_id for r in watched_rows} \
         | {r.media_id for r in watchlist_rows} \
-        | {r.media_id for r in wishlist_rows} \
         | {r.media_id for r in diary_rows} \
         | {r.media_id for r in review_rows}
     id_map = _resolve_local_items(all_local_ids)
 
     exclude_keys, watchlisted_keys = _collect_watched_exclusions(
-        watched_rows, wishlist_rows, watchlist_rows, id_map)
+        watched_rows, watchlist_rows, id_map)
     history_excludes, seed_pool = _collect_history_seeds(
         diary_rows, review_rows, id_map)
     exclude_keys |= history_excludes
@@ -703,7 +699,7 @@ def _attach_local_directors(candidates):
 
 
 def _apply_exclusions(candidates, local):
-    """Drop watched/watchlisted/wishlisted/posterless candidates.
+    """Drop watched/watchlisted/posterless candidates.
 
     Adult exclusion follows the existing application policy: candidate
     generation already requests include_adult=false, and TMDb list results

@@ -43,7 +43,7 @@ Built for people who care about what they watch — and want an intelligent comp
 ### 📚 Library & Tracking
 - **Watchlist** with priority tiers (High / Medium / Low)
 - **Diary** — chronological log with dates, ratings, notes
-- **Viewed** & **Wishlist** libraries with rich filtering
+- **Viewed** library with rich filtering
 - **Star ratings** (½–5★) + written reviews with markdown
 - **Custom lists** — public, private, collaborative
 - **Tags** with autocomplete & trending suggestions

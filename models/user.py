@@ -5,7 +5,7 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from models.base import db
-from models.associations import user_watchlist, user_wishlist, user_viewed
+from models.associations import user_watchlist, user_viewed
 
 
 class User(UserMixin, db.Model):
@@ -27,9 +27,6 @@ class User(UserMixin, db.Model):
     watchlist = db.relationship(
         'MediaItem', secondary=user_watchlist, lazy='select',
         backref=db.backref('watchlisted_by', lazy=True))
-    wishlist = db.relationship(
-        'MediaItem', secondary=user_wishlist, lazy='select',
-        backref=db.backref('wishlisted_by', lazy=True))
     viewed_media = db.relationship(
         'MediaItem', secondary=user_viewed, lazy='select',
         backref=db.backref('viewed_by', lazy=True))

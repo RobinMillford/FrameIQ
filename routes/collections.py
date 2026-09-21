@@ -1,9 +1,14 @@
-"""User collection routes: watchlist, wishlist, viewed — pages + add/remove/priority."""
+"""User collection routes: watchlist, viewed — pages + add/remove/priority.
+
+Legacy /wishlist and /add_to_wishlist//remove_from_wishlist routes are
+kept as redirects to the canonical Watchlist equivalents (Wishlist was
+consolidated into Watchlist).
+"""
 from flask import render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
 from sqlalchemy import select
 
-from models import db, MediaItem, user_watchlist, user_wishlist, user_viewed
+from models import db, MediaItem, user_watchlist, user_viewed
 from routes._main_bp import main
 from routes.helpers import get_user_collection_ids
 from utils.collections import get_or_create_media_item
@@ -12,7 +17,7 @@ _PRIORITY_LABELS = {'high': '🔥 High', 'medium': '📌 Medium', 'low': '💤 L
 
 
 def _collection_page(table, template, list_key):
-    """Render a prioritized collection page (watchlist/wishlist)."""
+    """Render a prioritized collection page (watchlist)."""
     stmt = select(
         table.c.media_id,
         table.c.media_type,
@@ -41,11 +46,11 @@ def _collection_page(table, template, list_key):
                 'date_added': row.date_added,
             })
 
-    watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+    watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
     # The page's own collection ids must reflect the queried rows above
     own_ids = {(i['item'].tmdb_id, i['item'].media_type) for i in items_with_priority}
     ids_by_key = {
-        'watchlist': watchlist_ids, 'wishlist': wishlist_ids, 'viewed': viewed_ids,
+        'watchlist': watchlist_ids, 'viewed': viewed_ids,
     }
     ids_by_key[list_key] = own_ids
 
@@ -53,7 +58,6 @@ def _collection_page(table, template, list_key):
         template,
         **{list_key: items_with_priority},
         user_watchlist_ids=ids_by_key['watchlist'],
-        user_wishlist_ids=ids_by_key['wishlist'],
         user_viewed_ids=ids_by_key['viewed'],
     )
 
@@ -68,8 +72,10 @@ def watchlist():
 @main.route('/wishlist')
 @login_required
 def wishlist():
-    """Display user's wishlist with priorities"""
-    return _collection_page(user_wishlist, 'wishlist.html', 'wishlist')
+    """Legacy bookmark compatibility: /wishlist was consolidated into the
+    canonical Watchlist (Wishlist→Watchlist consolidation)."""
+    flash('Wishlist has been merged into your Watchlist.')
+    return redirect(url_for('main.watchlist'))
 
 
 @main.route('/viewed')
@@ -99,17 +105,16 @@ def viewed():
     viewed_items = list(current_user.viewed_media)
     tv_titles = tv_watch_titles(current_user.id, hydrate=_hydrate)
 
-    watchlist_ids, wishlist_ids, viewed_ids = \
+    watchlist_ids, viewed_ids = \
         get_user_collection_ids(current_user)
 
     return render_template('viewed.html', viewed=viewed_items + tv_titles,
                            user_watchlist_ids=watchlist_ids,
-                           user_wishlist_ids=wishlist_ids,
                            user_viewed_ids=viewed_ids)
 
 
 def _add_to_collection(table, media_id, media_type, label):
-    """Shared add-to-collection logic for watchlist/wishlist/viewed."""
+    """Shared add-to-collection logic for watchlist/viewed."""
     priority = request.args.get('priority', 'medium')
     if priority not in ['high', 'medium', 'low']:
         priority = 'medium'
@@ -190,8 +195,14 @@ def add_to_watchlist(media_id, media_type):
 @main.route('/add_to_wishlist/<int:media_id>/<media_type>', methods=['GET'])
 @login_required
 def add_to_wishlist(media_id, media_type):
-    """Add a movie or TV show to the user's wishlist"""
-    return _add_to_collection(user_wishlist, media_id, media_type, 'wishlist')
+    """Legacy route: the Wishlist was consolidated into the canonical
+    Watchlist. Redirect to the equivalent Watchlist action, preserving
+    the requested priority."""
+    return redirect(url_for(
+        'main.add_to_watchlist',
+        media_id=media_id,
+        media_type=media_type,
+        priority=request.args.get('priority', 'medium')))
 
 
 @main.route('/mark_as_viewed/<int:media_id>/<media_type>', methods=['GET'])
@@ -212,9 +223,10 @@ def remove_from_watchlist(media_id, media_type):
 @main.route('/remove_from_wishlist/<int:media_id>/<media_type>', methods=['GET'])
 @login_required
 def remove_from_wishlist(media_id, media_type):
-    """Remove a movie or TV show from the user's wishlist"""
-    return _remove_from_collection(
-        user_wishlist, media_id, media_type, 'wishlist', 'main.wishlist')
+    """Legacy route: the Wishlist was consolidated into the canonical
+    Watchlist. Redirect to the equivalent Watchlist removal."""
+    return redirect(url_for(
+        'main.remove_from_watchlist', media_id=media_id, media_type=media_type))
 
 
 @main.route('/remove_from_viewed/<int:media_id>/<media_type>', methods=['GET'])
@@ -229,7 +241,7 @@ def remove_from_viewed(media_id, media_type):
             methods=['POST'])
 @login_required
 def update_priority(list_type, media_id, media_type):
-    """Update priority for a watchlist or wishlist item"""
+    """Update priority for a watchlist item"""
     from sqlalchemy import update as sql_update
 
     priority = request.json.get('priority')
@@ -241,8 +253,11 @@ def update_priority(list_type, media_id, media_type):
     if not media_item:
         return jsonify({'success': False, 'error': 'Media item not found'}), 404
 
+    if list_type not in ('watchlist',):
+        return jsonify({'success': False, 'error': 'Invalid list type'}), 400
+
     # Determine which table to update
-    table = user_watchlist if list_type == 'watchlist' else user_wishlist
+    table = user_watchlist
 
     result = db.session.execute(
         sql_update(table).where(

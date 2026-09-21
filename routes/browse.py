@@ -209,7 +209,7 @@ def index():
     popular_shows = fetch_popular_shows()
     trending_people = fetch_trending_people()
 
-    watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+    watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
 
     # ── Tonight's Pick ──
     picks = _tonights_picks(current_user)
@@ -300,7 +300,6 @@ def index():
         rails=[r for r in rails if r["entries"]],
         trending_people=trending_people,
         user_watchlist_ids=watchlist_ids,
-        user_wishlist_ids=wishlist_ids,
         user_viewed_ids=viewed_ids,
     )
 
@@ -376,7 +375,7 @@ def search():
     # Search community members (Local DB)
     community_members = User.query.filter(User.username.ilike(f'%{query}%')).all()
 
-    watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+    watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
     following_ids = (
         {f.following_id for f in current_user.following if f.is_active}
         if current_user.is_authenticated else set()
@@ -385,7 +384,7 @@ def search():
     return render_template(
         'search_results.html', query=query, movies=movies, shows=shows,
         people=people, community_members=community_members,
-        user_watchlist_ids=watchlist_ids, user_wishlist_ids=wishlist_ids,
+        user_watchlist_ids=watchlist_ids,
         user_viewed_ids=viewed_ids, following_ids=following_ids)
 
 
@@ -534,11 +533,10 @@ def genre_page(genre_name):
     genre_id = MOVIE_GENRES.get(genre_name)
     if genre_id:
         movies = fetch_movies_by_genre(genre_id)
-        watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+        watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
         return render_template(
             'genre.html', genre_name=genre_name.capitalize(), movies=movies,
             user_watchlist_ids=watchlist_ids,
-            user_wishlist_ids=wishlist_ids,
             user_viewed_ids=viewed_ids)
     return render_template('genre_not_found.html',
                            genre_name=genre_name.capitalize())
@@ -549,12 +547,11 @@ def tv_genre_page(genre_name):
     genre_id = TV_GENRES.get(genre_name)
     if genre_id:
         shows = fetch_shows_by_genre(genre_id)
-        watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+        watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
         return render_template(
             'tv_genre.html',
             genre_name=genre_name.replace('_', ' ').capitalize(), shows=shows,
             user_watchlist_ids=watchlist_ids,
-            user_wishlist_ids=wishlist_ids,
             user_viewed_ids=viewed_ids)
     return render_template('genre_not_found.html',
                            genre_name=genre_name.replace('_', ' ').capitalize())
@@ -580,7 +577,7 @@ def _recommend_page(form_field, media_type, template, no_results_ctx):
             posters.append(fetch_poster(rec['id'], is_movie=is_movie))
             ids.append(rec['id'])
 
-    watchlist_ids, wishlist_ids, viewed_ids = get_user_collection_ids(current_user)
+    watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
 
     ctx = {
         'searched_movie' if is_movie else 'searched_show': name,
@@ -590,7 +587,6 @@ def _recommend_page(form_field, media_type, template, no_results_ctx):
         'recommend_poster': posters,
         'recommend_ids': ids,
         'user_watchlist_ids': watchlist_ids,
-        'user_wishlist_ids': wishlist_ids,
         'user_viewed_ids': viewed_ids,
     }
     return render_template(template, **ctx)

@@ -1,4 +1,4 @@
-// Handle priority changes for watchlist and wishlist pages
+// Handle priority changes for the watchlist page
 document.addEventListener('DOMContentLoaded', function() {
     // Get all priority selects
     const prioritySelects = document.querySelectorAll('.priority-select');
@@ -9,8 +9,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const mediaType = this.dataset.mediaType;
             const newPriority = this.value;
             
-            // Determine which list we're on
-            const listType = document.body.classList.contains('watchlist-page') ? 'watchlist' : 'wishlist';
+            // The canonical collection is the Watchlist (Wishlist was
+            // consolidated into it)
+            const listType = 'watchlist';
             
             // Show loading state
             this.disabled = true;

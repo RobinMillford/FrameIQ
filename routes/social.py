@@ -339,10 +339,9 @@ def get_suggested_follows():
     
     # Get all media IDs the current user has interacted with
     watchlist_ids = {item.id for item in current_user.watchlist}
-    wishlist_ids = {item.id for item in current_user.wishlist}
     viewed_ids = {item.id for item in current_user.viewed_media}
     
-    all_current_user_media = watchlist_ids | wishlist_ids | viewed_ids
+    all_current_user_media = watchlist_ids | viewed_ids
     
     # Get IDs of users already being followed
     following_ids = {f.following_id for f in current_user.following if f.is_active}
@@ -350,14 +349,13 @@ def get_suggested_follows():
     
     # Taste matching logic:
     # 1. Find users who have these same movies in their lists
-    # we'll look across watchlist, wishlist, and viewed for other users
-    from models import user_watchlist, user_wishlist, user_viewed
+    # we'll look across watchlist and viewed for other users
+    from models import user_watchlist, user_viewed
     from sqlalchemy import union_all, select
     
     # Create a subquery for all media interactions by all users
     interactions = union_all(
         select(user_watchlist.c.user_id, user_watchlist.c.media_id),
-        select(user_wishlist.c.user_id, user_wishlist.c.media_id),
         select(user_viewed.c.user_id, user_viewed.c.media_id)
     ).alias('all_interactions')
 

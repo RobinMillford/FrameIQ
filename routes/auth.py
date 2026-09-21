@@ -344,7 +344,7 @@ def _build_tv_progress_rows(progress_rows):
 @login_required
 @limiter.limit("5 per minute")
 def profile_recommendations():
-    user_items = list(current_user.watchlist) + list(current_user.wishlist) + list(current_user.viewed_media)
+    user_items = list(current_user.watchlist) + list(current_user.viewed_media)
     seen: set = set()
     unique_user_items = [i for i in user_items
                          if not (i.tmdb_id in seen or seen.add(i.tmdb_id))]
@@ -352,13 +352,11 @@ def profile_recommendations():
     final_recommendations = _build_recommendations(unique_user_items, max_total=18, max_per_item=3)
 
     user_watchlist_ids = {(i.tmdb_id, i.media_type) for i in current_user.watchlist}
-    user_wishlist_ids = {(i.tmdb_id, i.media_type) for i in current_user.wishlist}
     user_viewed_ids = {(i.tmdb_id, i.media_type) for i in current_user.viewed_media}
 
     return render_template('profile_recommendations.html',
                            recommendations=final_recommendations,
                            user_watchlist_ids=user_watchlist_ids,
-                           user_wishlist_ids=user_wishlist_ids,
                            user_viewed_ids=user_viewed_ids)
 
 
@@ -366,7 +364,7 @@ def profile_recommendations():
 @login_required
 @limiter.limit("10 per minute")
 def profile_recommendations_preview():
-    user_items = list(current_user.watchlist) + list(current_user.wishlist) + list(current_user.viewed_media)
+    user_items = list(current_user.watchlist) + list(current_user.viewed_media)
     seen: set = set()
     unique_user_items = [i for i in user_items
                          if not (i.tmdb_id in seen or seen.add(i.tmdb_id))]
