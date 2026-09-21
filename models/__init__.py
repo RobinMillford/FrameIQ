@@ -6,7 +6,7 @@ All models are re-exported here so existing imports keep working unchanged:
 
 Submodules:
     base          — shared SQLAlchemy instance
-    associations  — watchlist / wishlist / viewed junction tables
+    associations  — watchlist / viewed junction tables
     user          — User, UserFollow
     media         — MediaItem
     reviews       — Review, ReviewLike, ReviewComment, ReviewHelpful
@@ -25,7 +25,6 @@ from models.base import db                                    # noqa: F401
 
 from models.associations import (                             # noqa: F401
     user_watchlist,
-    user_wishlist,
     user_viewed,
 )
 from models.user import User, UserFollow                      # noqa: F401
@@ -78,7 +77,7 @@ from models.year_in_review_share import YearInReviewShare      # noqa: F401
 
 __all__ = [
     'db',
-    'user_watchlist', 'user_wishlist', 'user_viewed',
+    'user_watchlist', 'user_viewed',
     'User', 'UserFollow',
     'MediaItem',
     'Review', 'ReviewLike', 'ReviewComment', 'ReviewHelpful',

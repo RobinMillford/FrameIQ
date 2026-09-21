@@ -1,6 +1,6 @@
-{# Shared media card for collection pages (watchlist / wishlist / viewed).
+{# Shared media card for collection pages (watchlist / viewed).
    Params: item        — media object with tmdb_id/media_type/title/etc.
-           collection  — 'watchlist' | 'wishlist' | 'viewed'
+           collection  — 'watchlist' | 'viewed'
            interactive — true for the "All Items" section card (adds data
                          attributes for filters + priority selector)
            priority    — current priority value ('high'|'medium'|'low') #}
@@ -41,9 +41,6 @@
             {% if (item.tmdb_id, item.media_type) in user_viewed_ids %}
             <span class="text-xs bg-green-600 text-white px-2 py-1 rounded">Viewed</span>
             {% endif %}
-            {% if (item.tmdb_id, item.media_type) in user_wishlist_ids %}
-            <span class="text-xs bg-pink-600 text-white px-2 py-1 rounded">Wishlist</span>
-            {% endif %}
             {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
             <span class="text-xs bg-[var(--accent)] text-white px-2 py-1 rounded">Watchlist</span>
             {% endif %}
@@ -69,35 +66,6 @@
                         </svg>
                     </a>
                     {% endif %}
-                    {% if (item.tmdb_id, item.media_type) not in user_wishlist_ids %}
-                    <a href="{{ url_for('main.add_to_wishlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-pink-400 hover:text-pink-300 text-sm" title="Add to Wishlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-                        </svg>
-                    </a>
-                    {% endif %}
-                    {% if (item.tmdb_id, item.media_type) not in user_viewed_ids %}
-                    <a href="{{ url_for('main.mark_as_viewed', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-green-400 hover:text-green-300 text-sm" title="Mark as Viewed">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </a>
-                    {% endif %}
-                {% elif collection == 'wishlist' %}
-                    {% if (item.tmdb_id, item.media_type) not in user_watchlist_ids %}
-                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm" title="Add to Watchlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </a>
-                    {% endif %}
-                    {% if (item.tmdb_id, item.media_type) in user_wishlist_ids %}
-                    <a href="{{ url_for('main.remove_from_wishlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-red-400 hover:text-red-300 text-sm" title="Remove from Wishlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </a>
-                    {% endif %}
                     {% if (item.tmdb_id, item.media_type) not in user_viewed_ids %}
                     <a href="{{ url_for('main.mark_as_viewed', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-green-400 hover:text-green-300 text-sm" title="Mark as Viewed">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,13 +78,6 @@
                     <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm" title="Add to Watchlist">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </a>
-                    {% endif %}
-                    {% if (item.tmdb_id, item.media_type) not in user_wishlist_ids %}
-                    <a href="{{ url_for('main.add_to_wishlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-pink-400 hover:text-pink-300 text-sm" title="Add to Wishlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
                         </svg>
                     </a>
                     {% endif %}

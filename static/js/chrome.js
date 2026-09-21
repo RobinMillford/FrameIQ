@@ -433,7 +433,7 @@
     /*
      * Header interaction previously lived in an inline script in
      * base.html only, so every standalone template (profile,
-     * watchlist, viewed, wishlist, search, ...) rendered the shared
+     * watchlist, viewed, search, ...) rendered the shared
      * nav markup with no way to open the profile menu. This is the
      * single global initializer: it runs wherever chrome.js runs and
      * tolerates absent elements, so base-derived and standalone

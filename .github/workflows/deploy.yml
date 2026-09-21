@@ -128,6 +128,7 @@ jobs:
             # NEVER set for the running application below.
             docker compose build web
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_movie_release_dates.py
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_remove_wishlist.py
 
             # Recreate only the web service (rebuild is a cache hit).
             # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.

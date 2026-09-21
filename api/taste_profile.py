@@ -628,7 +628,7 @@ def _collect_feedback_events(acc, user_id, now):
 
     `not_interested` produces SIGNED NEGATIVE genre/decade evidence (the
     accumulator preserves signs end-to-end; L2 normalization never discards
-    them). It is pure evidence — it mutates no watchlist/wishlist/diary/
+    them). It is pure evidence — it mutates no watchlist/diary/
     viewed/like state.
     """
     from models.recommendation_feedback import RecommendationFeedback

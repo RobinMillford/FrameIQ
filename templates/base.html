@@ -207,7 +207,6 @@
                 {% if current_user.is_authenticated %}
                 <a href="{{ url_for('auth.profile') }}" class="nav-link">Profile</a>
                 <a href="{{ url_for('main.watchlist') }}" class="nav-link">Watchlist</a>
-                <a href="{{ url_for('main.wishlist') }}" class="nav-link">Wishlist</a>
                 <a href="{{ url_for('main.viewed') }}" class="nav-link">Viewed</a>
                 <a href="{{ url_for('auth.logout') }}" class="nav-link text-[var(--danger)]">Log out</a>
                 {% else %}

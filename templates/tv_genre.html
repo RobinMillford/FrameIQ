@@ -137,9 +137,6 @@
                         {% if (show.id, 'tv') in user_viewed_ids %}
                         <span class="text-xs bg-green-600 text-white px-2 py-1 rounded">Viewed</span>
                         {% endif %}
-                        {% if (show.id, 'tv') in user_wishlist_ids %}
-                        <span class="text-xs bg-pink-600 text-white px-2 py-1 rounded">Wishlist</span>
-                        {% endif %}
                         {% if (show.id, 'tv') in user_watchlist_ids %}
                         <span class="text-xs bg-blue-600 text-white px-2 py-1 rounded">Watchlist</span>
                         {% endif %}
@@ -149,13 +146,6 @@
                         <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv') }}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-1 py-1 rounded" title="Add to Watchlist">
                             <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                        </a>
-                        {% endif %}
-                        {% if (show.id, 'tv') not in user_wishlist_ids %}
-                        <a href="{{ url_for('main.add_to_wishlist', media_id=show.id, media_type='tv') }}" class="text-xs bg-pink-600 hover:bg-pink-700 text-white px-1 py-1 rounded" title="Add to Wishlist">
-                            <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
                             </svg>
                         </a>
                         {% endif %}

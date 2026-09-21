@@ -1,6 +1,6 @@
 """Core main routes: user profiles and stats dashboards.
 
-Browse/discovery endpoints live in routes/browse.py; watchlist/wishlist/
+Browse/discovery endpoints live in routes/browse.py; watchlist/
 viewed collection endpoints live in routes/collections.py. Both attach to
 the same shared blueprint (routes/_main_bp.main) so all endpoint names
 remain stable for url_for() calls across templates.

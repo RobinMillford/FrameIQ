@@ -178,15 +178,6 @@
                     <span class="metric-label">{{ stats.watchlist }} titles · View all →</span>
                 </a>
 
-                <a href="{{ url_for('main.wishlist') }}" class="quick-nav-card">
-                    <div class="flex items-center justify-between gap-2">
-                        <h3 class="text-base font-semibold text-[var(--text-hi)]">Wishlist</h3>
-                        <i class="fas fa-heart text-[var(--accent)]" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-xs text-[var(--text-mid)] leading-relaxed">Favorites you want to own or revisit.</p>
-                    <span class="metric-label">{{ current_user.wishlist|length }} titles · View all →</span>
-                </a>
-
                 <a href="{{ url_for('main.viewed') }}" class="quick-nav-card">
                     <div class="flex items-center justify-between gap-2">
                         <h3 class="text-base font-semibold text-[var(--text-hi)]">Viewing History</h3>
@@ -325,7 +316,7 @@
                     <h3 class="text-xl font-semibold text-[var(--text-hi)]" style="font-family: var(--font-display)">Recommended for You</h3>
                     <a href="{{ url_for('auth.profile_recommendations') }}" class="text-sm text-[var(--accent-hi)] hover:text-[var(--accent)]">View all →</a>
                 </div>
-                <p class="meta-text mb-4">Based on your watchlist, wishlist, and viewing history.</p>
+                <p class="meta-text mb-4">Based on your watchlist and viewing history.</p>
 
                 <div id="recommendations-preview" class="text-center py-6">
                     <p class="meta-text">Loading personalized recommendations…</p>

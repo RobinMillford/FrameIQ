@@ -65,7 +65,7 @@ REQUIRED_TABLES = (
 
 # Canonical watchlist/collection state the drill must never leave changed
 # (keys as reported by _snapshot_counts).
-MUTATING_TABLES = ('watchlist', 'wishlist', 'viewed', 'diary', 'likes')
+MUTATING_TABLES = ('watchlist', 'viewed', 'diary', 'likes')
 
 NIGHTLY_SCRIPTS = (
     'scripts/enrich_directors.py',
@@ -286,7 +286,7 @@ def _live_gate():
 def _snapshot_counts(user_id):
     """Row counts for the test identity across feedback + canonical state."""
     from models import (db, RecommendationFeedback, TasteProfile,
-                        user_watchlist, user_wishlist, user_viewed)
+                        user_watchlist, user_viewed)
     from models.social import DiaryEntry, MediaLike
 
     def _count(table, *extra):
@@ -299,7 +299,6 @@ def _snapshot_counts(user_id):
             user_id=user_id).count(),
         'profiles': TasteProfile.query.filter_by(user_id=user_id).count(),
         'watchlist': _count(user_watchlist),
-        'wishlist': _count(user_wishlist),
         'viewed': _count(user_viewed),
         'diary': _count(DiaryEntry.__table__),
         'likes': _count(MediaLike.__table__),
@@ -314,14 +313,14 @@ def _cleanup_identity(user_id, media_created=False):
     untouched.
     """
     from models import (db, User, RecommendationFeedback, TasteProfile,
-                        MediaItem, user_watchlist, user_wishlist,
+                        MediaItem, user_watchlist,
                         user_viewed)
     from models.social import DiaryEntry, MediaLike
     RecommendationFeedback.query.filter_by(user_id=user_id) \
         .delete(synchronize_session=False)
     TasteProfile.query.filter_by(user_id=user_id) \
         .delete(synchronize_session=False)
-    for table in (user_watchlist, user_wishlist, user_viewed):
+    for table in (user_watchlist, user_viewed):
         db.session.execute(table.delete().where(
             table.c.user_id == user_id))
     DiaryEntry.query.filter_by(user_id=user_id) \
@@ -407,7 +406,7 @@ def _drill_feedback_api(client, csrf, user_id, base, mark):
     after = _snapshot_counts(user_id)
     untouched = all(after[t] == base[t] for t in MUTATING_TABLES)
     mark('Not-interested isolation', untouched,
-         'watchlist/wishlist/viewed/diary/likes unchanged' if untouched
+         'watchlist/viewed/diary/likes unchanged' if untouched
          else 'canonical state mutated: %s' % after)
 
 

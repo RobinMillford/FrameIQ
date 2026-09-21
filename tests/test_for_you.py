@@ -2,7 +2,7 @@
 
 Covers the 50 spec areas: cold-start classification, candidate sources and
 the hard TMDb budget (≤5), availability probes (≤12), dedupe/merge by
-(media_type, tmdb_id), exclusions (watched/watchlist/wishlist/posterless),
+(media_type, tmdb_id), exclusions (watched/watchlist/posterless),
 deterministic ranking + stable tie-breaks, diversity (director / dominant
 genre / media mix), result bounds, structured reasons, DB discipline (no
 N+1), API gating (auth, malformed/oversized limit, no user_id), and hygiene
@@ -16,7 +16,7 @@ import pytest
 
 import api.for_you as fy
 from models import (db, User, MediaItem, DiaryEntry, Review, TasteProfile,
-                    user_watchlist, user_wishlist, user_viewed)
+                    user_watchlist, user_viewed)
 
 
 # ── module-unique data (suite convention: clean up everything, because the
@@ -31,7 +31,6 @@ def _clean_for_you_rows(app):
     DiaryEntry.query.delete()
     db.session.execute(user_viewed.delete())
     db.session.execute(user_watchlist.delete())
-    db.session.execute(user_wishlist.delete())
     TasteProfile.query.delete()
     MediaItem.query.delete()
     from models.streaming import UserStreamingService
@@ -512,12 +511,14 @@ def test_watchlist_exclusion_and_intent_bonus(app, user, monkeypatch):
     assert ('movie', 43) not in _ids(out['items'])
 
 
-def test_wishlist_exclusions(app, user, monkeypatch):
+def test_migrated_wishlist_rows_behave_as_watchlist(app, user, monkeypatch):
+    # Wishlist→Watchlist consolidation: former wishlist-only titles are now
+    # ordinary watchlist rows — excluded from For You like any watchlist item.
     with app.app_context():
         m = _media(44)
         db.session.add(m)
         db.session.commit()
-        db.session.execute(user_wishlist.insert().values(
+        db.session.execute(user_watchlist.insert().values(
             user_id=user.id, media_id=m.id, media_type='movie'))
         db.session.add(_profile(user.id))
         db.session.commit()

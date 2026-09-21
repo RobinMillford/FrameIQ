@@ -11,7 +11,7 @@ from DiaryEntry watch events × MediaItem metadata:
 - genre aggregation from persisted MediaItem.genres (§12)
 - windows: default year, year=, lifetime, explicit start/end — half-open
   [start, end) boundaries (§5, §24), monthly buckets (§14)
-- isolation: watchlist/wishlist/list items, recommendation feedback,
+- isolation: watchlist/list items, recommendation feedback,
   and Continue Watching starts are NOT watch history (§2); TVEpisodeWatch
   is a separate subsystem and is never merged in (§16)
 - independence: no TasteProfile/For You/RecommendationFeedback/TMDb
@@ -567,11 +567,15 @@ def test_watchlist_data_is_not_watch_history(user):
     assert s["total_watch_events"] == 0
 
 
-def test_wishlist_data_is_not_watch_history(user):
-    from models import user_wishlist
+def test_watchlist_priority_rows_are_not_watch_history(user):
+    # Former wishlist rows are consolidated into user_watchlist (with
+    # priority) by migrate_remove_wishlist.py — they must still never
+    # count as watch history.
+    from models import user_watchlist
     m = _media("Only Wishlisted Item", runtime=90)
-    db.session.execute(user_wishlist.insert().values(
-        user_id=user.id, media_id=m.id, media_type="movie"))
+    db.session.execute(user_watchlist.insert().values(
+        user_id=user.id, media_id=m.id, media_type="movie",
+        priority="high"))
     db.session.commit()
     s = get_statistics(user.id, year=2026)
     assert s["total_watch_events"] == 0

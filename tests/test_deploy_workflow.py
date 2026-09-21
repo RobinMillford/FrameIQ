@@ -277,13 +277,22 @@ def test_migration_is_a_named_one_off_container(deploy_scripts):
 
 
 def test_migration_uses_documented_skip_schema_guard_only(deploy_scripts):
-    # SKIP_SCHEMA_GUARD is allowed ONLY on the one-off migration line —
+    # SKIP_SCHEMA_GUARD is allowed ONLY on the one-off migration lines —
     # never for the running application (comments excluded).
     script = _main_script(deploy_scripts)
     guard_lines = [ln for ln in _code_of_script(script).splitlines()
                    if "SKIP_SCHEMA_GUARD" in ln]
-    assert len(guard_lines) == 1
-    assert _MIGRATION in guard_lines[0]
+    assert len(guard_lines) == 2
+    assert all("migrates/migrate_" in ln for ln in guard_lines)
+
+
+def test_wishlist_migration_runs_after_10b_before_web(deploy_scripts):
+    # Wishlist→Watchlist consolidation migration: explicit, ordered
+    # (after the 10B migration, before web recreate), never a sweep.
+    script = _main_script(deploy_scripts)
+    wishlist_migration = "migrates/migrate_remove_wishlist.py"
+    assert script.index(_MIGRATION) < script.index(wishlist_migration)
+    assert script.index(wishlist_migration) < script.index("docker compose up -d")
 
 
 def test_no_blind_migration_sweep(deploy_scripts):

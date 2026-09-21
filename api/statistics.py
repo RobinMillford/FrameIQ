@@ -80,7 +80,7 @@ Design invariants:
 
   NETWORK-FREE — zero TMDb/streaming/external calls; local data only.
   RECOMMENDATION-INDEPENDENT — never imports or queries for_you,
-  taste_profile, RecommendationFeedback, lists, watchlist, wishlist,
+  taste_profile, RecommendationFeedback, lists, watchlist,
   likes, or Continue Watching (a start is not a completed watch).
   BOUNDED — a small fixed set of SQL statements per call regardless of
   history size (7: event/rating/media/monthly aggregates, the genre

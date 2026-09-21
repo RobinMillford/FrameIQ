@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from models import (db, MediaItem, DiaryEntry, user_watchlist, user_wishlist,
+from models import (db, MediaItem, DiaryEntry, user_watchlist,
                     user_viewed, TVShowProgress)
 from models.smart_lists import SmartList
 from api.smart_lists import (validate_config, evaluate_smart_list,
@@ -65,7 +65,6 @@ def _clean_smart_list_rows(db, sample_user):
     SmartList.query.delete()
     TVShowProgress.query.delete()
     db.session.execute(user_watchlist.delete())
-    db.session.execute(user_wishlist.delete())
     db.session.execute(user_viewed.delete())
     # DiaryEntry purge first — rowid-reuse contract (see test_watch.py):
     # an orphaned diary row turns a later MediaItem ORM delete into
