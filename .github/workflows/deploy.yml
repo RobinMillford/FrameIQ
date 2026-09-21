@@ -169,9 +169,19 @@ jobs:
               CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
                 --max-time 15 \
                 "http://127.0.0.1:8002${path}" || true)"
+              # NO bare 'else' lines in this script: the drone-ssh layer
+              # behind appleboy/ssh-action (script_stop: true) splits the
+              # script into physical lines and appends an exit-code check
+              # after EVERY line not ending in backslash — including bare
+              # 'else' lines, which then execute that check with the FAILED
+              # condition's $? as the else branch's first statement, i.e. a
+              # silent instant 'exit 1' before any diagnostic (the
+              # 2026-09-20 deploy failures). Guarded ifs keep the exact
+              # same strictness with none of the hazard.
               if [[ "$CODE" =~ ^2[0-9][0-9]$ || "$CODE" =~ ^3[0-9][0-9]$ ]]; then
                 echo "smoke $path -> $CODE (OK)"
-              else
+              fi
+              if [[ ! "$CODE" =~ ^2[0-9][0-9]$ && ! "$CODE" =~ ^3[0-9][0-9]$ ]]; then
                 echo "::error::smoke $path -> ${CODE:-none} (5xx or unreachable)"
                 docker compose logs --tail=100 web || true
                 exit 1
@@ -239,14 +249,25 @@ jobs:
               # Envelope validation runs inside the web container (python is
               # guaranteed there). Only aggregate counts are printed — no
               # private event data and no credentials ever reach the logs.
-              if cat "$API_RESP" | docker compose exec -T web python -c "import json,sys; d=json.load(sys.stdin); meta=d.get('meta') or {}; counts=meta.get('counts') or {}; missing={'tv','movie','total'}-set(counts); assert isinstance(d.get('events'), list) and isinstance(meta, dict) and meta.get('today') and not missing, 'invalid calendar envelope'; print('calendar API envelope OK: tv=%s movie=%s total=%s' % (counts.get('tv'), counts.get('movie'), counts.get('total')))"; then
+              # Guarded envelope check (no bare 'else'): non-empty output
+              # == the OK line from the assertion script; empty output
+              # (assertion failed, stderr dropped) == invalid envelope and
+              # a hard deployment failure. Only aggregate counts are
+              # printed — no private event data ever reaches the logs.
+              ENVELOPE_OK="$(cat "$API_RESP" | docker compose exec -T web python -c "import json,sys; d=json.load(sys.stdin); meta=d.get('meta') or {}; counts=meta.get('counts') or {}; missing={'tv','movie','total'}-set(counts); assert isinstance(d.get('events'), list) and isinstance(meta, dict) and meta.get('today') and not missing, 'invalid calendar envelope'; print('calendar API envelope OK: tv=%s movie=%s total=%s' % (counts.get('tv'), counts.get('movie'), counts.get('total')))" 2>/dev/null || true)"
+              if [ -n "$ENVELOPE_OK" ]; then
                 echo "calendar API smoke: envelope valid"
-              else
+                echo "$ENVELOPE_OK"
+              fi
+              if [ -z "$ENVELOPE_OK" ]; then
                 echo "::error::/api/calendar returned an invalid calendar envelope"
                 docker compose logs --tail=100 web || true
                 exit 1
               fi
-            else
+            fi
+            # Skip note as a guarded block (no bare 'else' — see the
+            # drone-ssh script_stop comment above).
+            if [ -z "${SMOKE_TEST_USERNAME:-}" ] || [ -z "${SMOKE_TEST_PASSWORD:-}" ]; then
               echo "NOTE: SMOKE_TEST_USERNAME / SMOKE_TEST_PASSWORD are not configured — the authenticated /api/calendar smoke was SKIPPED (documented limitation; authentication is never disabled for smoke testing). Public /calendar and /tv/upcoming smokes still ran."
             fi
 
