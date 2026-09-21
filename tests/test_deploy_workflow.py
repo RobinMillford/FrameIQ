@@ -516,3 +516,71 @@ def test_deploy_workflow_touches_no_product_code():
 def test_ci_does_not_deploy(ci_raw):
     assert "docker compose" not in ci_raw
     assert "ssh-action" not in ci_raw
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# drone-ssh script_stop transmission hazard (root cause of the silent
+# deploy failures on 2026-09-20)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# appleboy/ssh-action v1.0.3 is drone-ssh 1.7.3. With script_stop: true its
+# scriptCommands() (plugin.go) splits the script into PHYSICAL lines and
+# appends
+#   DRONE_SSH_PREV_COMMAND_EXIT_CODE=$? ; if [ ... -ne 0 ]; then exit ...; fi
+# after EVERY line not ending in a backslash — including bare `else` lines.
+# That injected check then executes as the else branch's FIRST statement,
+# with $? inherited from the just-failed `if` condition (= 1), producing a
+# silent instant `exit 1` before any diagnostic or skip-note can run.
+# `bash -n` on the file cannot catch it because the corruption happens at
+# transmission, not in the source file. The same applies to lines ending in
+# &&/||/| (the injected check severs the continuation). Both workflows'
+# scripts must therefore avoid all such line shapes.
+
+_ALL_WORKFLOWS = (_CI, _DEPLOY, _SYNC)
+
+
+def _ssh_scripts_all():
+    out = {}
+    for path in _ALL_WORKFLOWS:
+        for name, script in _scripts(_load(path)).items():
+            out[f"{path.name}::{name}"] = script
+    return out
+
+
+def test_no_bare_else_in_any_ssh_script():
+    for name, script in _ssh_scripts_all().items():
+        for i, line in enumerate(script.split("\n"), 1):
+            stripped = line.strip()
+            assert stripped != "else", (
+                f"{name}:{i}: bare 'else' line — drone-ssh script_stop "
+                "injects an exit-code check after it that executes with the "
+                "failed condition's $? and silently kills the script. Use "
+                "guard-style if blocks instead."
+            )
+
+
+def test_no_trailing_operator_continuation_lines_in_ssh_scripts():
+    """Lines ending in &&/||/| (without a trailing backslash) get the
+    injected exit-check spliced into the middle of their continuation,
+    corrupting the command. Multi-line pipelines/curls must end their
+    segments with an explicit backslash or be single-line."""
+    for name, script in _ssh_scripts_all().items():
+        for i, line in enumerate(script.split("\n"), 1):
+            stripped = line.strip()
+            if not stripped or stripped.endswith("\\"):
+                continue
+            assert not stripped.endswith(("&&", "||", "|")), (
+                f"{name}:{i}: line ends in a continuation operator without a "
+                "backslash — the drone-ssh script_stop exit-check would be "
+                "injected mid-command. End the line with '\\' or keep it on "
+                "one line."
+            )
+
+
+def test_smoke_skip_note_preserved_without_bare_else():
+    """The loud skip-path must survive the guard-style rewrite."""
+    script = _main_script(_scripts(_load(_DEPLOY)))
+    assert "SKIPPED" in script
+    assert "documented limitation" in script
+    # The skip note is a guarded if, not an else branch.
+    assert re.search(r'if \[ -z "\$\{SMOKE_TEST_USERNAME:-\}" \]', script)
