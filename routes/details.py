@@ -2,7 +2,7 @@ from flask import Blueprint, render_template
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from datetime import datetime
-from models import UserListItem, DiaryEntry, Review
+from models import UserListItem, DiaryEntry, Review, MediaItem
 from sqlalchemy.orm import joinedload
 from utils.request_guard import expensive_page_limit
 
@@ -57,24 +57,32 @@ def movie_detail(movie_id):
             user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
-            # Find which lists contain this movie
-            list_items = UserListItem.query.options(
-                joinedload(UserListItem.list)
-            ).filter_by(
-                media_id=movie_id,
-                media_type='movie'
-            ).all()
-            
-            for item in list_items:
-                if item.list.user_id == current_user.id:
-                    user_lists_with_movie.append(item.list)
-            
-            # Find diary entries for this movie
-            diary_entries = DiaryEntry.query.filter_by(
-                user_id=current_user.id,
-                media_id=movie_id,
-                media_type='movie'
-            ).order_by(DiaryEntry.watched_date.desc()).all()
+            # Association tables (user_list_item, diary_entry) store the
+            # INTERNAL MediaItem.id, not the TMDb id (see routes/lists.py
+            # and routes/diary.py inserts). Map TMDb id -> MediaItem first.
+            # Filter-only lookup: never create a MediaItem from a read path.
+            # If it is absent, the user cannot have list/diary rows for it.
+            media_item = MediaItem.query.filter_by(
+                tmdb_id=movie_id, media_type='movie').first()
+            if media_item:
+                # Find which lists contain this movie
+                list_items = UserListItem.query.options(
+                    joinedload(UserListItem.list)
+                ).filter_by(
+                    media_id=media_item.id,
+                    media_type='movie'
+                ).all()
+
+                for item in list_items:
+                    if item.list.user_id == current_user.id:
+                        user_lists_with_movie.append(item.list)
+
+                # Find diary entries for this movie
+                diary_entries = DiaryEntry.query.filter_by(
+                    user_id=current_user.id,
+                    media_id=media_item.id,
+                    media_type='movie'
+                ).order_by(DiaryEntry.watched_date.desc()).all()
         
         taste_match = _taste_match(current_user.id, movie.get('genres')) if current_user.is_authenticated else None
 
@@ -106,24 +114,29 @@ def tv_detail(show_id):
             user_watchlist_ids = {(item.tmdb_id, item.media_type) for item in current_user.watchlist}
             user_viewed_ids = {(item.tmdb_id, item.media_type) for item in current_user.viewed_media}
             
-            # Find which lists contain this TV show
-            list_items = UserListItem.query.options(
-                joinedload(UserListItem.list)
-            ).filter_by(
-                media_id=show_id,
-                media_type='tv'
-            ).all()
-            
-            for item in list_items:
-                if item.list.user_id == current_user.id:
-                    user_lists_with_show.append(item.list)
-            
-            # Find diary entries for this TV show
-            diary_entries = DiaryEntry.query.filter_by(
-                user_id=current_user.id,
-                media_id=show_id,
-                media_type='tv'
-            ).order_by(DiaryEntry.watched_date.desc()).all()
+            # Same internal-id mapping as the movie route above.
+            media_item = MediaItem.query.filter_by(
+                tmdb_id=show_id, media_type='tv').first()
+            if media_item:
+                # Find which lists contain this TV show
+                list_items = UserListItem.query.options(
+                    joinedload(UserListItem.list)
+                ).filter_by(
+                    media_id=media_item.id,
+                    media_type='tv'
+                ).all()
+
+                for item in list_items:
+                    if item.list.user_id == current_user.id:
+                        user_lists_with_show.append(item.list)
+
+                # Find diary entries for this TV show (show-level entries only;
+                # episode watches live in TVEpisodeWatch and are NOT counted here)
+                diary_entries = DiaryEntry.query.filter_by(
+                    user_id=current_user.id,
+                    media_id=media_item.id,
+                    media_type='tv'
+                ).order_by(DiaryEntry.watched_date.desc()).all()
 
         # Last-watched episode for Watch Now button (Continue Watching intent)
         watch_resume = None

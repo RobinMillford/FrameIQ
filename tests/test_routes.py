@@ -60,6 +60,20 @@ def test_movie_detail_uses_current_user_list_relationship(monkeypatch, app, db):
     ])
     db.session.commit()
 
+    # Regression guard: a decoy MediaItem whose INTERNAL id equals the
+    # movie's TMDb id. Badge queries must resolve the URL TMDb id through
+    # MediaItem(tmdb_id=...) and must never match association rows by the
+    # raw URL id, or this decoy's membership would be a false positive.
+    trap_media = MediaItem(id=1550, tmdb_id=9155000, media_type='movie',
+                           title='Decoy Internal Id')
+    trap_list = UserList(user_id=current_user_id, title='Decoy List')
+    db.session.add_all([trap_media, trap_list])
+    db.session.flush()
+    db.session.add(
+        UserListItem(list_id=trap_list.id, media_id=trap_media.id,
+                     media_type='movie'))
+    db.session.commit()
+
     monkeypatch.setattr(details, 'fetch_movie_details', lambda _: {
         'id': media.id,
         'genres': [],
@@ -82,30 +96,43 @@ def test_movie_detail_uses_current_user_list_relationship(monkeypatch, app, db):
         },
     )
 
-    with app.test_request_context(f'/movie/{media.id}'):
-        response = details.movie_detail.__wrapped__(media.id)
+    try:
+        # The detail URL carries the TMDb id (1550), matching production;
+        # badge queries map it to the internal MediaItem.id first.
+        with app.test_request_context(f'/movie/{media.tmdb_id}'):
+            response = details.movie_detail.__wrapped__(media.tmdb_id)
 
-    assert [item.title for item in response['user_lists_with_movie']] == [
-        'My Favorites'
-    ]
+        # Only the current user's own list for THIS movie appears; the decoy
+        # (internal id == TMDb id) membership must not surface.
+        assert [item.title for item in response['user_lists_with_movie']] == [
+            'My Favorites'
+        ]
 
-    db.session.query(UserListItem).delete()
-    db.session.commit()
+        db.session.query(UserListItem).delete()
+        db.session.commit()
 
-    with app.test_request_context(f'/movie/{media.id}'):
-        empty_response = details.movie_detail.__wrapped__(media.id)
+        with app.test_request_context(f'/movie/{media.tmdb_id}'):
+            empty_response = details.movie_detail.__wrapped__(media.tmdb_id)
 
-    assert empty_response['user_lists_with_movie'] == []
-
-    current_list_id = current_list.id
-    other_list_id = other_list.id
-    db.session.expunge(current_list)
-    db.session.expunge(other_list)
-    db.session.query(UserList).filter(
-        UserList.id.in_([current_list_id, other_list_id])
-    ).delete(synchronize_session=False)
-    db.session.delete(media)
-    db.session.commit()
+        assert empty_response['user_lists_with_movie'] == []
+    finally:
+        current_list_id = current_list.id
+        other_list_id = other_list.id
+        trap_list_id = trap_list.id
+        db.session.expunge(current_list)
+        db.session.expunge(other_list)
+        db.session.expunge(trap_list)
+        db.session.query(UserListItem).filter(
+            UserListItem.list_id.in_([current_list_id, other_list_id,
+                                      trap_list_id])
+        ).delete(synchronize_session=False)
+        db.session.query(UserList).filter(
+            UserList.id.in_([current_list_id, other_list_id, trap_list_id])
+        ).delete(synchronize_session=False)
+        db.session.query(MediaItem).filter(
+            MediaItem.id.in_([media.id, trap_media.id])
+        ).delete(synchronize_session=False)
+        db.session.commit()
 
 
 def test_movie_list_items_eagerly_load_list_relationship(db, app):
@@ -256,6 +283,18 @@ def test_tv_detail_uses_current_user_list_relationship(monkeypatch, app, db):
     ])
     db.session.commit()
 
+    # Decoy: internal MediaItem.id equal to the show's TMDb id, with the
+    # show in a list — must never leak into badge results.
+    trap_media = MediaItem(id=tmdb_id, tmdb_id=9160000, media_type='tv',
+                           title='Decoy Show Internal Id')
+    trap_list = UserList(user_id=current_user_id, title='Decoy TV List')
+    db.session.add_all([trap_media, trap_list])
+    db.session.flush()
+    db.session.add(
+        UserListItem(list_id=trap_list.id, media_id=trap_media.id,
+                     media_type='tv'))
+    db.session.commit()
+
     monkeypatch.setattr(details, 'fetch_tv_show_details', lambda _: {
         'id': tmdb_id,
         'genres': [],
@@ -279,10 +318,12 @@ def test_tv_detail_uses_current_user_list_relationship(monkeypatch, app, db):
     )
 
     try:
-        with app.test_request_context(f'/tv/{media.id}'):
-            response = details.tv_detail.__wrapped__(media.id)
+        # The detail URL carries the TMDb id, matching production.
+        with app.test_request_context(f'/tv/{media.tmdb_id}'):
+            response = details.tv_detail.__wrapped__(media.tmdb_id)
 
-        # Only the current user's own lists appear — ownership filter intact.
+        # Only the current user's own list for THIS show appears; the decoy
+        # membership must not surface.
         assert [item.title for item in response['user_lists_with_show']] == [
             'My TV Picks'
         ]
@@ -290,16 +331,21 @@ def test_tv_detail_uses_current_user_list_relationship(monkeypatch, app, db):
         db.session.query(UserListItem).delete()
         db.session.commit()
 
-        with app.test_request_context(f'/tv/{media.id}'):
-            empty_response = details.tv_detail.__wrapped__(media.id)
+        with app.test_request_context(f'/tv/{media.tmdb_id}'):
+            empty_response = details.tv_detail.__wrapped__(media.tmdb_id)
 
         assert empty_response['user_lists_with_show'] == []
     finally:
-        db.session.query(UserListItem).delete()
-        db.session.query(UserList).filter(
-            UserList.id.in_([current_list.id, other_list.id])
+        db.session.query(UserListItem).filter(
+            UserListItem.list_id.in_([current_list.id, other_list.id,
+                                      trap_list.id])
         ).delete(synchronize_session=False)
-        db.session.query(MediaItem).filter_by(tmdb_id=media.tmdb_id).delete()
+        db.session.query(UserList).filter(
+            UserList.id.in_([current_list.id, other_list.id, trap_list.id])
+        ).delete(synchronize_session=False)
+        db.session.query(MediaItem).filter(
+            MediaItem.id.in_([media.id, trap_media.id])
+        ).delete(synchronize_session=False)
         db.session.commit()
 
 

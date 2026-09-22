@@ -1,38 +1,55 @@
-    <div id="diary-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-        <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4">
-            <h2 class="text-2xl font-bold mb-6">Log to Diary</h2>
-            
-            <div class="space-y-4">
-                <div>
-                    <label for="diary-date" class="block text-sm font-semibold mb-2">Watched Date *</label>
-                    <input type="date" id="diary-date" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                </div>
-                
-                <div>
-                    <label for="diary-rating" class="block text-sm font-semibold mb-2">Rating (Optional)</label>
-                    <select id="diary-rating" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                        <option value="">No rating</option>
-                        <option value="0.5">★ 0.5</option>
-                        <option value="1.0">★ 1.0</option>
-                        <option value="1.5">★ 1.5</option>
-                        <option value="2.0">★★ 2.0</option>
-                        <option value="2.5">★★ 2.5</option>
-                        <option value="3.0">★★★ 3.0</option>
-                        <option value="3.5">★★★ 3.5</option>
-                        <option value="4.0">★★★★ 4.0</option>
-                        <option value="4.5">★★★★ 4.5</option>
-                        <option value="5.0">★★★★★ 5.0</option>
-                    </select>
-                </div>
+{# Log-to-Diary modal (shared by movie & TV detail pages).
+   JS: static/js/detail-modals.js owns open/close/submit; the open button
+   (#open-diary-modal) lives on the detail pages. Inline style keeps the
+   dialog hidden even if the Tailwind Play CDN fails to load (the JS also
+   manages display explicitly on open/close). #media_type is passed via the
+   {% with %} include only on the TV page and controls the semantic note:
+   a show-level diary log is a SHOW event, not an episode watch. #}
+<div id="diary-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden" style="display:none">
+    <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4" role="dialog" aria-modal="true" aria-labelledby="diary-modal-title">
+        <h2 id="diary-modal-title" class="text-2xl font-bold mb-6">Log to Diary</h2>
+
+        {% if media_type is defined and media_type == "tv" %}
+        <p class="text-sm text-[var(--text-mid)] mb-4">
+            This logs a show-level diary entry for the series itself.
+            Individual episode watches are tracked separately in the
+            episode list below.
+        </p>
+        {% endif %}
+
+        <div class="space-y-4">
+            <div>
+                <label for="diary-date" class="block text-sm font-semibold mb-2">Watched Date *</label>
+                <input type="date" id="diary-date" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
             </div>
-            
-            <div class="flex space-x-4 mt-6">
-                <button onclick="submitDiaryEntry()" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
-                    Log Entry
-                </button>
-                <button onclick="closeDiaryModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
-                    Cancel
-                </button>
+
+            <div>
+                <label for="diary-rating" class="block text-sm font-semibold mb-2">Rating (Optional)</label>
+                <select id="diary-rating" class="w-full  border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <option value="">No rating</option>
+                    <option value="0.5">★ 0.5</option>
+                    <option value="1.0">★ 1.0</option>
+                    <option value="1.5">★ 1.5</option>
+                    <option value="2.0">★★ 2.0</option>
+                    <option value="2.5">★★ 2.5</option>
+                    <option value="3.0">★★★ 3.0</option>
+                    <option value="3.5">★★★ 3.5</option>
+                    <option value="4.0">★★★★ 4.0</option>
+                    <option value="4.5">★★★★★ 4.5</option>
+                    <option value="5.0">★★★★★ 5.0</option>
+                </select>
             </div>
         </div>
+
+        <p id="diary-status" class="hidden text-sm text-red-400 mt-4" role="alert"></p>
+
+        <div class="flex space-x-4 mt-6">
+            <button type="button" id="diary-submit" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                Log Entry
+            </button>
+            <button type="button" id="diary-cancel" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
+                Cancel
+            </button>
+        </div>
     </div>
+</div>

@@ -224,7 +224,7 @@
             .rating-circle::before { width: 52px; height: 52px; }
             .modal-content { max-width: 95vw; margin: 1rem; }
         }
-    
+
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
 {% endblock %}
@@ -240,7 +240,7 @@
                 <div class="flex justify-center md:justify-start">
                     <img src="{{ movie.poster_path }}" alt="{{ movie.title }}" class="movie-poster rounded-lg w-64 h-auto">
                 </div>
-                
+
                 <!-- Movie Info -->
                 <div class="md:col-span-2 movie-info">
                     <h1 class="text-4xl md:text-5xl font-bold mb-2">{{ movie.title }}</h1>
@@ -259,7 +259,7 @@
                             {% endfor %}
                         </div>
                     </div>
-                    
+
                     <!-- Rating -->
                     <div class="flex items-center gap-4 mb-6">
                         <div class="rating-circle" style="--percentage: {{ movie.vote_average * 10 }}%;" data-rating="{{ movie.vote_average }}">
@@ -280,7 +280,7 @@
                         </div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- Where to Watch (legal availability) -->
                     {% include 'partials/where_to_watch.html' with context %}
 
@@ -298,7 +298,7 @@
                         </svg>
                         Play Trailer
                     </button>
-                    
+
                     <!-- Status indicators and Action Buttons -->
                     {% if current_user.is_authenticated %}
                     <div class="flex flex-wrap gap-4">
@@ -319,7 +319,7 @@
                             Watchlist
                         </span>
                         {% endif %}
-                        
+
                         <!-- NEW: Lists and Diary Status Indicators -->
                         {% if user_lists_with_movie %}
                         {% for list in user_lists_with_movie %}
@@ -331,7 +331,7 @@
                         </span>
                         {% endfor %}
                         {% endif %}
-                        
+
                         {% if diary_entries %}
                         <span class="text-sm bg-cyan-600 text-white px-3 py-1 rounded flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -340,7 +340,7 @@
                             In Diary ({{ diary_entries|length }}x)
                         </span>
                         {% endif %}
-                        
+
                         <!-- Action buttons - allow adding to multiple lists -->
                         <div class="flex flex-wrap gap-2">
                             {% if (movie.id, 'movie') not in user_watchlist_ids %}
@@ -380,16 +380,16 @@
                                 <span class="ql-log-label">Log Watched</span>
                             </button>
                             {% endif %}
-                            
+
                             <!-- NEW: Diary and Lists buttons -->
-                            <button onclick="openDiaryModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-cyan-600 transition-colors">
+                            <button id="open-diary-modal" type="button" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-cyan-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                 </svg>
                                 Log to Diary
                             </button>
-                            
-                            <button onclick="openListModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-purple-600 transition-colors">
+
+                            <button id="open-list-modal" type="button" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-purple-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                                 </svg>
@@ -398,7 +398,7 @@
                         </div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- NEW: Tags Section (Letterboxd-style) -->
                     {% if current_user.is_authenticated %}
                     <div class="mt-6 mb-6 p-4 glass-effect rounded-lg">
@@ -408,41 +408,41 @@
                             </svg>
                             Your Tags
                         </h3>
-                        
+
                         <!-- Tags Display -->
                         <div id="tags-display" class="mb-3 flex flex-wrap gap-2 min-h-[2rem]">
                             <p class="text-[var(--text-mid)] text-sm">Loading tags...</p>
                         </div>
-                        
+
                         <!-- Tag Input -->
                         <div class="tag-input-container relative">
                             <div class="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    id="tag-input" 
-                                    placeholder="Add a tag (e.g., 'mind-bending', 'must-watch')" 
+                                <input
+                                    type="text"
+                                    id="tag-input"
+                                    placeholder="Add a tag (e.g., 'mind-bending', 'must-watch')"
                                     class="flex-1  text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     maxlength="30"
                                 />
-                                <button onclick="tagManager.addTag(document.getElementById('tag-input').value)" 
+                                <button onclick="tagManager.addTag(document.getElementById('tag-input').value)"
                                         class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-4 py-2 rounded-lg transition-colors">
                                     Add
                                 </button>
                             </div>
-                            
+
                             <!-- Autocomplete Suggestions -->
                             <div id="tag-suggestions" class="hidden absolute top-full left-0 right-0 mt-1  border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
                             </div>
-                            
+
                             <!-- Feedback Messages -->
                             <div id="tag-error" class="hidden mt-2 text-red-400 text-sm"></div>
                             <div id="tag-success" class="hidden mt-2 text-green-400 text-sm"></div>
                         </div>
-                        
+
                         <p class="text-xs text-[var(--text-mid)] mt-2">Tags help you organize and find movies later. Max 20 tags per movie.</p>
                     </div>
                     {% endif %}
-                    
+
                     <!-- Like Button Section -->
                     {% if current_user.is_authenticated %}
                     <div class="/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-gray-700">
@@ -452,18 +452,18 @@
                         <div id="like-message" class="mt-2 text-sm"></div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- Tagline -->
                     {% if movie.tagline %}
                     <p class="text-xl text-[var(--text-mid)] italic mb-6">"{{ movie.tagline }}"</p>
                     {% endif %}
-                    
+
                     <!-- Overview -->
                     <div class="mb-6">
                         <h2 class="text-xl font-semibold mb-2">Overview</h2>
                         <p class="text-gray-300">{{ movie.overview }}</p>
                     </div>
-                    
+
                     <!-- Director & Writer -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% if movie.director %}
@@ -472,7 +472,7 @@
                             <p class="text-[var(--text-mid)]">Director</p>
                         </div>
                         {% endif %}
-                        
+
                         {% if movie.writer %}
                         <div>
                             <h3 class="text-lg font-semibold text-[var(--accent-hi)]">{{ movie.writer }}</h3>
@@ -489,8 +489,8 @@
 {% if current_user.is_authenticated %}
 <section class="py-16">
     <div class="container mx-auto px-4 max-w-4xl">
-        <div id="popular-with-friends" 
-             data-media-id="{{ movie['id'] }}" 
+        <div id="popular-with-friends"
+             data-media-id="{{ movie['id'] }}"
              data-media-type="movie">
             <div class=" rounded-lg p-6 border border-gray-700">
                 <p class="text-[var(--text-mid)] text-center py-4">
@@ -513,11 +513,11 @@
                 </svg>
                 Comments
             </h2>
-            
+
             <!-- Comment Form -->
             <form id="comment-form" class="mb-8">
-                <textarea 
-                    id="comment-input" 
+                <textarea
+                    id="comment-input"
                     placeholder="Share your thoughts about this movie..."
                     class="w-full  text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                     rows="4"
@@ -525,18 +525,18 @@
                 ></textarea>
                 <div class="flex justify-between items-center mt-3">
                     <span id="comment-char-count" class="text-xs text-[var(--text-mid)]">0 / 5000</span>
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Post Comment
                     </button>
                 </div>
             </form>
-            
+
             <!-- Comments Message -->
             <div id="comments-message" class="mb-4 text-sm"></div>
-            
+
             <!-- Comments List -->
             <div id="media-comments-list">
                 <p class="text-[var(--text-mid)] text-center py-8">Loading comments...</p>
@@ -614,7 +614,7 @@
     <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 h-display">Write Your Review</h2>
-            
+
             <div class="glass-effect rounded-lg p-8 max-w-3xl">
                 <form id="review-form" class="space-y-6">
                     <!-- Star Rating -->
@@ -634,10 +634,10 @@
                         <label for="review-content" class="block text-lg font-semibold mb-3">
                             Your Review <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
-                        <textarea 
-                            id="review-content" 
+                        <textarea
+                            id="review-content"
                             name="content"
-                            rows="6" 
+                            rows="6"
                             class="w-full  border border-gray-700 rounded-lg p-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                             placeholder="Share your thoughts about this movie..."
                         ></textarea>
@@ -652,9 +652,9 @@
                         <label for="watched-date" class="block text-lg font-semibold mb-3">
                             When did you watch it? <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
-                        <input 
-                            type="date" 
-                            id="watched-date" 
+                        <input
+                            type="date"
+                            id="watched-date"
                             name="watched_date"
                             max="{{ today }}"
                             class=" border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -663,9 +663,9 @@
 
                     <!-- Spoiler Warning -->
                     <div class="flex items-center space-x-3">
-                        <input 
-                            type="checkbox" 
-                            id="contains-spoilers" 
+                        <input
+                            type="checkbox"
+                            id="contains-spoilers"
                             name="contains_spoilers"
                             class="w-5 h-5 text-[var(--accent)]  border-gray-700 rounded focus:ring-indigo-500"
                         >
@@ -676,8 +676,8 @@
 
                     <!-- Submit Buttons -->
                     <div class="flex space-x-4 pt-4">
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             id="submit-review-btn"
                             class="flex-1 bg-white text-black font-bold hover:bg-white/85 font-semibold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -686,8 +686,8 @@
                                 <i class="fas fa-spinner fa-spin mr-2"></i>Posting...
                             </span>
                         </button>
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             id="cancel-review-btn"
                             class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors"
                         >
@@ -722,7 +722,7 @@
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- Review Tabs -->
             <div class="flex space-x-4 mb-8 border-b border-gray-700">
                 <button id="user-reviews-tab" class="tab-button px-6 py-3 font-semibold text-[var(--accent)] border-b-2 border-[var(--accent)] transition-colors">
@@ -732,7 +732,7 @@
                     TMDb Reviews ({{ movie.reviews|length }})
                 </button>
             </div>
-            
+
             <!-- User Reviews Tab Content -->
             <div id="user-reviews-content" class="tab-content">
                 <div id="reviews-list" class="reviews-container">
@@ -740,7 +740,7 @@
                     <div class="loading-spinner">Loading reviews...</div>
                 </div>
             </div>
-            
+
             <!-- TMDb Reviews Tab Content (Hidden by default) -->
             <div id="tmdb-reviews-content" class="tab-content hidden">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -800,12 +800,12 @@
             const trailerModal = document.getElementById('trailer-modal');
             const trailerIframe = document.getElementById('trailer-iframe');
             const closeModal = document.getElementById('close-modal');
-            
+
             if (trailerButton) {
                 trailerButton.addEventListener('click', function() {
                     // Get trailer URL from global data
                     const trailerUrl = MOVIE_DATA.trailerUrl;
-                    
+
                     if (trailerUrl && trailerUrl !== 'None' && trailerUrl !== '' && trailerUrl !== 'null') {
                         // Load YouTube trailer with autoplay
                         trailerIframe.src = trailerUrl + (trailerUrl.includes('?') ? '&' : '?') + 'autoplay=1';
@@ -816,7 +816,7 @@
                     }
                 });
             }
-            
+
             if (closeModal) {
                 closeModal.addEventListener('click', function() {
                     trailerModal.classList.add('hidden');
@@ -824,7 +824,7 @@
                     trailerIframe.src = ''; // Stop video
                 });
             }
-            
+
             // Close modal when clicking outside
             if (trailerModal) {
                 trailerModal.addEventListener('click', function(e) {
@@ -834,7 +834,7 @@
                         trailerIframe.src = ''; // Stop video
                     }
                 });
-                
+
                 // Close modal with Escape key
                 document.addEventListener('keydown', function(e) {
                     if (e.key === 'Escape' && !trailerModal.classList.contains('hidden')) {
@@ -844,8 +844,8 @@
                     }
                 });
             }
-            
-            
+
+
             // Mobile menu (optional element — this page uses the new base
             // chrome which has no #mobile-menu-button; its absence must not
             // abort initialization of unrelated features like the review form)
@@ -888,7 +888,7 @@
                     nextImage.src = trendingBackdrops[currentBackdropIndex];
                 }
             }
-            
+
             // Change backdrop every 8 seconds if we have multiple backdrops
             if (typeof trendingBackdrops !== 'undefined' && trendingBackdrops.length > 1) {
                 setInterval(rotateBackdropImage, 8000);
@@ -897,7 +897,7 @@
             // View Full Cast functionality
             const viewFullCastButton = document.getElementById('view-full-cast');
             const fullCastGrid = document.getElementById('full-cast-grid');
-            
+
             if (viewFullCastButton && fullCastGrid) {
                 viewFullCastButton.addEventListener('click', () => {
                     if (fullCastGrid.classList.contains('hidden')) {
@@ -911,16 +911,16 @@
             }
 
             // ===== REVIEW FORM FUNCTIONALITY =====
-            
+
             // Star Rating Component
             const starRatingContainer = document.getElementById('star-rating');
             const ratingValueDisplay = document.getElementById('rating-value');
             const ratingInput = document.getElementById('rating-input');
-            
+
             if (starRatingContainer) {
                 let currentRating = 0;
                 let hoverRating = 0;
-                
+
                 // Create 10 half-stars (5 full stars)
                 for (let i = 1; i <= 10; i++) {
                     const star = document.createElement('span');
@@ -928,13 +928,13 @@
                     star.dataset.value = i * 0.5;
                     star.innerHTML = i % 2 === 0 ? '★' : '☆';
                     star.style.color = '#555555';
-                    
+
                     // Mouse enter
                     star.addEventListener('mouseenter', () => {
                         hoverRating = i * 0.5;
                         updateStarDisplay(hoverRating);
                     });
-                    
+
                     // Click
                     star.addEventListener('click', () => {
                         currentRating = i * 0.5;
@@ -942,16 +942,16 @@
                         ratingValueDisplay.textContent = currentRating.toFixed(1);
                         updateStarDisplay(currentRating);
                     });
-                    
+
                     starRatingContainer.appendChild(star);
                 }
-                
+
                 // Mouse leave container
                 starRatingContainer.addEventListener('mouseleave', () => {
                     hoverRating = 0;
                     updateStarDisplay(currentRating);
                 });
-                
+
                 function updateStarDisplay(rating) {
                     const stars = starRatingContainer.querySelectorAll('.star');
                     stars.forEach((star, index) => {
@@ -964,16 +964,16 @@
                     });
                 }
             }
-            
+
             // Character Counter
             const reviewContent = document.getElementById('review-content');
             const charCount = document.getElementById('char-count');
-            
+
             if (reviewContent && charCount) {
                 reviewContent.addEventListener('input', () => {
                     const length = reviewContent.value.length;
                     charCount.textContent = `${length} character${length !== 1 ? 's' : ''}`;
-                    
+
                     if (length > 2000) {
                         charCount.classList.add('text-red-400');
                         reviewContent.value = reviewContent.value.substring(0, 2000);
@@ -982,7 +982,7 @@
                     }
                 });
             }
-            
+
             // Review Form Submission
             const reviewForm = document.getElementById('review-form');
             const submitBtn = document.getElementById('submit-review-btn');
@@ -990,18 +990,18 @@
             const submitLoading = document.getElementById('submit-loading');
             const reviewMessage = document.getElementById('review-message');
             const cancelBtn = document.getElementById('cancel-review-btn');
-            
+
             if (reviewForm) {
                 reviewForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    
+
                     // Validate rating
                     const rating = parseFloat(ratingInput.value);
                     if (rating < 0.5 || rating > 5.0) {
                         showMessage('Please select a rating between 0.5 and 5.0 stars', 'error');
                         return;
                     }
-                    
+
                     // Get form data
                     const formData = {
                         media_id: MOVIE_DATA.id,
@@ -1014,12 +1014,12 @@
                         watched_date: document.getElementById('watched-date').value || null,
                         contains_spoilers: document.getElementById('contains-spoilers').checked
                     };
-                    
+
                     // Show loading state
                     submitBtn.disabled = true;
                     submitText.classList.add('hidden');
                     submitLoading.classList.remove('hidden');
-                    
+
                     try {
                         const response = await fetch('/api/reviews', {
                             method: 'POST',
@@ -1028,9 +1028,9 @@
                             },
                             body: JSON.stringify(formData)
                         });
-                        
+
                         const data = await response.json();
-                        
+
                         if (response.ok) {
                             showMessage('Review posted successfully! Refreshing page...', 'success');
                             setTimeout(() => {
@@ -1049,7 +1049,7 @@
                         submitLoading.classList.add('hidden');
                     }
                 });
-                
+
                 // Cancel button
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', () => {
@@ -1057,22 +1057,22 @@
                         ratingInput.value = 0;
                         ratingValueDisplay.textContent = '0.0';
                         charCount.textContent = '0 characters';
-                        
+
                         // Reset stars
                         const stars = starRatingContainer.querySelectorAll('.star');
                         stars.forEach(star => {
                             star.style.color = '#4B5563';
                         });
-                        
+
                         reviewMessage.classList.add('hidden');
                     });
                 }
             }
-            
+
             function showMessage(message, type) {
                 reviewMessage.textContent = message;
                 reviewMessage.classList.remove('hidden', 'bg-green-900', 'bg-red-900', 'text-green-300', 'text-red-300');
-                
+
                 if (type === 'success') {
                     reviewMessage.classList.add('bg-green-900', 'text-green-300');
                 } else {
@@ -1111,129 +1111,25 @@
             showReviewsCount();
             document.addEventListener('reviews:rendered', initReviewFollowButtons);
         });
-        
-        // Diary Modal Functions
-        function openDiaryModal() {
-            {% if not current_user.is_authenticated %}
-            alert('Please login to log to your diary');
-            return;
-            {% endif %}
-            
-            document.getElementById('diary-modal').classList.remove('hidden');
-            document.getElementById('diary-date').valueAsDate = new Date();
-        }
-        
-        function closeDiaryModal() {
-            document.getElementById('diary-modal').classList.add('hidden');
-        }
-        
-        async function submitDiaryEntry() {
-            const date = document.getElementById('diary-date').value;
-            const rating = document.getElementById('diary-rating').value;
-            
-            if (!date) {
-                alert('Please select a date');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/diary/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        media_id: MOVIE_DATA.id,
-                        media_type: 'movie',
-                        watched_date: date,
-                        rating: rating || null
-                    })
-                });
-                
-                const data = await response.json();
-                if (response.ok) {
-                    alert(data.message);
-                    closeDiaryModal();
-                } else {
-                    alert(data.error || 'Failed to log to diary');
-                }
-            } catch (error) {
-                alert('An error occurred');
-            }
-        }
-        
-        // List Modal Functions
-        async function openListModal() {
-            {% if not current_user.is_authenticated %}
-            alert('Please login to add to lists');
-            return;
-            {% endif %}
-            
-            document.getElementById('list-modal').classList.remove('hidden');
-            await loadUserLists();
-        }
-        
-        function closeListModal() {
-            document.getElementById('list-modal').classList.add('hidden');
-        }
-        
-        async function loadUserLists() {
-            try {
-                const response = await fetch(`/api/users/${CURRENT_USER.id}/lists`);
-                const data = await response.json();
-                
-                const listSelect = document.getElementById('list-select');
-                listSelect.innerHTML = '<option value="">Select a list...</option>';
-                
-                data.lists.forEach(list => {
-                    const option = document.createElement('option');
-                    option.value = list.id;
-                    option.textContent = list.title;
-                    listSelect.appendChild(option);
-                });
-            } catch (error) {
-            }
-        }
-        
-        async function addToSelectedList() {
-            const listId = document.getElementById('list-select').value;
-            
-            if (!listId) {
-                alert('Please select a list');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/lists/${listId}/add`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        media_id: MOVIE_DATA.id,
-                        media_type: 'movie'
-                    })
-                });
-                
-                const data = await response.json();
-                if (response.ok) {
-                    alert(data.message);
-                    closeListModal();
-                } else {
-                    alert(data.error || 'Failed to add to list');
-                }
-            } catch (error) {
-                alert('An error occurred');
-            }
-        }
+
+        // Log to Diary + Add to List are handled by the shared module
+        // /static/js/detail-modals.js (loaded after the modal partials).
+        // Buttons: #open-diary-modal / #open-list-modal. Media context is
+        // provided to the module via the #detail-context JSON island below.
     </script>
-    
+    <script id="detail-context" type="application/json">{{ {'user_id': (current_user.id if current_user.is_authenticated else None), 'media': {'id': movie.id, 'media_type': 'movie'}}|tojson }}</script>
+
     <!-- Diary Modal -->
     {% include "partials/modal_diary.html" %}
     <!-- List Modal -->
     {% with media_id = movie['id'], media_type = "movie" %}{% include "partials/modal_list.html" %}{% endwith %}
+    <script src="{{ url_for('static', filename='js/detail-modals.js') }}"></script>
 
     <!-- More Like This Section -->
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <div id="more-like-this" 
-                 data-media-id="{{ movie['id'] }}" 
+            <div id="more-like-this"
+                 data-media-id="{{ movie['id'] }}"
                  data-media-type="movie">
                 <div class=" rounded-lg p-6 border border-gray-700">
                     <h3 class="text-2xl font-bold text-white mb-4">
@@ -1246,7 +1142,7 @@
             </div>
         </div>
     </section>
-    
+
     <!-- Load Review Manager -->
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>

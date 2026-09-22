@@ -1,9 +1,15 @@
 {# Add-to-list modal (shared by movie & TV detail pages).
-   Params: media_id — TMDb id of the item
-           media_type — 'movie' or 'tv' (drives data attrs + icon) #}
-<div id="list-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-    <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4">
-        <h2 class="text-2xl font-bold mb-6">Add to List</h2>
+   JS: static/js/detail-modals.js owns open/close/load/add; the open button
+   (#open-list-modal) lives on the detail pages. Inline style keeps the
+   dialog hidden even if the Tailwind Play CDN fails to load.
+   Params: media_id — TMDb id of the item (drives data attrs + icon)
+           media_type — 'movie' or 'tv'
+   Zero-list state is actionable: "Create a list" links to the existing
+   /lists page. Duplicate adds are rejected by the backend (authoritative)
+   and surfaced as "Already in this list." #}
+<div id="list-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden" style="display:none">
+    <div class="modal-content  rounded-lg p-8 w-full max-w-md mx-4" role="dialog" aria-modal="true" aria-labelledby="list-modal-title">
+        <h2 id="list-modal-title" class="text-2xl font-bold mb-6">Add to List</h2>
 
         <div class="space-y-4">
             <div>
@@ -13,14 +19,23 @@
                 </select>
             </div>
 
-            <p class="text-sm text-[var(--text-mid)]">Don't have a list yet? Create one from your profile page.</p>
+            <div id="list-zero" class="hidden text-sm text-[var(--text-mid)]">
+                <p>You don't have any lists yet.</p>
+                <a href="/lists" class="inline-block mt-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold hover:from-purple-700 hover:to-pink-700 transition-all">
+                    Create a list
+                </a>
+            </div>
+
+            <p class="text-sm text-[var(--text-mid)]">Don't have a list yet? Create one from your <a href="/lists" class="underline">lists page</a>.</p>
         </div>
 
+        <p id="list-status" class="hidden text-sm text-red-400 mt-4" role="alert"></p>
+
         <div class="flex space-x-4 mt-6">
-            <button onclick="addToSelectedList()" class="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+            <button type="button" id="list-add" class="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
                 Add to List
             </button>
-            <button onclick="closeListModal()" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
+            <button type="button" id="list-cancel" class="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover: transition-colors">
                 Cancel
             </button>
         </div>
