@@ -119,19 +119,19 @@
         .show-poster:hover {
             transform: translateY(-5px);
         }
-        
+
         @media (min-width: 768px) {
             .show-poster {
                 max-width: 400px;
             }
         }
-        
+
         @media (min-width: 1024px) {
             .show-poster {
                 max-width: 450px;
             }
         }
-        
+
         @media (min-width: 1280px) {
             .show-poster {
                 max-width: 500px;
@@ -230,25 +230,25 @@
                 min-height: auto;
                 padding-top: 6rem;
             }
-            
+
             .show-poster {
                 max-width: 300px !important;
                 margin: 0 auto 2rem;
             }
-            
+
             .rating-circle {
                 margin: 0 auto 1rem;
             }
-            
+
             .trailer-button {
                 margin: 0 auto 1rem;
             }
-            
+
             .cast-card, .info-card, .season-card {
                 margin-bottom: 1rem;
             }
         }
-        
+
         @media (min-width: 1024px) {
             .hero-section {
                 padding-bottom: 4rem;
@@ -259,7 +259,7 @@
             .rating-circle::before { width: 52px; height: 52px; }
             .modal-content { max-width: 95vw; margin: 1rem; padding: 1.5rem; }
         }
-    
+
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/detail.css') }}">
 {% endblock %}
@@ -349,7 +349,7 @@
                         </svg>
                         Play Trailer
                     </button>
-                    
+
                     <!-- Status indicators and Action Buttons -->
                     {% if current_user.is_authenticated %}
                     <div class="flex flex-wrap gap-4">
@@ -370,7 +370,7 @@
                             Watchlist
                         </span>
                         {% endif %}
-                        
+
                         <!-- NEW: Lists and Diary Status Indicators -->
                         {% if user_lists_with_show %}
                         {% for list in user_lists_with_show %}
@@ -382,7 +382,7 @@
                         </span>
                         {% endfor %}
                         {% endif %}
-                        
+
                         {% if diary_entries %}
                         <span class="text-sm bg-cyan-600 text-white px-3 py-1 rounded flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -391,7 +391,7 @@
                             In Diary ({{ diary_entries|length }}x)
                         </span>
                         {% endif %}
-                        
+
                         <!-- Action buttons - allow adding to multiple lists -->
                         <div class="flex flex-wrap gap-2">
                             {% if (show.id, 'tv') not in user_watchlist_ids %}
@@ -425,16 +425,16 @@
                                 Mark as Viewed
                             </a>
                             {% endif %}
-                            
+
                             <!-- NEW: Diary and Lists buttons -->
-                            <button onclick="openDiaryModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-cyan-600 transition-colors">
+                            <button id="open-diary-modal" type="button" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-cyan-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                 </svg>
                                 Log to Diary
                             </button>
-                            
-                            <button onclick="openListModal()" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-purple-600 transition-colors">
+
+                            <button id="open-list-modal" type="button" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-purple-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                                 </svg>
@@ -443,7 +443,7 @@
                         </div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- TV Episode Tracking Section -->
                     {% if current_user.is_authenticated %}
                     <input type="hidden" id="show-id" value="{{ show.id }}">
@@ -451,7 +451,7 @@
                     <div id="tv-tracking-container" class="mt-6">
                         <!-- Tracking UI will be rendered here by tv-tracker.js -->
                     </div>
-                    
+
                     <!-- Seasons & Episodes Overview -->
                     <div class="mt-6 p-6 glass-effect rounded-lg">
                         <div class="flex justify-between items-center mb-6">
@@ -465,7 +465,7 @@
                                 ✓ Mark All Watched
                             </button>
                         </div>
-                        
+
                         <div id="seasons-list" class="space-y-4">
                             <div class="flex justify-center py-8">
                                 <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--accent)]"></div>
@@ -473,7 +473,7 @@
                         </div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- NEW: Tags Section (Letterboxd-style) -->
                     {% if current_user.is_authenticated %}
                     <div class="mt-6 mb-6 p-4 glass-effect rounded-lg">
@@ -483,41 +483,41 @@
                             </svg>
                             Your Tags
                         </h3>
-                        
+
                         <!-- Tags Display -->
                         <div id="tags-display" class="mb-3 flex flex-wrap gap-2 min-h-[2rem]">
                             <p class="text-[var(--text-mid)] text-sm">Loading tags...</p>
                         </div>
-                        
+
                         <!-- Tag Input -->
                         <div class="tag-input-container relative">
                             <div class="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    id="tag-input" 
-                                    placeholder="Add a tag (e.g., 'binge-worthy', 'crime-drama')" 
+                                <input
+                                    type="text"
+                                    id="tag-input"
+                                    placeholder="Add a tag (e.g., 'binge-worthy', 'crime-drama')"
                                     class="flex-1  text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     maxlength="30"
                                 />
-                                <button onclick="tagManager.addTag(document.getElementById('tag-input').value)" 
+                                <button onclick="tagManager.addTag(document.getElementById('tag-input').value)"
                                         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
                                     Add
                                 </button>
                             </div>
-                            
+
                             <!-- Autocomplete Suggestions -->
                             <div id="tag-suggestions" class="hidden absolute top-full left-0 right-0 mt-1  border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
                             </div>
-                            
+
                             <!-- Feedback Messages -->
                             <div id="tag-error" class="hidden mt-2 text-red-400 text-sm"></div>
                             <div id="tag-success" class="hidden mt-2 text-green-400 text-sm"></div>
                         </div>
-                        
+
                         <p class="text-xs text-[var(--text-mid)] mt-2">Tags help you organize and find shows later. Max 20 tags per show.</p>
                     </div>
                     {% endif %}
-                    
+
                     <!-- Like Button Section -->
                     {% if current_user.is_authenticated %}
                     <div class="/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-gray-700">
@@ -527,7 +527,7 @@
                         <div id="like-message" class="mt-2 text-sm"></div>
                     </div>
                     {% endif %}
-                    
+
                     <!-- Tagline -->
                     {% if show.tagline %}
                     <p class="text-xl text-blue-200 italic mb-6">"{{ show.tagline }}"</p>
@@ -555,8 +555,8 @@
     {% if current_user.is_authenticated %}
     <section class="py-16">
         <div class="container mx-auto px-4 max-w-4xl">
-            <div id="popular-with-friends" 
-                 data-media-id="{{ show['id'] }}" 
+            <div id="popular-with-friends"
+                 data-media-id="{{ show['id'] }}"
                  data-media-type="tv">
                 <div class=" rounded-lg p-6 border border-gray-700">
                     <p class="text-[var(--text-mid)] text-center py-4">
@@ -579,11 +579,11 @@
                     </svg>
                     Comments
                 </h2>
-                
+
                 <!-- Comment Form -->
                 <form id="comment-form" class="mb-8">
-                    <textarea 
-                        id="comment-input" 
+                    <textarea
+                        id="comment-input"
                         placeholder="Share your thoughts about this show..."
                         class="w-full  text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                         rows="4"
@@ -591,18 +591,18 @@
                     ></textarea>
                     <div class="flex justify-between items-center mt-3">
                         <span id="comment-char-count" class="text-xs text-[var(--text-mid)]">0 / 5000</span>
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Post Comment
                         </button>
                     </div>
                 </form>
-                
+
                 <!-- Comments Message -->
                 <div id="comments-message" class="mb-4 text-sm"></div>
-                
+
                 <!-- Comments List -->
                 <div id="media-comments-list">
                     <p class="text-[var(--text-mid)] text-center py-8">Loading comments...</p>
@@ -709,7 +709,7 @@
     <section class="py-16">
         <div class="container mx-auto px-4">
             <h2 class="text-3xl font-bold mb-8 h-display">Write Your Review</h2>
-            
+
             <div class="glass-effect rounded-lg p-8 max-w-3xl mx-auto md:mx-0">
                 <form id="review-form" class="space-y-6">
                     <!-- Star Rating -->
@@ -729,10 +729,10 @@
                         <label for="review-content" class="block text-lg font-semibold mb-3">
                             Your Review <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
-                        <textarea 
-                            id="review-content" 
+                        <textarea
+                            id="review-content"
                             name="content"
-                            rows="6" 
+                            rows="6"
                             class="w-full  border border-gray-700 rounded-lg p-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none transition-all"
                             placeholder="Share your thoughts about {{ show.name }}..."
                         ></textarea>
@@ -747,9 +747,9 @@
                         <label for="watched-date" class="block text-lg font-semibold mb-3">
                             When did you watch it? <span class="text-[var(--text-mid)] text-sm font-normal">(Optional)</span>
                         </label>
-                        <input 
-                            type="date" 
-                            id="watched-date" 
+                        <input
+                            type="date"
+                            id="watched-date"
                             name="watched_date"
                             max="{{ today }}"
                             class=" border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -809,7 +809,7 @@
                     {% endif %}
                 </div>
             </div>
-                
+
             <!-- Tabs -->
             <div class="flex  rounded-lg p-1 mb-8">
                 <button id="user-reviews-tab" class="px-6 py-2 rounded-md text-sm font-medium transition-all duration-300 text-[var(--accent)] border-b-2 border-[var(--accent)]">
@@ -834,8 +834,8 @@
                     {% for review in show.reviews %}
                     <div class="glass-effect rounded-lg p-6 flex flex-col h-full">
                         <div class="flex items-center mb-6">
-                            <img src="{{ review.author_avatar }}" alt="{{ review.author }}" 
-                                 class="w-12 h-12 rounded-full mr-4 border-2 border-[var(--line-hi)]" 
+                            <img src="{{ review.author_avatar }}" alt="{{ review.author }}"
+                                 class="w-12 h-12 rounded-full mr-4 border-2 border-[var(--line-hi)]"
                                  onerror="this.src='/static/images/default_avatar.svg'">
                             <div>
                                 <h3 class="font-bold text-gray-100">{{ review.author }}</h3>
@@ -884,7 +884,7 @@
             const trailerModal = document.getElementById('trailer-modal');
             const trailerIframe = document.getElementById('trailer-iframe');
             const closeModal = document.getElementById('close-modal');
-            
+
             if (trailerButton) {
                 trailerButton.addEventListener('click', function() {
                     const trailerKey = '{{ show.trailer_key }}';
@@ -897,7 +897,7 @@
                     }
                 });
             }
-            
+
             if (closeModal) {
                 closeModal.addEventListener('click', function() {
                     trailerModal.classList.add('hidden');
@@ -905,7 +905,7 @@
                     trailerIframe.src = '';
                 });
             }
-            
+
             // Mobile menu
             const mobileMenuButton = document.getElementById('mobile-menu-button');
             const mobileMenu = document.createElement('div');
@@ -941,18 +941,18 @@
             const starRatingContainer = document.getElementById('star-rating');
             const ratingInput = document.getElementById('rating-input');
             const ratingValueDisplay = document.getElementById('rating-value');
-            
+
             if (starRatingContainer) {
                 let currentRating = 0;
                 let hoverRating = 0;
-                
+
                 // Create 5 stars (representing 10 half-stars)
                 for (let i = 1; i <= 5; i++) {
                     const starContainer = document.createElement('div');
                     starContainer.className = 'relative cursor-pointer group';
                     starContainer.style.width = '24px';
                     starContainer.style.height = '24px';
-                    
+
                     // The actual star icon
                     const starIcon = `
                         <svg class="star w-6 h-6 transition-colors duration-150" fill="currentColor" viewBox="0 0 20 20">
@@ -960,30 +960,30 @@
                         </svg>
                     `;
                     starContainer.innerHTML = starIcon;
-                    
+
                     // Left half (0.5)
                     const leftHalf = document.createElement('div');
                     leftHalf.className = 'absolute top-0 left-0 w-1/2 h-full z-10';
                     leftHalf.addEventListener('mouseenter', () => handleHover(i - 0.5));
                     leftHalf.addEventListener('click', () => handleClick(i - 0.5));
-                    
+
                     // Right half (1.0)
                     const rightHalf = document.createElement('div');
                     rightHalf.className = 'absolute top-0 right-0 w-1/2 h-full z-10';
                     rightHalf.addEventListener('mouseenter', () => handleHover(i));
                     rightHalf.addEventListener('click', () => handleClick(i));
-                    
+
                     starContainer.appendChild(leftHalf);
                     starContainer.appendChild(rightHalf);
                     starRatingContainer.appendChild(starContainer);
                 }
-                
+
                 function handleHover(rating) {
                     hoverRating = rating;
                     updateStarDisplay(rating);
                     ratingValueDisplay.textContent = rating.toFixed(1);
                 }
-                
+
                 function handleClick(rating) {
                     currentRating = rating;
                     ratingInput.value = rating;
@@ -992,13 +992,13 @@
                     ratingValueDisplay.classList.add('animate__animated', 'animate__pulse');
                     setTimeout(() => ratingValueDisplay.classList.remove('animate__animated', 'animate__pulse'), 500);
                 }
-                
+
                 starRatingContainer.addEventListener('mouseleave', () => {
                     hoverRating = 0;
                     updateStarDisplay(currentRating);
                     ratingValueDisplay.textContent = currentRating.toFixed(1);
                 });
-                
+
                 function updateStarDisplay(rating) {
                     const stars = starRatingContainer.querySelectorAll('.star');
                     stars.forEach((star, index) => {
@@ -1007,14 +1007,14 @@
                             star.style.color = '#FBBF24'; // Full
                         } else if (starNum === Math.ceil(rating) && rating % 1 !== 0) {
                             // This is a bit tricky with pure SVG color, but for simplicity:
-                            star.style.color = '#FBBF24'; 
+                            star.style.color = '#FBBF24';
                         } else {
                             star.style.color = '#4B5563'; // Empty
                         }
                     });
                 }
             }
-            
+
             // Character Counter
             const reviewContent = document.getElementById('review-content');
             const charCount = document.getElementById('char-count');
@@ -1025,7 +1025,7 @@
                     if (length > 2000) reviewContent.value = reviewContent.value.substring(0, 2000);
                 });
             }
-            
+
             // Review Form Submission
             const reviewForm = document.getElementById('review-form');
             if (reviewForm) {
@@ -1036,12 +1036,12 @@
                         showMessage('Please select a rating', 'error');
                         return;
                     }
-                    
+
                     const submitBtn = document.getElementById('submit-review-btn');
                     submitBtn.disabled = true;
                     document.getElementById('submit-text').classList.add('hidden');
                     document.getElementById('submit-loading').classList.remove('hidden');
-                    
+
                     const formData = {
                         media_id: {{ show.id|tojson }},
                         media_type: 'tv',
@@ -1053,7 +1053,7 @@
                         watched_date: document.getElementById('watched-date').value || null,
                         contains_spoilers: document.getElementById('contains-spoilers').checked
                     };
-                    
+
                     try {
                         const response = await fetch('/api/reviews', {
                             method: 'POST',
@@ -1076,7 +1076,7 @@
                     }
                 });
             }
-            
+
             function showMessage(message, type) {
                 const reviewMessage = document.getElementById('review-message');
                 reviewMessage.textContent = message;
@@ -1134,7 +1134,7 @@
             showReviewsCount();
             document.addEventListener('reviews:rendered', initReviewFollowButtons);
         });
-        
+
         // TV Show Data for modals
         const SHOW_DATA = {
             id: {{ show.id|tojson }},
@@ -1144,131 +1144,30 @@
             isAuthenticated: {{ current_user.is_authenticated|tojson }},
             id: {{ current_user.id|tojson if current_user.is_authenticated else 'null' }}
         };
-        
-        // Diary Modal Functions
-        function openDiaryModal() {
-            {% if not current_user.is_authenticated %}
-            alert('Please login to log to your diary');
-            return;
-            {% endif %}
-            
-            document.getElementById('diary-modal').classList.remove('hidden');
-            document.getElementById('diary-date').valueAsDate = new Date();
-        }
-        
-        function closeDiaryModal() {
-            document.getElementById('diary-modal').classList.add('hidden');
-        }
-        
-        async function submitDiaryEntry() {
-            const date = document.getElementById('diary-date').value;
-            const rating = document.getElementById('diary-rating').value;
-            
-            if (!date) {
-                alert('Please select a date');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/diary/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        media_id: SHOW_DATA.id,
-                        media_type: 'tv',
-                        watched_date: date,
-                        rating: rating || null
-                    })
-                });
-                
-                const data = await response.json();
-                if (response.ok) {
-                    alert(data.message);
-                    closeDiaryModal();
-                } else {
-                    alert(data.error || 'Failed to log to diary');
-                }
-            } catch (error) {
-                alert('An error occurred');
-            }
-        }
-        
-        // List Modal Functions
-        async function openListModal() {
-            {% if not current_user.is_authenticated %}
-            alert('Please login to add to lists');
-            return;
-            {% endif %}
-            
-            document.getElementById('list-modal').classList.remove('hidden');
-            await loadUserLists();
-        }
-        
-        function closeListModal() {
-            document.getElementById('list-modal').classList.add('hidden');
-        }
-        
-        async function loadUserLists() {
-            try {
-                const response = await fetch(`/api/users/${CURRENT_USER.id}/lists`);
-                const data = await response.json();
-                
-                const listSelect = document.getElementById('list-select');
-                listSelect.innerHTML = '<option value="">Select a list...</option>';
-                
-                data.lists.forEach(list => {
-                    const option = document.createElement('option');
-                    option.value = list.id;
-                    option.textContent = list.title;
-                    listSelect.appendChild(option);
-                });
-            } catch (error) {
-            }
-        }
-        
-        async function addToSelectedList() {
-            const listId = document.getElementById('list-select').value;
-            
-            if (!listId) {
-                alert('Please select a list');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/lists/${listId}/add`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        media_id: SHOW_DATA.id,
-                        media_type: 'tv'
-                    })
-                });
-                
-                const data = await response.json();
-                if (response.ok) {
-                    alert(data.message);
-                    closeListModal();
-                } else {
-                    alert(data.error || 'Failed to add to list');
-                }
-            } catch (error) {
-                alert('An error occurred');
-            }
-        }
+
+        // Log to Diary + Add to List are handled by the shared module
+        // /static/js/detail-modals.js (loaded after the modal partials).
+        // Buttons: #open-diary-modal / #open-list-modal. Media context is
+        // provided to the module via the #detail-context JSON island below.
     </script>
-    
+    <script id="detail-context" type="application/json">{{ {'user_id': (current_user.id if current_user.is_authenticated else None), 'media': {'id': show.id, 'media_type': 'tv'}}|tojson }}</script>
+
     <!-- Diary Modal -->
-    {% include "partials/modal_diary.html" %}
+    {% with media_type = "tv" %}{% include "partials/modal_diary.html" %}{% endwith %}
+
+    <!-- Diary Modal -->
+    {% with media_type = "tv" %}{% include "partials/modal_diary.html" %}{% endwith %}
     <!-- List Modal -->
     {% with media_id = show['id'], media_type = "tv" %}{% include "partials/modal_list.html" %}{% endwith %}
+    <script src="{{ url_for('static', filename='js/detail-modals.js') }}"></script>
 
 
-    
+
     <!-- More Like This Section -->
     <section class="py-16">
         <div class="container mx-auto px-4">
-            <div id="more-like-this" 
-                 data-media-id="{{ show['id'] }}" 
+            <div id="more-like-this"
+                 data-media-id="{{ show['id'] }}"
                  data-media-type="tv">
                 <div class=" rounded-lg p-6 border border-gray-700">
                     <h3 class="text-2xl font-bold text-white mb-4">
@@ -1281,12 +1180,12 @@
             </div>
         </div>
     </section>
-    
+
     <!-- Load Review Manager -->
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
     <script src="{{ url_for('static', filename='js/where-to-watch.js') }}"></script>
-    
+
     <!-- TV Tracking Scripts -->
     <script>
         window.TMDB_API_KEY = 'proxy';
