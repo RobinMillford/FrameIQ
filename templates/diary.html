@@ -22,6 +22,7 @@
         .glass-effect {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .diary-container {
@@ -32,7 +33,7 @@
 </head>
 <body class="pb-12">
     <!-- Navigation (shared chrome) -->
-    {% include "partials/nav_simple.html" with with_diary=True %}
+    {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4">
         <div class="diary-container">

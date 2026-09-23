@@ -470,6 +470,10 @@
             let left = r.right - w;
             let top = r.bottom + 8;
             if (left < 8) left = 8;                    // keep on-screen
+            if (left + w > window.innerWidth - 8) {
+                left = window.innerWidth - w - 8;      // clamp right edge
+            }
+            if (left < 8) left = 8;                    // panel wider than viewport
             if (top + h > window.innerHeight - 8) {
                 top = r.top - h - 8;                   // flip above
                 if (top < 8) top = 8;                  // never clip

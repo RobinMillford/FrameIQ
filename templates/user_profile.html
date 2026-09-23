@@ -16,15 +16,15 @@
             background-color:  var(--bg-base);
             color: white;
         }
-        
+
         .stat-card {
             transition: transform 0.3s ease;
         }
-        
+
         .stat-card:hover {
             transform: translateY(-5px);
         }
-        
+
         .profile-image {
             border: 3px solid #6366f1;
         }
@@ -32,6 +32,7 @@
         .glass-effect {
             background: rgba(31, 41, 55, 0.7);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
@@ -84,12 +85,12 @@
 
     <div class="container mx-auto px-4 py-8">
         <div class=" rounded-lg shadow-lg p-6">
-            <div class="flex justify-between items-start mb-8">
-                <div class="flex items-center">
+            <div class="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
+                <div class="flex flex-col sm:flex-row items-center sm:items-start gap-4 min-w-0">
                     <div class="relative">
                         {% if user.profile_picture %}
-                            <img src="{{ user.profile_picture if user.profile_picture.startswith('http') else url_for('static', filename=user.profile_picture) }}" 
-                                 alt="{{ user.username }}" 
+                            <img src="{{ user.profile_picture if user.profile_picture.startswith('http') else url_for('static', filename=user.profile_picture) }}"
+                                 alt="{{ user.username }}"
                                  class="rounded-full w-32 h-32 object-cover profile-image">
                         {% else %}
                             <div class="bg-gray-600 rounded-full w-32 h-32 flex items-center justify-center profile-image">
@@ -97,11 +98,11 @@
                             </div>
                         {% endif %}
                     </div>
-                    <div class="ml-8">
-                        <h1 class="text-4xl font-bold mb-2">{{ user.username }}</h1>
+                    <div class="text-center sm:text-left mt-2 sm:mt-0 sm:ml-8 min-w-0">
+                        <h1 class="text-3xl sm:text-4xl font-bold mb-2 break-words">{{ user.username }}</h1>
                         <p class="text-[var(--text-mid)]">Member since {{ user.date_joined.strftime('%B %Y') }}</p>
-                        
-                        <div class="flex space-x-6 mt-4">
+
+                        <div class="flex flex-wrap gap-x-6 gap-y-2 mt-4 justify-center sm:justify-start">
                             <button class="text-left group cursor-pointer" onclick="openFollowersModal({{ user.id }})">
                                 <span class="block text-2xl font-bold text-[var(--accent)] group-hover:text-[var(--accent-hi)]" id="follower-count-{{ user.id }}">{{ user.followers_count or 0 }}</span>
                                 <span class="text-sm text-[var(--text-mid)] uppercase tracking-wider">Followers</span>
@@ -117,11 +118,11 @@
                         </div>
                     </div>
                 </div>
-                
+
                 {% if current_user.is_authenticated and current_user.id != user.id %}
-                    <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white font-bold py-3 px-8 rounded-lg transition duration-300 flex items-center gap-2 shadow-lg" 
-                            data-follow-button 
-                            data-user-id="{{ user.id }}" 
+                    <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white font-bold py-3 px-6 sm:px-8 rounded-lg transition duration-300 flex items-center gap-2 shadow-lg"
+                            data-follow-button
+                            data-user-id="{{ user.id }}"
                             data-following="{{ 'true' if is_following else 'false' }}"
                             data-authenticated="true">
                         {% if is_following %}
@@ -131,7 +132,7 @@
                         {% endif %}
                     </button>
                 {% elif current_user.is_authenticated and current_user.id == user.id %}
-                    <a href="{{ url_for('auth.edit_profile') }}" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-lg transition duration-300">
+                    <a href="{{ url_for('auth.edit_profile') }}" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 sm:px-8 rounded-lg transition duration-300">
                         Edit Profile
                     </a>
                 {% endif %}
@@ -146,7 +147,7 @@
                             {{ user.bio or 'No bio available yet.' }}
                         </p>
                     </div>
-                    
+
                     <div class="glass-effect rounded-xl p-6 mb-6">
                         <h3 class="text-xl font-semibold mb-4 text-[var(--accent)]">Statistics</h3>
                         <div class="space-y-4">
@@ -202,8 +203,8 @@
                                             {% if poster_url and not poster_url.startswith('http') %}
                                                 {% set poster_url = 'https://image.tmdb.org/t/p/w200' + poster_url %}
                                             {% endif %}
-                                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}" 
-                                                 alt="{{ review.media.title }}" 
+                                            <img src="{{ poster_url or '/static/images/no-poster.svg' }}"
+                                                 alt="{{ review.media.title }}"
                                                  class="w-16 h-24 rounded border border-gray-700 object-cover"
                                                  onerror="this.src='/static/images/no-poster.svg'">
                                             <div>
@@ -244,7 +245,7 @@
                                     <canvas id="genre-chart"></canvas>
                                 </div>
                             </div>
-                            
+
                             <!-- Rating Distribution -->
                             <div class="glass-effect rounded-xl p-6">
                                 <h4 class="text-lg font-semibold mb-4 text-[var(--accent)]">Rating Distribution</h4>
@@ -433,18 +434,18 @@
         async function loadSocialList(url) {
             const container = document.getElementById('modal-content');
             container.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-[var(--accent)]"></i></div>';
-            
+
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                
+
                 const list = data.followers || data.following || [];
-                
+
                 if (list.length === 0) {
                     container.innerHTML = `<div class="text-center py-8 text-[var(--text-mid)]">No users found.</div>`;
                     return;
                 }
-                
+
                 let html = '<div class="space-y-4">';
                 list.forEach(item => {
                     let profilePic = item.profile_picture;
@@ -463,9 +464,9 @@
                                 </div>
                             </a>
                             ${data.current_user_id != item.id ? `
-                                <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-3 py-1.5 rounded transition-all" 
-                                        data-follow-button 
-                                        data-user-id="${item.id}" 
+                                <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-3 py-1.5 rounded transition-all"
+                                        data-follow-button
+                                        data-user-id="${item.id}"
                                         data-following="${item.is_following}"
                                         data-authenticated="true">
                                     ${item.is_following ? '<i class="fas fa-user-check mr-1"></i> Following' : '<i class="fas fa-user-plus mr-1"></i> Follow'}
@@ -476,16 +477,16 @@
                 });
                 html += '</div>';
                 container.innerHTML = html;
-                
+
                 // Initialize new follow buttons
                 const newButtons = container.querySelectorAll('[data-follow-button]');
                 newButtons.forEach(btn => new FollowButton(parseInt(btn.dataset.userId), btn));
-                
+
             } catch (error) {
                 container.innerHTML = `<div class="text-center py-8 text-red-400">Failed to load list.</div>`;
             }
         }
-        
+
         // Initialize follow buttons
         document.querySelectorAll('[data-follow-button]').forEach(btn => {
             new FollowButton(parseInt(btn.dataset.userId), btn);
@@ -496,7 +497,7 @@
         const tabInsights = document.getElementById('tab-insights');
         const reviewsContent = document.getElementById('reviews-content');
         const insightsContent = document.getElementById('insights-content');
-        
+
         if (tabReviews && tabInsights) {
             tabReviews.addEventListener('click', () => {
                 tabReviews.classList.add('border-[var(--accent)]', 'text-[var(--accent)]');
@@ -506,7 +507,7 @@
                 reviewsContent.classList.remove('hidden');
                 insightsContent.classList.add('hidden');
             });
-            
+
             tabInsights.addEventListener('click', () => {
                 tabInsights.classList.add('border-[var(--accent)]', 'text-[var(--accent)]');
                 tabInsights.classList.remove('border-transparent', 'text-[var(--text-mid)]');
@@ -514,7 +515,7 @@
                 tabReviews.classList.remove('border-[var(--accent)]', 'text-[var(--accent)]');
                 insightsContent.classList.remove('hidden');
                 reviewsContent.classList.add('hidden');
-                
+
                 // Initialize dashboard if not already done
                 if (!window.statsDashboard) {
                     window.statsDashboard = new StatsDashboard({{ user.id }});

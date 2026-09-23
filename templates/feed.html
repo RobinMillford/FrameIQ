@@ -13,6 +13,7 @@
         .glass-effect {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .feed-container {
@@ -43,14 +44,14 @@
 
     <div class="container mx-auto px-4">
         <div class="feed-container">
-            <div class="flex justify-between items-end mb-8">
+            <div class="flex flex-wrap justify-between items-end gap-4 mb-8">
                 <div>
                     <h1 class="text-4xl font-bold mb-2">Social Feed</h1>
                     <p class="text-[var(--text-mid)]">Stay updated with the latest reviews and activity</p>
                 </div>
                 
                 {% if current_user.is_authenticated %}
-                <div class="flex  rounded-lg p-1 border border-cyan-500/30">
+                <div class="flex rounded-lg p-1 border border-cyan-500/30">
                     <button id="feed-btn-following" class="px-6 py-2 rounded-md transition-all duration-300 text-sm font-medium bg-cyan-600 text-white shadow-lg" data-target="following">
                         Following
                     </button>

@@ -381,3 +381,31 @@ def test_movie_page_guest_gets_null_user_context(client, clean_db):
     assert resp.status_code == 200
     ctx = _detail_context(resp.get_data(as_text=True))
     assert ctx is not None and ctx['user_id'] is None
+
+
+# ── /diary page rendering (Jinja syntax regression) ────────────────────────
+
+def test_diary_template_compiles(app):
+    """diary.html must compile — guards against Django-style include syntax."""
+    app.jinja_env.get_template('diary.html')
+
+
+def test_diary_page_renders_authenticated(auth_client, clean_db):
+    """Authenticated GET /diary returns 200 (no TemplateSyntaxError 500)."""
+    resp = auth_client.get('/diary')
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'My Diary' in html
+
+
+def test_diary_page_nav_receives_with_diary(auth_client, clean_db):
+    """nav_simple include context with_diary=True surfaces the Diary menu item."""
+    html = auth_client.get('/diary').get_data(as_text=True)
+    assert '<a href="/diary" role="menuitem" class="fi-menu-item">' in html
+
+
+def test_diary_page_guest_keeps_auth_redirect(client, clean_db):
+    """Unauthenticated /diary keeps existing login_required behavior."""
+    resp = client.get('/diary')
+    assert resp.status_code == 302
+    assert '/login' in resp.headers['Location']
