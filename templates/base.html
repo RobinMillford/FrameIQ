@@ -188,9 +188,13 @@
                 </div>
             </div>
         </div>
+    </nav>
 
-        <!-- Mobile nav drawer -->
-        <div id="mobile-nav-drawer" class="mobile-nav-drawer" aria-hidden="true">
+    <!-- Mobile nav drawer: lives OUTSIDE the fixed <nav> so it is not
+         trapped inside the nav's backdrop-filter containing block. The
+         offscreen-closed drawer must never extend the document scroll
+         area, and `top/bottom: 0` must resolve against the real viewport. -->
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer" aria-hidden="true">
             <div class="flex items-center justify-between pb-4 border-b border-[var(--line)]">
                 <span class="frameiq-logo">FrameIQ</span>
                 <button id="mobile-nav-close" class="mobile-nav-toggle" aria-label="Close navigation menu">
@@ -215,7 +219,6 @@
                 {% endif %}
             </nav>
         </div>
-    </nav>
 
     <!-- Main Content -->
     <main class="pt-[72px] relative z-[2] page-enter">

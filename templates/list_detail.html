@@ -46,8 +46,8 @@
     <!-- Navigation -->
     <nav class="bg-[rgba(10,13,18,0.96)] shadow-lg border-b border-[rgba(255,255,255,0.08)]">
         <div class="container mx-auto px-4 py-3">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center space-x-6">
+            <div class="flex flex-wrap justify-between items-center gap-y-2">
+                <div class="flex items-center space-x-4 sm:space-x-6">
                     <a href="{{ url_for('main.index') }}" class="text-2xl font-bold text-[var(--accent)]">FrameIQ</a>
                     <a href="/discover" class="text-gray-300 hover:text-[var(--accent)] transition-colors">
                         <i class="fas fa-compass"></i> Discover
@@ -56,7 +56,7 @@
                         <i class="fas fa-list"></i> Lists
                     </a>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex flex-wrap items-center gap-2 sm:gap-4">
                     {% if current_user.is_authenticated %}
                         <a href="{{ url_for('auth.profile') }}" class="text-white hover:text-[var(--accent)]">
                             <i class="fas fa-user"></i> {{ current_user.username }}
@@ -344,7 +344,7 @@
             </h2>
 
             {% if current_user.is_authenticated %}
-            <form id="comment-form" class="mb-6 flex gap-2">
+            <form id="comment-form" class="mb-6 flex flex-col sm:flex-row sm:items-center gap-2">
                 <label for="comment-input" class="sr-only">Add a comment</label>
                 <input type="text" id="comment-input" maxlength="2000"
                        placeholder="Share your thoughts on this list…"

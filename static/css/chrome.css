@@ -457,7 +457,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    z-index: 450;
+    z-index: 1150; /* header-layering contract: above nav (1100), below modals (1200) */
     width: min(280px, 100vw);
     background: var(--bg-surface);
     border-left: 1px solid var(--line);
