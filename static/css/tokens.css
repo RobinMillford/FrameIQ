@@ -51,6 +51,22 @@
    Base
    ═══════════════════════════════════════════════════════════════════ */
 
+/* Border-box reset — normally supplied by Tailwind's CDN preflight.
+   Without it, a CDN outage reverts every element to content-box and
+   padded containers (.container, nav bars) exceed the viewport. */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    /* iOS Safari landscape inflates text to 2x in wide viewports unless
+       text-size-adjust is set. 100% = never auto-inflate (zoom still works). */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body {
     background: var(--bg-base);
     color: var(--text-hi);
@@ -284,6 +300,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .rise-in, .rise-in-stagger > * { animation: none; }
     * { transition-duration: 0.01ms !important; }
+    /* Decorative background motion must stop too (hero Ken Burns pan). */
+    .hero-backdrop { animation: none !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
