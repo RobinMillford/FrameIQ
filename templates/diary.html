@@ -32,7 +32,7 @@
 </head>
 <body class="pb-12">
     <!-- Navigation (shared chrome) -->
-    {% include "partials/nav_simple.html" with with_diary=True %}
+    {% with with_diary = true %}{% include "partials/nav_simple.html" %}{% endwith %}
 
     <div class="container mx-auto px-4">
         <div class="diary-container">
