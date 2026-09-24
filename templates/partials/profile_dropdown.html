@@ -5,13 +5,16 @@
    outside-click close it (wired in base.html / profile-page.js). The menu
    uses .fi-menu — an always-readable dark panel (z-index 1100, above the
    header at 1000 and every hero/page layer), never a transparent surface. #}
-<div class="relative" id="profile-dropdown">
+<!-- min-w-0: this wrapper is the flex item that must yield width on
+     narrow phones; the button caps at the wrapper (max-w-full) so the
+     username truncates instead of pushing the hamburger off-screen. -->
+<div class="relative min-w-0" id="profile-dropdown">
     <button id="profile-button" type="button"
-            class="flex items-center gap-2 text-[var(--text-hi)] hover:text-[var(--accent-hi)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-hi)] rounded px-1 py-1"
+            class="flex items-center gap-2 min-w-0 max-w-full text-[var(--text-hi)] hover:text-[var(--accent-hi)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-hi)] rounded px-1 py-1"
             aria-expanded="false" aria-haspopup="true"
             aria-controls="profile-menu">
-        <i class="fas fa-user text-sm"></i>
-        <span class="text-sm font-medium max-w-[10rem] truncate">{{ current_user.username }}</span>
+        <i class="fas fa-user text-sm shrink-0"></i>
+        <span class="text-sm font-medium max-w-[10rem] min-w-0 truncate">{{ current_user.username }}</span>
         <i class="fas fa-caret-down text-xs opacity-70" aria-hidden="true"></i>
     </button>
     <div id="profile-menu" class="fi-menu hidden mt-2 w-56 right-0" role="menu"

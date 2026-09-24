@@ -151,6 +151,11 @@
     @media (max-width: 768px) {
         .pick-hero { min-height: 480px; }
         .hero-poster { display: none; }
+        /* Narrow-phone display-size clamp (mobile only): the hero title's
+           longest unbroken word must fit the content box (100vw − 32px
+           padding) so the copy block never exceeds the slide width. Not a
+           global font change — desktop/tablet typography is untouched. */
+        .hero-slide .h-display { font-size: clamp(2rem, 8.2vw, 3rem); }
     }
     @media (prefers-reduced-motion: reduce) {
         .hero-backdrop-layer.active .kb-zoom { animation: none; }
@@ -178,7 +183,11 @@
     {% for p in picks %}
     <div class="hero-slide {{ 'active' if loop.first }}" data-slide="{{ loop.index0 }}">
         <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 pb-20 pt-44 w-full">
-            <div class="flex flex-col lg:flex-row gap-10 items-end">
+            <!-- items-stretch below lg: right-aligning a column whose
+                 content min-width can exceed the container (long unbroken
+                 title words at text-5xl) pushes the copy OUT LEFT of the
+                 hero's overflow clip. Desktop keeps items-end. -->
+            <div class="flex flex-col lg:flex-row gap-10 items-stretch lg:items-end">
 
                 <a href="/movie/{{ p.id }}" class="hero-poster poster-glow hidden md:block">
                     <img src="{{ p.poster }}" alt="{{ p.title }}" class="w-full">
