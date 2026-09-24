@@ -449,7 +449,12 @@
     border-radius: var(--r-md);
     color: var(--text-hi);
 }
-@media (min-width: 768px) {
+/* The drawer toggle must stay available until the full desktop nav row
+   appears (2xl / 1536px, matching base.html's 2xl:hidden). Hiding it at
+   768px created a 768–1023px dead zone with no navigation at all, and
+   left 1024–1151px clipped when the nav row's minimum width exceeded the
+   viewport. */
+@media (min-width: 1536px) {
     .mobile-nav-toggle { display: none; }
 }
 
