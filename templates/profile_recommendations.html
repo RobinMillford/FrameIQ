@@ -151,9 +151,16 @@
             {% if recommendations %}
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
                     {% for rec in recommendations %}
-                    <div class="movie-card glass-effect rounded-lg overflow-hidden animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index * 0.1 }}s">
+                    <div class="movie-card glass-effect rounded-lg overflow-hidden animate__animated animate__fadeInUp relative" style="animation-delay: {{ loop.index * 0.1 }}s">
                         <a href="/{{ 'movie' if rec.media_type == 'movie' else 'tv' }}/{{ rec.id }}" class="block">
                             <img src="{{ rec.poster }}" alt="{{ rec.title }} Poster" class="movie-image" onerror="this.src='/static/images/no-poster.svg'">
+                            {% if current_user.is_authenticated and rec.media_type == 'tv' and tv_progress and tv_progress.get(rec.id) %}
+                            {# Overall aired-episode progress (shared contract) #}
+                            <span class="absolute top-2 right-2 z-10 font-slate text-[10px] bg-black/70 backdrop-blur text-emerald-300 px-1.5 py-0.5 rounded-md"
+                                  title="{{ tv_progress[rec.id].watched }} of {{ tv_progress[rec.id].aired }} aired episodes watched">
+                                {{ tv_progress[rec.id].percent|int }}%
+                            </span>
+                            {% endif %}
                             <div class="p-3">
                                 <h3 class="font-semibold text-sm truncate">{{ rec.title }}</h3>
                                 <p class="text-[var(--text-mid)] text-xs">{{ rec.release_date }}</p>

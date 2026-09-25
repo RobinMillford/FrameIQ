@@ -209,9 +209,16 @@
             {% if shows %}
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
                 {% for show in shows %}
-                <div class="result-card glass-effect rounded-lg overflow-hidden">
+                <div class="result-card glass-effect rounded-lg overflow-hidden relative">
                     <a href="/tv/{{ show.id }}">
                         <img src="https://image.tmdb.org/t/p/w500{{ show.poster_path }}" alt="{{ show.name }}" class="result-image w-full" onerror="this.src='/static/images/no-poster.svg'" style="display: {{ 'block' if show.poster_path else 'none' }}">
+                        {% if current_user.is_authenticated and tv_progress and tv_progress.get(show.id) %}
+                        {# Overall aired-episode progress (shared contract) #}
+                        <span class="absolute top-2 right-2 z-10 font-slate text-[10px] bg-black/70 backdrop-blur text-emerald-300 px-1.5 py-0.5 rounded-md"
+                              title="{{ tv_progress[show.id].watched }} of {{ tv_progress[show.id].aired }} aired episodes watched">
+                            {{ tv_progress[show.id].percent|int }}%
+                        </span>
+                        {% endif %}
                         <div class="p-4">
                             <h3 class="font-semibold text-sm text-white hover:text-[var(--accent-hi)] transition-colors">{{ show.name }}</h3>
                             <p class="text-[var(--text-mid)] text-xs">{{ show.first_air_date }}</p>

@@ -290,6 +290,9 @@ async function markEpisodeWatched(episodeNumber) {
             updateProgress();
             renderEpisodes();
             showNotification('✓ Episode marked as watched!', 'success');
+            if (window.FrameIQViewState) {
+                window.FrameIQViewState.onEpisodeChange(SHOW_ID);
+            }
         } else {
             showNotification(data.error || 'Failed to mark episode', 'error');
         }
@@ -314,6 +317,9 @@ async function unmarkEpisodeWatched(episodeNumber) {
             updateProgress();
             renderEpisodes();
             showNotification('Episode unmarked', 'success');
+            if (window.FrameIQViewState) {
+                window.FrameIQViewState.onEpisodeChange(SHOW_ID);
+            }
         } else {
             showNotification(data.error || 'Failed to unmark episode', 'error');
         }

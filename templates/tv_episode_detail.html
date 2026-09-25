@@ -315,6 +315,9 @@ async function markWatched() {
             isWatched = true;
             updateWatchStatus();
             showNotification('✓ Episode marked as watched!', 'success');
+            if (window.FrameIQViewState) {
+                window.FrameIQViewState.onEpisodeChange(SHOW_ID);
+            }
         }
     } catch (error) {
         showNotification('Failed to mark episode', 'error');
@@ -334,6 +337,9 @@ async function unmarkWatched() {
             updateWatchStatus();
             document.getElementById('user-notes-section').classList.add('hidden');
             showNotification('Episode unmarked', 'success');
+            if (window.FrameIQViewState) {
+                window.FrameIQViewState.onEpisodeChange(SHOW_ID);
+            }
         }
     } catch (error) {
         showNotification('Failed to unmark episode', 'error');

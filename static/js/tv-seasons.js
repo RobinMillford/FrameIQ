@@ -242,6 +242,12 @@ class TVSeasonsManager {
                     window.tvTracker.progress = data.progress;
                     window.tvTracker.renderTrackingUI();
                 }
+
+                // Cross-surface sync (Phase 16): refresh the overall
+                // aired-episode progress line from the fresh state.
+                if (window.FrameIQViewState) {
+                    window.FrameIQViewState.onEpisodeChange(this.showId);
+                }
             } else {
                 throw new Error(data.error || 'Failed to mark season');
             }
@@ -294,6 +300,12 @@ class TVSeasonsManager {
                 if (window.tvTracker) {
                     window.tvTracker.progress = data.progress;
                     window.tvTracker.renderTrackingUI();
+                }
+
+                // Cross-surface sync (Phase 16): refresh the overall
+                // aired-episode progress line from the fresh state.
+                if (window.FrameIQViewState) {
+                    window.FrameIQViewState.onEpisodeChange(this.showId);
                 }
             } else {
                 throw new Error(data.error || 'Failed to unmark season');

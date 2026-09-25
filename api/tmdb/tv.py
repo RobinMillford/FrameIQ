@@ -58,6 +58,9 @@ def fetch_tv_show_details(show_id, max_retries=3, retry_delay=2):
         'tagline': data.get('tagline'),
         'first_air_date': data.get('first_air_date'),
         'last_air_date': data.get('last_air_date'),
+        # Most recently AIRED episode (per TMDb) — the denominator anchor
+        # for overall aired-episode progress (api/user_view_state.py).
+        'last_episode_to_air': data.get('last_episode_to_air'),
         'number_of_seasons': data.get('number_of_seasons'),
         'number_of_episodes': data.get('number_of_episodes'),
         'vote_average': round(data.get('vote_average', 0), 1),
