@@ -177,6 +177,8 @@
 
         section.appendChild(container);
         chatMessages.appendChild(section);
+        // Task C: canonical user view state on CineBot media cards.
+        if (window.FrameIQViewState) window.FrameIQViewState.syncCards(container);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 

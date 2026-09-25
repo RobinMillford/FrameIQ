@@ -55,6 +55,8 @@
                         `;
                         slider.appendChild(showCard);
                     });
+                    // Task C: canonical user view state on TV cards.
+                    if (window.FrameIQViewState) window.FrameIQViewState.syncCards(slider);
                 })
                 .catch(() => {});
             }
@@ -110,8 +112,10 @@
                             `;
                             slide.appendChild(showCard);
                         });
-                        
+
                         slideshow.appendChild(slide);
+                        // Task C: canonical user view state on slideshow cards.
+                        if (window.FrameIQViewState) window.FrameIQViewState.syncCards(slideshow);
                         
                         // Add indicator
                         const indicator = document.createElement('div');
@@ -271,6 +275,8 @@
                                 `;
                                 container.appendChild(showCard);
                             });
+                            // Task C: canonical user view state on genre cards.
+                            if (window.FrameIQViewState) window.FrameIQViewState.syncCards(container);
                         } else {
                             // If no results, show a message
                             container.innerHTML = '<p class="text-gray-400 text-center">No shows found</p>';

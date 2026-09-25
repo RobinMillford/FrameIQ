@@ -126,9 +126,16 @@
         <div class="container mx-auto px-4">
             <div class="show-grid">
                 {% for show in shows %}
-                <div class="tv-card glass-effect animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index0 * 0.05 }}s">
+                <div class="tv-card glass-effect animate__animated animate__fadeInUp relative" style="animation-delay: {{ loop.index0 * 0.05 }}s">
                     <a href="/tv/{{ show.id }}" class="block">
                         <img src="https://image.tmdb.org/t/p/w500{{ show.poster_path }}" alt="{{ show.name }} Poster" class="show-image">
+                        {% if current_user.is_authenticated and tv_progress and tv_progress.get(show.id) %}
+                        {# Overall aired-episode progress (shared contract) #}
+                        <span class="absolute top-2 right-2 z-10 font-slate text-[10px] bg-black/70 backdrop-blur text-emerald-300 px-1.5 py-0.5 rounded-md"
+                              title="{{ tv_progress[show.id].watched }} of {{ tv_progress[show.id].aired }} aired episodes watched">
+                            {{ tv_progress[show.id].percent|int }}%
+                        </span>
+                        {% endif %}
                         <h3 class="show-title">{{ show.name }}</h3>
                         <p class="show-date">{{ show.first_air_date }}</p>
                     </a>

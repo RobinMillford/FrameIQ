@@ -1,7 +1,10 @@
 {# Compact poster card for horizontal rails.
    Params: item  — normalized: id, title/name, poster_path OR poster,
                    release_date/first_air_date OR year, vote_average OR rating
-           media_type — 'movie' | 'tv' #}
+           media_type — 'movie' | 'tv'
+   Optional (injected by the page route, never computed here):
+           user_viewed_keys — set of (tmdb_id, media_type) viewed pairs
+           tv_progress      — {show_id: {watched, aired, percent}} map #}
 {% set is_movie = media_type == 'movie' %}
 {% set item_title = item.title if item.title else item.name %}
 {% set item_date = item.release_date if item.release_date else item.first_air_date %}
@@ -30,6 +33,26 @@
         <span class="absolute top-2 left-2 font-slate text-[10px] bg-black/70 backdrop-blur px-1.5 py-0.5 rounded-md text-[var(--amber)]">
             ★ {{ "%.1f"|format(rating) }}
         </span>
+        {% endif %}
+        {# ── User-scoped view state (shared contract, api/user_view_state.py) ── #}
+        {% if current_user.is_authenticated %}
+            {% set _viewed = user_viewed_keys is defined and (item.id, media_type) in user_viewed_keys %}
+            {% set _tvp = tv_progress.get(item.id) if (tv_progress is defined and media_type == 'tv' and tv_progress) else None %}
+            {% if is_movie %}
+            {# Always rendered for movies so quick-log.js can flip it
+               in place on a successful log (Phase 16). #}
+            <span class="ql-watched-badge absolute top-2 right-2 z-10 font-slate text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded-md flex items-center gap-1{% if not _viewed %} hidden{% endif %}">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Viewed
+            </span>
+            {% elif media_type == 'tv' and _tvp %}
+            <span class="tv-progress-badge absolute bottom-2 right-2 z-10 font-slate text-[10px] bg-black/70 backdrop-blur text-emerald-300 px-1.5 py-0.5 rounded-md"
+                  title="{{ _tvp.watched }} of {{ _tvp.aired }} aired episodes watched">
+                {{ _tvp.percent|int }}%
+            </span>
+            {% endif %}
         {% endif %}
         {% if is_movie and current_user.is_authenticated %}
         {# One-tap quick log — see static/js/quick-log.js #}

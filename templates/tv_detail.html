@@ -312,6 +312,25 @@
                         </div>
                     </div>
 
+                    <!-- Overall aired-episode progress (user-scoped). Shown
+                         only once the user has started the show; 100% means
+                         every currently AIRED episode is watched, NOT that
+                         the series has ended. -->
+                    {% if tv_progress %}
+                    <div class="flex items-center gap-3 mb-6" data-tv-progress
+                         data-watched="{{ tv_progress.watched }}"
+                         data-aired="{{ tv_progress.aired }}"
+                         data-percent="{{ tv_progress.percent }}">
+                        <span class="text-sm bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            {{ tv_progress.percent|int }}% watched
+                        </span>
+                        <span class="text-sm text-[var(--text-mid)]">{{ tv_progress.watched }} of {{ tv_progress.aired }} aired episodes</span>
+                    </div>
+                    {% endif %}
+
                     {% if taste_match %}
                     <div class="taste-match mb-6" title="Based on your rating history">
                         <span class="tm-ring" style="--pct: {{ taste_match }}" data-pct="{{ taste_match }}%"></span>

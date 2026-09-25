@@ -138,6 +138,15 @@ def tv_detail(show_id):
                     media_type='tv'
                 ).order_by(DiaryEntry.watched_date.desc()).all()
 
+        # Overall aired-episode progress for the hero (shared contract,
+        # api/user_view_state.py). Recomputed per request so a newly aired
+        # episode immediately lowers a "100% watched" running show.
+        tv_progress = None
+        if current_user.is_authenticated:
+            from api.user_view_state import tv_aired_progress
+            tv_progress = tv_aired_progress(
+                current_user, [show_id]).get(show_id)
+
         # Last-watched episode for Watch Now button (Continue Watching intent)
         watch_resume = None
         if current_user.is_authenticated:
@@ -161,6 +170,7 @@ def tv_detail(show_id):
                                user_viewed_ids=user_viewed_ids,
                                user_lists_with_show=user_lists_with_show,
                                diary_entries=diary_entries,
+                               tv_progress=tv_progress,
                                watch_resume=watch_resume,
                                today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:

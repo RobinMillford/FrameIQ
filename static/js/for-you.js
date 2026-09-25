@@ -499,6 +499,12 @@
         initImpressions();
         initClicks();
         initActionBehavior();
+
+        // Task C: canonical viewed/progress badges on recommendation cards
+        // (Task B store; presentation only — display-state sync, reasons untouched).
+        if (window.FrameIQViewState) {
+            window.FrameIQViewState.syncCards(container);
+        }
     }
 
     fetch('/api/for-you', {

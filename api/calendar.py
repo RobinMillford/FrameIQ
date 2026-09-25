@@ -38,7 +38,7 @@ from datetime import datetime, timedelta
 
 from models import MediaItem, MovieReleaseDate, TVEpisodeWatch, \
     TVShowProgress, UpcomingEpisode
-from models.associations import user_watchlist
+from models.associations import user_viewed, user_watchlist
 from models.base import db
 
 # §7: bounded ranges — one month-ish default, hard cap on any request.
@@ -66,6 +66,22 @@ _RELEASE_LABELS = {3: "theatrical", 4: "digital"}
 # Batched watchlist hydration row: (tmdb_id, title, poster, legacy date).
 _WatchlistMovie = namedtuple(
     "_WatchlistMovie", "tmdb_id title poster_path legacy_release_date")
+
+
+def _viewed_movie_keys(user_id):
+    """Canonical viewed movie TMDb ids (Task B junction, ONE bounded
+    statement via the capped watchlist hydration below)."""
+    return {
+        row[0] for row in (
+            db.session.query(MediaItem.tmdb_id)
+            .join(user_viewed,
+                  db.and_(user_viewed.c.media_id == MediaItem.id,
+                          user_viewed.c.media_type == "movie"))
+            .filter(user_viewed.c.user_id == user_id,
+                    MediaItem.media_type == "movie")
+            .all()
+        )
+    }
 
 
 class _LegacyMedia:
@@ -220,16 +236,24 @@ def _release_cache_rows(wl_ids, region):
     )
 
 
-def _movie_events_and_unknown(user_id, start, end, today, region):
+def _movie_events_and_unknown(user_id, start, end, today, region,
+                              viewed_movie_keys=None):
     """Watchlist movie release events (Feature 10B).
 
     Returns (events, unknown) — the in-window cache-backed events, the
     10A legacy fallback for uncovered titles, and the bounded
     release_date_unknown bucket.
+
+    Task C: events carry the canonical viewed flag (user_viewed junction,
+    one batched statement) so a release for an already-watched title can
+    render unobtrusive state. Release dates and ordering are unchanged.
     """
     watchlist_movies = _watchlist_movies(user_id)
     cache_rows = _release_cache_rows(
         [m.tmdb_id for m in watchlist_movies], region)
+    viewed_movie_keys = (
+        viewed_movie_keys
+        if viewed_movie_keys is not None else _viewed_movie_keys(user_id))
 
     covered = {r.tmdb_id for r in cache_rows}
     title_by_tmdb = {m.tmdb_id: (m.title, m.poster_path)
@@ -251,8 +275,10 @@ def _movie_events_and_unknown(user_id, start, end, today, region):
             continue
         seen.add(key)
         title, poster = title_by_tmdb[tmdb_id]
-        events.append(_movie_release_event(
-            tmdb_id, title, poster, rdate, rtype, today))
+        event = _movie_release_event(
+            tmdb_id, title, poster, rdate, rtype, today)
+        event["watched"] = tmdb_id in viewed_movie_keys
+        events.append(event)
 
     # 10A legacy fallback: titles with NO release-cache coverage at
     # all (the sync job may not have run yet) keep surfacing their
@@ -263,9 +289,11 @@ def _movie_events_and_unknown(user_id, start, end, today, region):
             continue
         if m.legacy_release_date < start or m.legacy_release_date > end:
             continue
-        events.append(_movie_event(_LegacyMedia(
+        event = _movie_event(_LegacyMedia(
             m.tmdb_id, m.title, m.poster_path,
-            m.legacy_release_date), today))
+            m.legacy_release_date), today)
+        event["watched"] = m.tmdb_id in viewed_movie_keys
+        events.append(event)
 
     # Watchlist movies with NO release data anywhere (no cache row,
     # no legacy date): never block the calendar — bounded titles.

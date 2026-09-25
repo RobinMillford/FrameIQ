@@ -94,6 +94,13 @@
                         'success'
                     );
                 }
+                // Cross-surface consistency (Phase 16): record the viewed
+                // id in the shared client state so every view-state helper
+                // (hero chips, rail badges) sees it immediately — no
+                // reload needed.
+                if (window.FrameIQViewState && mediaId) {
+                    window.FrameIQViewState.onMovieLogged(String(mediaId));
+                }
                 if (typeof window.__quickLogAfter === 'function') {
                     window.__quickLogAfter(out.data);
                 }

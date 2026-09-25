@@ -100,7 +100,7 @@ def _user_top_genre(user_id):
     return top.title(), (best or (None, None))[0], (best or (None, None))[1]
 
 
-def _tonights_picks(current_user, count=5):
+def _tonights_picks(current_user, count=5, viewed_keys=None):
     """Return a list of hero picks: taste-matched first, then top trending.
     Each pick is a dict with backdrop, poster, title, reason, etc."""
     try:
@@ -135,18 +135,21 @@ def _tonights_picks(current_user, count=5):
             if top_title and top_score:
                 bits.append(f"you rated {top_title} {top_score:.1f}/10")
             bits.append("it's trending this week")
-            picks.append(_make_hero(t, " · ".join(bits)))
+            picks.append(_make_hero(t, " · ".join(bits),
+                                    is_viewed=(t["id"], "movie") in viewed_keys))
             candidates = [c for c in candidates if c["id"] != t["id"]]
 
     # Fill remaining slots with top trending
     for t in candidates[:count - len(picks)]:
         rank = trending.index(t) + 1 if t in trending else 1
-        picks.append(_make_hero(t, f"Trending #{rank} this week"))
+        picks.append(_make_hero(
+            t, f"Trending #{rank} this week",
+            is_viewed=(t["id"], "movie") in viewed_keys))
 
     return picks[:count]
 
 
-def _make_hero(t, reason):
+def _make_hero(t, reason, is_viewed=False):
     """Format one trending result as a hero slide dict."""
     genre_names = sorted({
         _GENRE_ID_NAMES.get(g, "") for g in (t.get("genre_ids") or [])
@@ -162,6 +165,9 @@ def _make_hero(t, reason):
         "backdrop": IMG + "original" + t["backdrop_path"],
         "genres": genre_names,
         "reason": reason,
+        # User-scoped viewed flag (single shared contract) — rendered as a
+        # subtle ✓ Viewed chip by templates/index.html when True.
+        "is_viewed": is_viewed,
     }
 
 
@@ -196,6 +202,28 @@ def _trending_rail():
     ]
 
 
+def _collect_tv_show_ids(rails, is_authenticated):
+    """TMDb ids of every TV rail on the page (batched-progress input)."""
+    if not is_authenticated:
+        return set()
+    return {
+        show["id"] for rail in rails
+        if rail.get("kind") == "media"
+        and rail.get("key") in ("on_tv", "popular_tv")
+        for show in rail.get("entries") or []
+        if show
+    }
+
+
+def _viewed_hero_movie_ids(picks, viewed_keys):
+    """Hero pick ids that are canonically viewed movies (client seed)."""
+    viewed_movie_ids = {k[0] for k in viewed_keys if k[1] == "movie"}
+    return [
+        p["id"] for p in picks
+        if p.get("is_viewed") and p.get("id") in viewed_movie_ids
+    ]
+
+
 @main.route('/')
 def index():
     trending_backdrops = fetch_trending_movies()
@@ -211,8 +239,16 @@ def index():
 
     watchlist_ids, viewed_ids = get_user_collection_ids(current_user)
 
+    # Single shared view-state contract for the whole page: movie viewed
+    # pairs plus ONE batched TV progress lookup reused by every TV rail
+    # (no per-card queries).
+    from api.user_view_state import (
+        tv_aired_progress, user_viewed_keys,
+    )
+    viewed_keys = user_viewed_keys(current_user)
+
     # ── Tonight's Pick ──
-    picks = _tonights_picks(current_user)
+    picks = _tonights_picks(current_user, viewed_keys=viewed_keys)
 
     # ── Rails (normalized item shape for the rail card partial) ──
     rails = []
@@ -283,6 +319,7 @@ def index():
         "key": "on_tv", "title": "On TV This Week",
         "subtitle": "airing now", "kind": "media", "entries": on_tv,
     })
+
     rails.append({
         "key": "popular_tv", "title": "Popular Shows",
         "subtitle": "binge-worthy picks", "kind": "media",
@@ -294,6 +331,16 @@ def index():
         "entries": upcoming,
     })
 
+    # TV progress for every show on the page — exactly one batched call.
+    # Collected AFTER every TV rail exists so no rail is missed (this was
+    # the Popular Shows gap: ids used to be gathered before it was added).
+    tv_show_ids = _collect_tv_show_ids(rails, current_user.is_authenticated)
+    tv_progress = tv_aired_progress(current_user, tv_show_ids)
+
+    # Seed the client view-state store with the hero's movie ids (only the
+    # ids the page itself personalized — tiny, user-scoped, cache-safe).
+    viewed_movie_ids_js = _viewed_hero_movie_ids(picks, viewed_keys)
+
     return render_template(
         'index.html',
         picks=picks,
@@ -301,6 +348,9 @@ def index():
         trending_people=trending_people,
         user_watchlist_ids=watchlist_ids,
         user_viewed_ids=viewed_ids,
+        user_viewed_keys=viewed_keys,
+        tv_progress=tv_progress,
+        viewed_movie_ids_js=viewed_movie_ids_js,
     )
 
 

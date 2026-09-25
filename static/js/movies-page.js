@@ -55,6 +55,8 @@
                     `;
                     slider.appendChild(movieCard);
                 });
+                // Task C: canonical user view state on browse cards.
+                if (window.FrameIQViewState) window.FrameIQViewState.syncCards(slider);
             })
         }
 
@@ -221,6 +223,8 @@ async function fetchMovieTrailer(movieId) {
                         `;
                         container.appendChild(movieCard);
                     });
+                    // Task C: canonical user view state on category cards.
+                    if (window.FrameIQViewState) window.FrameIQViewState.syncCards(container);
                 } catch (error) {
                 }
             }

@@ -63,6 +63,24 @@ def start_tracking_show(show_id):
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
+@tv_tracking.route('/api/tv/<int:show_id>/aired-progress', methods=['GET'])
+@login_required
+def get_show_aired_progress(show_id):
+    """User-scoped overall AIRED-episode progress for one show.
+
+    Backs the live progress line on the TV detail page (view-state.js):
+    recomputed per request so a newly aired episode immediately lowers a
+    previously complete show. Never cached globally — personalized data.
+    """
+    try:
+        from api.user_view_state import tv_aired_progress
+        progress = tv_aired_progress(current_user, [show_id]).get(show_id)
+        return jsonify({'tv_progress': progress}), 200
+    except Exception:
+        logger.error("Unexpected error in tv_tracking", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
 @tv_tracking.route('/api/tv/<int:show_id>/progress', methods=['GET'])
 @login_required
 def get_show_progress(show_id):

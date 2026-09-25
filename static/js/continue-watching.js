@@ -60,12 +60,20 @@
         post(url).then(function (res) {
             if (type === 'movie') {
                 window.frameToast && window.frameToast('✓ Marked as watched', 'success');
+                // Cross-surface sync (Phase 16): hero chips pick up the
+                // viewed id immediately.
+                if (window.FrameIQViewState) {
+                    window.FrameIQViewState.onMovieLogged(String(card.dataset.tmdbId));
+                }
             } else if (res && res.next) {
                 window.frameToast && window.frameToast(
                     '✓ Finished — next: S' + res.next.season + 'E' + res.next.episode,
                     'success');
             } else {
                 window.frameToast && window.frameToast('✓ Finished', 'success');
+            }
+            if (type !== 'movie' && window.FrameIQViewState) {
+                window.FrameIQViewState.onEpisodeChange(card.dataset.tmdbId);
             }
             removeCard(card);
         }).catch(function () {
