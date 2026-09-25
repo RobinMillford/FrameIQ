@@ -155,6 +155,28 @@ def _compose_progress(watched_set, calendar_set, details_loader, show_id):
     }
 
 
+def view_state_payload(user, movie_ids, tv_ids, details_loader=None):
+    """Batched JSON-ready personalized state for ONE page payload.
+
+    Returns ``{"viewed_movie_ids": [...], "tv_progress": {...}}`` — the
+    exact shape the client store (static/js/view-state.js) consumes.
+
+    Bounded by construction: ``tv_ids`` never expands beyond the caller's
+    list (Phase 17 overfetch rule) and movie ids are filtered to the ones
+    actually on the surface. Anonymous users get both fields empty.
+    """
+    viewed_movie_ids = sorted(
+        mid for (mid, mtype) in user_viewed_keys(user)
+        if mtype == "movie")
+    if movie_ids:
+        wanted = {int(m) for m in movie_ids if _coerce_int(m)}
+        viewed_movie_ids = [m for m in viewed_movie_ids if m in wanted]
+    return {
+        "viewed_movie_ids": viewed_movie_ids,
+        "tv_progress": tv_aired_progress(user, tv_ids, details_loader),
+    }
+
+
 def tv_aired_progress(user, show_ids, details_loader=None):
     """Overall aired-episode progress for the given TMDb show ids.
 

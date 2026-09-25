@@ -33,6 +33,7 @@ from routes.reviews_enhanced import reviews_enhanced_bp
 from routes.lists import lists
 from routes.lists_advanced import lists_advanced
 from routes.diary import diary
+import routes.view_state as _view_state_routes  # noqa: F401 — attaches to main
 from routes.tags import tags_bp
 from routes.likes import likes_bp
 from routes.media_comments import media_comments_bp
