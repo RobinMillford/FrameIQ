@@ -4,6 +4,8 @@ Legacy /wishlist and /add_to_wishlist//remove_from_wishlist routes are
 kept as redirects to the canonical Watchlist equivalents (Wishlist was
 consolidated into Watchlist).
 """
+import logging
+
 from flask import render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
 from sqlalchemy import select
@@ -12,6 +14,8 @@ from models import db, MediaItem, user_watchlist, user_viewed
 from routes._main_bp import main
 from routes.helpers import get_user_collection_ids
 from utils.collections import get_or_create_media_item
+
+logger = logging.getLogger(__name__)
 
 _PRIORITY_LABELS = {'high': '🔥 High', 'medium': '📌 Medium', 'low': '💤 Low'}
 
@@ -208,7 +212,25 @@ def add_to_wishlist(media_id, media_type):
 @main.route('/mark_as_viewed/<int:media_id>/<media_type>', methods=['GET'])
 @login_required
 def mark_as_viewed(media_id, media_type):
-    """Mark a movie or TV show as viewed"""
+    """Mark a movie or TV show as viewed.
+
+    For TV (Task D) this is STATE SYNCHRONIZATION: alongside the canonical
+    ``user_viewed`` entry, every currently AIRED valid episode becomes a
+    TVEpisodeWatch row via the bounded bulk helper — so the season cards
+    and overall progress line agree with the hero's Viewed state. Future
+    episodes are never manufactured, and repeated clicks are idempotent
+    (no rewatch generation, no diary entries).
+    """
+    if media_type == 'tv':
+        try:
+            from routes.tv_tracking import mark_show_aired_watched_core
+            mark_show_aired_watched_core(current_user.id, media_id)
+        except Exception:
+            db.session.rollback()
+            logger.error("TV bulk mark-as-viewed failed for show %s",
+                         media_id, exc_info=True)
+            flash('Could not mark that show as viewed!')
+            return redirect(request.referrer or url_for('main.index'))
     return _add_to_collection(user_viewed, media_id, media_type, 'viewing history')
 
 

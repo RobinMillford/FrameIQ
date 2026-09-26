@@ -26,6 +26,7 @@
     var viewed = new Set(
         (window.__VIEWED_MOVIE_IDS__ || []).map(String)
     );
+    var loggedToday = new Set();             // movie ids with a watch event dated today
     var tvProgress = Object.create(null);   // String(showId) → {watched,aired,percent}
     var stateReady = false;
     var lastSignature = '';
@@ -44,6 +45,19 @@
 
     function isViewedMovie(tmdbId) {
         return viewed.has(String(tmdbId));
+    }
+
+    /**
+     * Task D: distinguishes "viewed" from "a watch event was logged today"
+     * so the quick-log action can read "Watched today" / "Log rewatch"
+     * instead of a state-blind "Log watched".
+     */
+    function isLoggedToday(tmdbId) {
+        return loggedToday.has(String(tmdbId));
+    }
+
+    function markLoggedToday(tmdbId) {
+        loggedToday.add(String(tmdbId));
     }
 
     function tvProgressFor(showId) {
@@ -307,6 +321,9 @@
             (data.viewed_movie_ids || []).forEach(function (id) {
                 viewed.add(String(id));
             });
+            (data.logged_today_movie_ids || []).forEach(function (id) {
+                loggedToday.add(String(id));
+            });
             var tp = data.tv_progress || {};
             for (var sid in tp) {
                 if (Object.prototype.hasOwnProperty.call(tp, sid)) {
@@ -319,6 +336,10 @@
             // flush that completes after the last call would otherwise
             // never repaint (the /tv_shows bug).
             applyToCards(document);
+            // Task D: quick-log action wording follows the store.
+            document.dispatchEvent(new CustomEvent('FrameIQViewStateUpdated', {
+                detail: { root: document },
+            }));
             return true;
         }).catch(function () {
             return false;
@@ -462,6 +483,7 @@
      */
     function onMovieLogged(tmdbId) {
         addViewed(tmdbId);
+        markLoggedToday(tmdbId);
         refreshHeroChips();
         applyToCards(document);
     }
@@ -494,6 +516,8 @@
         onEpisodeChange: onEpisodeChange,
         heroChipExists: heroChipExists,
         isViewedMovie: isViewedMovie,
+        isLoggedToday: isLoggedToday,
+        markLoggedToday: markLoggedToday,
         tvProgressFor: tvProgressFor,
         ensureState: ensureState,
         applyToCards: applyToCards,

@@ -95,7 +95,9 @@
       </a>
       {% endif %} {% if (item.id, media_type) not in user_viewed_ids %}
       {% if is_movie %}
-      {# One-tap quick log — creates today's watch event via /api/media/<id>/log #}
+      {# One-tap quick log — creates today's watch event via /api/media/<id>/log.
+         The action wording distinguishes state (✓ Viewed badge above) from
+         action (Task D); quick-log.js re-stamps it from the shared store. #}
       <button
         type="button"
         data-quick-log="{{ item.id }}"
@@ -103,7 +105,7 @@
         {% if item.poster_path %}data-poster-path="{{ item.poster_path }}"{% endif %}
         {% if item.release_date %}data-release-date="{{ item.release_date }}"{% endif %}
         class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1"
-        title="Log watched (today)"
+        title="Log Watched (today)"
       >
         <svg
           class="w-3 h-3"
@@ -118,7 +120,7 @@
             d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
           ></path>
         </svg>
-        Log Watched
+        <span class="ql-log-label">Log Watched</span>
       </button>
       {% else %}
       <a

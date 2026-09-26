@@ -35,9 +35,9 @@ Privacy contract: every function is strictly user-scoped; anonymous users
 always get empty results and no personalized state can reach another user.
 Nothing here is cached globally — callers render per request.
 """
-from datetime import datetime
+from datetime import date, datetime
 
-from models import db, TVEpisodeWatch, UpcomingEpisode
+from models import db, DiaryEntry, MediaItem, TVEpisodeWatch, UpcomingEpisode
 
 
 def user_viewed_keys(user):
@@ -70,6 +70,31 @@ def _coerce_int(value):
     except (TypeError, ValueError):
         return None
     return value if value > 0 else None
+
+
+def user_logged_today_keys(user, today=None):
+    """Set of (tmdb_id, media_type) the user has logged a watch event for
+    TODAY (DiaryEntry.watched_date == today).
+
+    Distinguishes "viewed at some point" from "logged today" for the
+    movie quick-log action without any per-card queries. Anonymous users
+    get an empty set; a defensive except degrades to "no state".
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return set()
+    try:
+        rows = (
+            db.session.query(MediaItem.tmdb_id, MediaItem.media_type)
+            .join(DiaryEntry, DiaryEntry.media_id == MediaItem.id)
+            .filter(
+                DiaryEntry.user_id == user.id,
+                DiaryEntry.watched_date == (today or date.today()),
+            )
+            .all()
+        )
+        return {(tmdb_id, mtype) for tmdb_id, mtype in rows}
+    except Exception:
+        return set()
 
 
 def _aired_positions(details):
@@ -155,15 +180,64 @@ def _compose_progress(watched_set, calendar_set, details_loader, show_id):
     }
 
 
-def view_state_payload(user, movie_ids, tv_ids, details_loader=None):
+def aired_positions_for_show(show_id, details_loader=None):
+    """The EXACT aired (season, episode) set used by tv_aired_progress
+    for ONE show — the single shared rule for the bulk "Mark as Viewed"
+    operation (Task D) so the write side and the read side can never
+    diverge.
+
+    Union of:
+      - the synced UpcomingEpisode calendar rows with ``air_date <= today``
+      - TMDb ``last_episode_to_air`` → 1..episode_number of that season
+    with specials (season 0) excluded on both sides. Empty set when
+    nothing has verifiably aired. Same failure policy as
+    ``_compose_progress``: a details-loader failure degrades to
+    calendar-only data instead of raising.
+    """
+    show_id = _coerce_int(show_id)
+    if not show_id:
+        return set()
+    aired = _batched_aired_calendar(
+        [show_id], datetime.utcnow().date()).get(show_id, set())
+    loader = details_loader or _default_details_loader
+    try:
+        details = loader(show_id)
+    except Exception:
+        details = None
+    aired |= _aired_positions(details)
+    return {(s, e) for (s, e) in aired if s > 0}
+
+
+def season_aired_for_show(show_id, details_loader=None):
+    """``{season_number: aired_episode_count}`` for one show, derived from
+    the same shared aired set (specials excluded). Backs the season-card
+    denominators so "100% Complete" can never be computed against future
+    episodes."""
+    aired = aired_positions_for_show(show_id, details_loader)
+    counts = {}
+    for season, episode in aired:
+        counts[season] = max(counts.get(season, 0), episode)
+    return counts
+
+
+def view_state_payload(user, movie_ids, tv_ids, details_loader=None,
+                       movie_media_ids=None):
     """Batched JSON-ready personalized state for ONE page payload.
 
-    Returns ``{"viewed_movie_ids": [...], "tv_progress": {...}}`` — the
-    exact shape the client store (static/js/view-state.js) consumes.
+    Returns ``{"viewed_movie_ids": [...], "logged_today_movie_ids": [...],
+    "tv_progress": {...}}`` — the shape the client store
+    (static/js/view-state.js) consumes. ``logged_today_movie_ids`` is the
+    Task D additive field distinguishing viewed movies from movies with a
+    watch event dated today (quick-log wording); existing consumers that
+    ignore it keep working unchanged.
 
     Bounded by construction: ``tv_ids`` never expands beyond the caller's
     list (Phase 17 overfetch rule) and movie ids are filtered to the ones
-    actually on the surface. Anonymous users get both fields empty.
+    actually on the surface. Anonymous users get every field empty.
+
+    ``movie_media_ids`` (optional): MediaItem rows the caller already has —
+    rows may carry a ``logged_today`` flag and then skip the batched
+    logged-today lookup.
     """
     viewed_movie_ids = sorted(
         mid for (mid, mtype) in user_viewed_keys(user)
@@ -171,8 +245,25 @@ def view_state_payload(user, movie_ids, tv_ids, details_loader=None):
     if movie_ids:
         wanted = {int(m) for m in movie_ids if _coerce_int(m)}
         viewed_movie_ids = [m for m in viewed_movie_ids if m in wanted]
+    else:
+        wanted = None  # no page scoping requested
+
+    logged_today_ids = []
+    if user is not None and getattr(user, "is_authenticated", False):
+        if movie_media_ids is None:
+            pairs = user_logged_today_keys(user)
+        else:
+            pairs = {
+                (m.tmdb_id, m.media_type) for m in movie_media_ids
+                if getattr(m, "logged_today", False)}
+        logged_today_ids = sorted(
+            tmdb_id for (tmdb_id, mtype) in pairs
+            if mtype == "movie"
+            and (wanted is None or tmdb_id in wanted))
+
     return {
         "viewed_movie_ids": viewed_movie_ids,
+        "logged_today_movie_ids": logged_today_ids,
         "tv_progress": tv_aired_progress(user, tv_ids, details_loader),
     }
 
