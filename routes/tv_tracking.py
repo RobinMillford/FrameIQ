@@ -71,11 +71,19 @@ def get_show_aired_progress(show_id):
     Backs the live progress line on the TV detail page (view-state.js):
     recomputed per request so a newly aired episode immediately lowers a
     previously complete show. Never cached globally — personalized data.
+
+    Also carries ``season_aired`` — the per-season AIRED episode counts from
+    the same shared rules — so the season cards can compute "% Complete"
+    against airing reality (future episodes never inflate a denominator).
     """
     try:
-        from api.user_view_state import tv_aired_progress
+        from api.user_view_state import season_aired_for_show, tv_aired_progress
         progress = tv_aired_progress(current_user, [show_id]).get(show_id)
-        return jsonify({'tv_progress': progress}), 200
+        season_aired = season_aired_for_show(show_id)
+        return jsonify({
+            'tv_progress': progress,
+            'season_aired': {str(s): n for s, n in season_aired.items()},
+        }), 200
     except Exception:
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
@@ -150,6 +158,121 @@ def mark_episode_watched(show_id, season, episode):
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred'}), 500
+
+
+def mark_show_aired_watched_core(user_id, show_id):
+    """Bulk "Mark as Viewed" for a TV show — state sync, not rewatch
+    generation (Task D).
+
+    Marks every currently AIRED, valid episode (the EXACT set used by
+    api/user_view_state.tv_aired_progress: synced calendar rows with
+    air_date <= today, unioned with TMDb's last_episode_to_air anchor;
+    specials excluded) as watched for ONE user, in a single transaction:
+
+      1. one bounded query resolving the eligible aired positions
+      2. one query for the user's existing watch rows (deduped in code —
+         idx_user_show_season_episode is an INDEX, not a constraint)
+      3. one bulk INSERT of only the missing non-rewatch rows
+      4. TVShowProgress created if absent; counters recomputed from the
+         resulting rows; update_season_progress(); completion gated on
+         TMDb status Ended/Canceled (same rule as single-episode marks)
+
+    Existing watch records (including rating/notes/rewatch history) are
+    preserved untouched; repeated calls are idempotent (second call
+    inserts nothing and never creates rewatch entries). No diary events
+    are manufactured. Returns ``(progress, inserted_count, aired_count)``.
+    """
+    from api.user_view_state import aired_positions_for_show
+
+    aired = aired_positions_for_show(show_id)
+    if not aired:
+        # Nothing has verifiably aired — nothing to synchronize.
+        progress = TVShowProgress.query.filter_by(
+            user_id=user_id, show_id=show_id).first()
+        return progress, 0, 0
+
+    progress = TVShowProgress.query.filter_by(
+        user_id=user_id, show_id=show_id
+    ).first()
+    if not progress:
+        try:
+            show = fetch_tv_show_details(show_id)
+        except Exception:
+            logger.warning(
+                "Could not load show %s for bulk mark-viewed", show_id,
+                exc_info=True)
+            show = {}
+        progress = TVShowProgress(
+            user_id=user_id,
+            show_id=show_id,
+            total_seasons=show.get('number_of_seasons', 0),
+            total_episodes=show.get('number_of_episodes', 0),
+            watched_seasons=0,
+            watched_episodes=0,
+            status='watching',
+        )
+        db.session.add(progress)
+        db.session.flush()
+
+    existing = {
+        (season, episode)
+        for season, episode in db.session.query(
+            TVEpisodeWatch.season_number,
+            TVEpisodeWatch.episode_number,
+        ).filter(
+            TVEpisodeWatch.user_id == user_id,
+            TVEpisodeWatch.show_id == show_id,
+            TVEpisodeWatch.is_rewatch == False,  # noqa: E712
+        ).all()
+    }
+
+    missing = sorted(aired - existing)
+    if missing:
+        db.session.bulk_insert_mappings(
+            TVEpisodeWatch,
+            [
+                {
+                    'user_id': user_id,
+                    'show_id': show_id,
+                    'progress_id': progress.id,
+                    'season_number': season,
+                    'episode_number': episode,
+                    'watched_date': datetime.utcnow().date(),
+                    'is_rewatch': False,
+                }
+                for season, episode in missing
+            ],
+        )
+
+    # Recompute the counters from the resulting canonical rows instead of
+    # incrementing (bulk inserts bypass ORM events; duplicates would
+    # otherwise double-count).
+    db.session.flush()
+    progress.watched_episodes = TVEpisodeWatch.query.filter_by(
+        user_id=user_id, show_id=show_id,
+    ).filter(TVEpisodeWatch.is_rewatch == False).count()  # noqa: E712
+    progress.last_watched = datetime.utcnow()
+    update_season_progress(progress, show_id)
+
+    # Same completion gating as mark_episode_watched_core: only shows TMDb
+    # reports as Ended/Canceled become 'completed'; a running show stays
+    # 'watching' so a future episode can drop it back from 100%.
+    if (progress.watched_episodes >= progress.total_episodes
+            and progress.total_episodes > 0):
+        try:
+            show = fetch_tv_show_details(show_id)
+            show_status = show.get('status', '')
+            if show_status in ['Ended', 'Canceled']:
+                progress.status = 'completed'
+                progress.completed_at = datetime.utcnow()
+            elif progress.status == 'completed':
+                progress.status = 'watching'
+        except Exception as exc:
+            logger.warning(
+                "Could not fetch show %s status: %s", show_id, exc)
+
+    db.session.commit()
+    return progress, len(missing), len(aired)
 
 
 def mark_episode_watched_core(user_id, show_id, season, episode, data=None):

@@ -63,7 +63,7 @@
             {% if item.poster_path %}data-poster-path="{{ item.poster_path }}"{% endif %}
             {% if item.release_date %}data-release-date="{{ item.release_date }}"{% endif %}
             class="quick-log-btn absolute bottom-2 right-2 hidden group-hover:flex items-center justify-center w-8 h-8 rounded-full bg-black/70 backdrop-blur text-white hover:bg-green-600 transition-colors"
-            title="Log watched (today)"
+            title="{{ 'Log Rewatch (today)' if _viewed else 'Log Watched (today)' }}"
         >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>

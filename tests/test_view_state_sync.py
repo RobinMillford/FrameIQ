@@ -488,5 +488,9 @@ def test_aired_progress_endpoint_returns_progress(
     _login(client, u)
     r = client.get(f"/api/tv/{SHOW_ID}/aired-progress")
     assert r.status_code == 200
+    # Task D added the additive ``season_aired`` sibling (per-season AIRED
+    # counts from the same shared rules, backing the season cards); the
+    # overall progress itself is unchanged.
     assert r.get_json() == {"tv_progress": {"watched": 2, "aired": 4,
-                                            "percent": 50.0}}
+                                            "percent": 50.0},
+                            "season_aired": {"1": 4}}

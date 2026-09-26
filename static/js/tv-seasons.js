@@ -9,6 +9,7 @@ class TVSeasonsManager {
         this.apiKey = apiKey;
         this.seasons = [];
         this.watchedEpisodes = new Set();
+        this.seasonAired = {};   // Task D: per-season AIRED episode counts (shared rules)
         this.showProgress = null;
     }
 
@@ -21,7 +22,8 @@ class TVSeasonsManager {
 
             await Promise.all([
                 this.loadShowDetails(),
-                this.loadWatchedEpisodes()
+                this.loadWatchedEpisodes(),
+                this.loadAiredProgress()
             ]);
 
             this.renderSeasonsList();
@@ -69,6 +71,27 @@ class TVSeasonsManager {
         }
     }
 
+    /**
+     * Task D: per-season AIRED episode counts from the shared aired rules
+     * (api/user_view_state.py — calendar ∪ last_episode_to_air, no future
+     * episodes, specials excluded). Season-card percentages are computed
+     * against THIS denominator so a fully-watched aired season can never
+     * show 0% (Viewed/progress mismatch) and a future season can never
+     * show a misleading 100% or 0% Complete.
+     */
+    async loadAiredProgress() {
+        try {
+            const timestamp = Date.now();
+            const response = await fetch(`/api/tv/${this.showId}/aired-progress?_=${timestamp}`);
+            const data = await response.json();
+            if (data && data.season_aired) {
+                this.seasonAired = data.season_aired;
+            }
+        } catch (error) {
+            this.seasonAired = {};   // degrade to TMDb-count behavior
+        }
+    }
+
     async loadShowProgress() {
         const timestamp = Date.now();
         const response = await fetch(`/api/tv/${this.showId}/progress?_=${timestamp}`);
@@ -79,6 +102,7 @@ class TVSeasonsManager {
 
     async refresh() {
         await this.loadWatchedEpisodes();
+        await this.loadAiredProgress();
         await this.loadShowProgress();
         this.renderSeasonsList();
     }
@@ -98,8 +122,14 @@ class TVSeasonsManager {
         container.innerHTML = this.seasons.map(season => {
             const watchedCount = this.getWatchedCountForSeason(season.season_number);
             const totalEpisodes = season.episode_count;
-            const progress = (watchedCount / totalEpisodes) * 100;
-            const isCompleted = watchedCount === totalEpisodes;
+            // Task D: "X% Complete" is computed against the AIRED episode
+            // count (shared rules), falling back to the TMDb episode_count
+            // only when no aired data exists for the season yet.
+            const airedCount = this.seasonAired[String(season.season_number)] ||
+                this.seasonAired[season.season_number] || 0;
+            const denom = airedCount > 0 ? airedCount : totalEpisodes;
+            const progress = denom > 0 ? (watchedCount / denom) * 100 : 0;
+            const isCompleted = denom > 0 && watchedCount >= denom;
             const posterPath = season.poster_path || '';
             const posterUrl = posterPath.startsWith('http')
                 ? posterPath
@@ -148,11 +178,13 @@ class TVSeasonsManager {
                             ` : ''}
                             
                             <div class="mb-3">
+                                ${denom > 0 ? `
                                 <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
                                     <div class="h-full ${isCompleted ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-gradient-to-r from-indigo-500 to-purple-500'} transition-all duration-500"
                                          style="width: ${progress}%"></div>
                                 </div>
-                                <p class="text-xs text-gray-400 mt-1">${Math.round(progress)}% Complete</p>
+                                <p class="text-xs text-gray-400 mt-1">${Math.round(progress)}% Complete${airedCount > 0 && airedCount < totalEpisodes ? ` of aired episodes` : ''}</p>
+                                ` : ''}
                             </div>
                             
                             <div class="flex flex-wrap gap-2">
@@ -208,8 +240,12 @@ class TVSeasonsManager {
             const season = this.seasons.find(s => s.season_number === seasonNumber);
             if (!season) return;
 
-            // Optimistic UI update
-            for (let i = 1; i <= season.episode_count; i++) {
+            // Optimistic UI update — AIRED episodes only (Task D):
+            // future episodes of the season are not manufactured as watched.
+            const airedCount = this.seasonAired[String(seasonNumber)] ||
+                this.seasonAired[seasonNumber] || season.episode_count;
+            const cap = Math.min(airedCount, season.episode_count);
+            for (let i = 1; i <= cap; i++) {
                 this.watchedEpisodes.add(`${seasonNumber}-${i}`);
             }
             this.renderSeasonsList();
@@ -256,6 +292,7 @@ class TVSeasonsManager {
             
             // Rollback UI
             await this.loadWatchedEpisodes();
+            await this.loadAiredProgress();
             this.renderSeasonsList();
         }
     }
