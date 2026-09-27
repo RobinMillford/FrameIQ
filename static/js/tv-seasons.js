@@ -137,7 +137,7 @@ class TVSeasonsManager {
 
             return `
                 <div class="bg-white/5 hover:bg-white/10 rounded-xl p-4 transition-all border border-white/10">
-                    <div class="flex gap-4">
+                    <div class="flex flex-col sm:flex-row gap-4">
                         <div class="flex-shrink-0">
                             <img src="${posterUrl}"
                                  alt="Season ${season.season_number}"
@@ -146,8 +146,8 @@ class TVSeasonsManager {
                                  onerror="this.src='https://via.placeholder.com/200x300?text=No+Poster'">
                         </div>
                         
-                        <div class="flex-1">
-                            <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start gap-2 mb-2">
                                 <div>
                                     <h4 class="text-xl font-bold text-white hover:text-indigo-400 cursor-pointer"
                                         onclick="window.location.href='/tv/${this.showId}/season/${season.season_number}'">
