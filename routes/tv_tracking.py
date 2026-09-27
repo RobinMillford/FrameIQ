@@ -166,8 +166,10 @@ def mark_show_aired_watched_core(user_id, show_id):
 
     Marks every currently AIRED, valid episode (the EXACT set used by
     api/user_view_state.tv_aired_progress: synced calendar rows with
-    air_date <= today, unioned with TMDb's last_episode_to_air anchor;
-    specials excluded) as watched for ONE user, in a single transaction:
+    air_date <= today, unioned with TMDb's cached details — the
+    last_episode_to_air anchor plus every historical season below that
+    anchor in full; specials excluded) as watched for ONE user, in a
+    single transaction:
 
       1. one bounded query resolving the eligible aired positions
       2. one query for the user's existing watch rows (deduped in code —

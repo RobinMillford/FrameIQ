@@ -42,10 +42,25 @@ SHOW_RUNNING = 991003
 DETAILS_CACHE = {}
 
 
-def _details(last_episode, season=1):
-    return {"id": 0,
-            "last_episode_to_air": {"season_number": season,
-                                    "episode_number": last_episode}}
+def _details(last_episode, season=1, seasons=None, status=""):
+    """TMDb-shaped details stub. ``seasons`` maps season_number →
+    episode_count (the ``append_to_response=seasons`` metadata the real
+    fetcher already carries on the same cached payload)."""
+    details = {"id": 0,
+               "last_episode_to_air": {"season_number": season,
+                                       "episode_number": last_episode}}
+    if seasons is not None:
+        details["seasons"] = [
+            {"season_number": sn, "episode_count": ec,
+             "air_date": "2010-01-01"}
+            for sn, ec in sorted(seasons.items())]
+        details["number_of_seasons"] = len(
+            [sn for sn in seasons if sn > 0])
+        details["number_of_episodes"] = sum(
+            ec for sn, ec in seasons.items() if sn > 0)
+    if status:
+        details["status"] = status
+    return details
 
 
 @pytest.fixture
@@ -326,6 +341,232 @@ def test_mark_multi_season_all_100_example(factory, stub_details):
     # season denominator + completion per season from the shared rules
     season_aired = uvs.season_aired_for_show(SHOW_ID)
     assert season_aired == {1: 10, 2: 10, 3: 10, 4: 1}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Task E — historical multi-season airing resolution (Banshee 10/10/10/8)
+# ══════════════════════════════════════════════════════════════════════
+
+BANSHEE = {1: 10, 2: 10, 3: 10, 4: 8}          # 4 seasons, 38 episodes
+BANSHEE_POSITIONS = {
+    (sn, ep) for sn, total in BANSHEE.items() for ep in range(1, total + 1)}
+
+
+def test_banshee_historical_seasons_resolve_38(factory, stub_details):
+    """Spec #1/#2: a completed 4-season show whose only airing evidence is
+    the anchor (last_episode_to_air = S4E8 — the production bug shape, no
+    synced calendar rows for the older seasons) resolves ALL historical
+    seasons: 38 aired, not 8."""
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE)
+
+    _, inserted, aired = \
+        tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert (inserted, aired) == (38, 38)
+    assert _watched_positions(u.id, SHOW_ID) == BANSHEE_POSITIONS
+
+
+def test_banshee_season_map_complete(factory, stub_details):
+    """Spec #3/#7: season_aired_for_show() returns the full historical map
+    {1: 10, 2: 10, 3: 10, 4: 8} — never {4: 8} only."""
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE)
+
+    assert uvs.season_aired_for_show(SHOW_ID) == BANSHEE
+
+    # Read-side (tv_aired_progress) agrees once the user has watch rows.
+    _, _, _ = tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert uvs.season_aired_for_show(SHOW_ID) == BANSHEE
+
+
+def test_banshee_every_season_100_after_mark(factory, stub_details):
+    """Specs #4–#9: after Mark as Viewed every season is 100% complete and
+    the hero reports 38 of 38 — not the production bug's 8 of 8."""
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE,
+                                      status="Ended")
+    _, _, _ = tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+
+    # Per-season completion from the shared season map.
+    watched = _watched_positions(u.id, SHOW_ID)
+    for sn, aired_count in BANSHEE.items():
+        watched_in_season = sum(1 for (s, _e) in watched if s == sn)
+        assert watched_in_season == aired_count
+    assert uvs.season_aired_for_show(SHOW_ID) == BANSHEE
+
+    # Hero: overall 100% with the full historical denominator.
+    p = uvs.tv_aired_progress(u, [SHOW_ID])[SHOW_ID]
+    assert p == {"watched": 38, "aired": 38, "percent": 100.0}
+
+    # Tracking counters agree; Ended show seals completed.
+    progress = TVShowProgress.query.filter_by(
+        user_id=u.id, show_id=SHOW_ID).one()
+    assert progress.watched_episodes == 38
+    assert progress.status == "completed"
+
+
+def test_banshee_existing_watches_preserved_and_idempotent(
+        factory, stub_details):
+    """Specs #14–#16 on the historical path: a pre-existing watch row (with
+    rating/notes) is preserved untouched, rewatches are not generated, and
+    a second Mark as Viewed inserts zero additional rows."""
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE)
+    existing = TVEpisodeWatch(
+        user_id=u.id, show_id=SHOW_ID, season_number=2, episode_number=5,
+        rating=4.0, notes="favorite")
+    db.session.add(existing)
+    db.session.commit()
+
+    _, first_inserts, first_aired = \
+        tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert (first_inserts, first_aired) == (37, 38)
+
+    kept = TVEpisodeWatch.query.filter_by(
+        user_id=u.id, show_id=SHOW_ID,
+        season_number=2, episode_number=5).one()
+    assert kept.id == existing.id
+    assert kept.rating == 4.0 and kept.notes == "favorite"
+    assert TVEpisodeWatch.query.filter_by(
+        user_id=u.id, show_id=SHOW_ID, is_rewatch=True).count() == 0
+    assert TVEpisodeWatch.query.filter_by(
+        user_id=u.id, show_id=SHOW_ID).count() == 38
+
+    _, second_inserts, second_aired = \
+        tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert (second_inserts, second_aired) == (0, 38)
+    assert TVEpisodeWatch.query.filter_by(
+        user_id=u.id, show_id=SHOW_ID).count() == 38
+
+
+def test_running_show_historical_plus_partial_current(factory, stub_details):
+    """Phase 5 + Phase 10: a running show resolves historical seasons in
+    full plus the current season only up to the anchor. A newly aired
+    episode enters the denominator, watching restores 100%, and future
+    seasons never appear anywhere."""
+    u = factory.user()
+    running = {1: 10, 2: 10, 3: 10, 4: 12, 5: 8}
+    DETAILS_CACHE[SHOW_ID] = _details(5, season=3, seasons=running,
+                                      status="Returning Series")
+    _, inserted, aired = \
+        tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert (inserted, aired) == (25, 25)
+    assert uvs.season_aired_for_show(SHOW_ID) == {1: 10, 2: 10, 3: 5}
+    assert uvs.tv_aired_progress(u, [SHOW_ID])[SHOW_ID] == {
+        "watched": 25, "aired": 25, "percent": 100.0}
+
+    # Phase 5: the next episode airs (S3E6) — denominator grows to 26,
+    # old watches remain, percent drops: 25/26.
+    DETAILS_CACHE[SHOW_ID] = _details(6, season=3, seasons=running,
+                                      status="Returning Series")
+    p = uvs.tv_aired_progress(u, [SHOW_ID])[SHOW_ID]
+    assert p == {"watched": 25, "aired": 26, "percent": 96.2}
+    season_map = uvs.season_aired_for_show(SHOW_ID)
+    assert season_map[3] == 6
+    assert 4 not in season_map and 5 not in season_map
+
+    # Watching the new episode restores 100%; S1–S2 untouched.
+    _, _, _ = tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    watched = _watched_positions(u.id, SHOW_ID)
+    assert (3, 6) in watched
+    for sn in (1, 2):
+        assert sum(1 for (s, _e) in watched if s == sn) == 10
+    assert uvs.tv_aired_progress(u, [SHOW_ID])[SHOW_ID] == {
+        "watched": 26, "aired": 26, "percent": 100.0}
+
+    # Phase 10: S4 partially airs (S4E3, S5 still future) — historical
+    # seasons stay complete, the bulk mark reaches exactly 33/33, and the
+    # future season is excluded from every surface.
+    DETAILS_CACHE[SHOW_ID] = _details(3, season=4, seasons=running,
+                                      status="Returning Series")
+    _, inserted, aired = \
+        tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+    assert (inserted, aired) == (7, 33)
+    assert uvs.season_aired_for_show(SHOW_ID) == {1: 10, 2: 10, 3: 10, 4: 3}
+    assert uvs.tv_aired_progress(u, [SHOW_ID])[SHOW_ID] == {
+        "watched": 33, "aired": 33, "percent": 100.0}
+    watched = _watched_positions(u.id, SHOW_ID)
+    assert not any(s in (0, 5) for (s, _e) in watched)
+
+
+def test_historical_future_dated_season_excluded(factory, stub_details):
+    """Phase 12: season metadata that self-dates in the future is never
+    trusted into the aired set, even below the anchor (contradictory data)."""
+    details = _details(2, season=1, seasons={1: 10, 2: 10})
+    details["seasons"][1]["air_date"] = (
+        date.today() + timedelta(days=30)).isoformat()
+    DETAILS_CACHE[SHOW_ID] = details
+
+    assert uvs.aired_positions_for_show(SHOW_ID) == {
+        (1, 1), (1, 2)}
+
+
+def test_historical_resolution_keeps_specials_excluded(factory, stub_details):
+    """Spec #17/Phase 11: fixing historical seasons must not smuggle
+    specials (season 0) into the aired set."""
+    DETAILS_CACHE[SHOW_ID] = _details(10, season=1,
+                                      seasons={0: 6, 1: 10})
+    factory.aired(SHOW_ID, 0, 1)            # aired special — still excluded
+
+    aired = uvs.aired_positions_for_show(SHOW_ID)
+    assert aired == {(1, e) for e in range(1, 11)}
+    assert uvs.season_aired_for_show(SHOW_ID) == {1: 10}
+
+
+def test_banshee_tmdb_calls_bounded(factory, stub_details, monkeypatch):
+    """Phase 4/#15: the historical resolution adds NO TMDb calls — season
+    metadata rides on the same cached details payload the bulk op already
+    loaded (exactly one details resolution for the whole Banshee mark)."""
+    import api.continue_watching as cw
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE,
+                                      status="Ended")
+
+    calls = {"n": 0}
+    real_show_details = cw.show_details
+
+    def counting_show_details(sid, **kw):
+        calls["n"] += 1
+        return real_show_details(sid, **kw)
+
+    monkeypatch.setattr(cw, "show_details", counting_show_details)
+    _, _, _ = tv_tracking_mod.mark_show_aired_watched_core(u.id, SHOW_ID)
+
+    assert calls["n"] == 1                  # one payload, all seasons
+    assert _watched_positions(u.id, SHOW_ID) == BANSHEE_POSITIONS
+
+
+def test_banshee_sql_statements_bounded_by_seasons_not_episodes(
+        factory, stub_details):
+    """Phase 15: the Banshee bulk mark issues a bounded set of episode
+    statements (existing-watch SELECT, counter recompute, one bulk INSERT,
+    season-progress counts) — never one statement per episode (38)."""
+    from sqlalchemy import event
+
+    u = factory.user()
+    DETAILS_CACHE[SHOW_ID] = _details(8, season=4, seasons=BANSHEE,
+                                      status="Ended")
+
+    episode_statements = []
+
+    def _before(conn, cursor, statement, parameters, context, executemany):
+        if "tv_episode_watch" in statement:
+            episode_statements.append(statement)
+
+    event.listen(db.engine, "before_cursor_execute", _before)
+    try:
+        _, _, _ = tv_tracking_mod.mark_show_aired_watched_core(
+            u.id, SHOW_ID)
+    finally:
+        event.remove(db.engine, "before_cursor_execute", _before)
+
+    inserts = [s for s in episode_statements
+               if s.startswith("INSERT")]
+    assert len(inserts) == 1                # single bulk INSERT, 38 rows
+    # SELECTs stay bounded by seasons (update_season_progress counts once
+    # per season) + fixed per-op queries — NOT by the 38 episodes.
+    selects = [s for s in episode_statements if s.startswith("SELECT")]
+    assert len(selects) <= 2 + len(BANSHEE)
 
 
 def test_mark_completion_gated_on_show_status(factory, stub_details):

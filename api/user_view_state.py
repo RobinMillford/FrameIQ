@@ -16,13 +16,20 @@ One module so every card/hero surface renders the SAME personalized state:
           -----------------------------  × 100
           total aired non-special episodes
 
-      "Aired" means an episode whose air date has passed per the
+      "Aired" means an episode that has actually aired, per the
       application's existing episode data: the synced UpcomingEpisode
-      calendar (scripts/sync_upcoming_episodes.py) plus the show's
-      ``last_episode_to_air`` from cached TMDb details. Future/unreleased
-      episodes never enter the denominator, so a finished show drops below
-      100% the moment a new episode airs and returns to 100% after the user
-      watches it — no stored percentage, no reset at season boundaries.
+      calendar (scripts/sync_upcoming_episodes.py, a rolling recent-airing
+      window) unioned with the cached TMDb details payload — the
+      ``last_episode_to_air`` anchor (everything up to it in its season is
+      aired) PLUS the full episode lists of every historical season below
+      that anchor (``seasons[].episode_count``, already carried by the same
+      cached payload; no extra TMDb calls). A multi-season finished show
+      therefore resolves its COMPLETE historical aired set (Banshee S4E8
+      anchor ⇒ S1E1..10 ∪ S2E1..10 ∪ S3E1..10 ∪ S4E1..8 = 38), not just the
+      latest season. Future/unreleased episodes never enter the
+      denominator, so a finished show drops below 100% the moment a new
+      episode airs and returns to 100% after the user watches it — no
+      stored percentage, no reset at season boundaries.
 
 Performance contract (no per-card queries):
   - movie viewed state: derived from the user relationship the routes
@@ -97,20 +104,63 @@ def user_logged_today_keys(user, today=None):
         return set()
 
 
+def _historical_seasons(details, anchor_season, today):
+    """Episode counts of seasons COMPLETELY aired before the anchor.
+
+    Task E: ``last_episode_to_air`` only identifies the most recent aired
+    episode — it says nothing about earlier seasons. A season strictly
+    BELOW the anchor season has, by definition, finished airing, so its
+    full TMDb episode list (``seasons[].episode_count``, carried by the
+    SAME cached details payload — no extra requests) enters the aired set.
+    Specials (season 0) are skipped and never re-added; a season whose own
+    metadata explicitly dates it in the future (contradictory data) is
+    excluded per the air-date correctness rule.
+    """
+    counts = {}
+    for season in (details or {}).get("seasons") or []:
+        sn = _coerce_int(season.get("season_number"))
+        ep_count = _coerce_int(season.get("episode_count"))
+        if not sn or not ep_count or sn >= anchor_season:
+            continue
+        raw = season.get("air_date")
+        if raw:
+            try:
+                if datetime.strptime(
+                        str(raw)[:10], "%Y-%m-%d").date() > today:
+                    continue
+            except ValueError:
+                pass  # unparseable date → trust the anchor evidence
+        counts[sn] = ep_count
+    return counts
+
+
 def _aired_positions(details):
     """Aired (season, episode) positions from TMDb show details.
 
-    ``last_episode_to_air`` is TMDb's marker for the most recent episode
-    that has actually aired — every earlier position of that season is
-    aired by definition (TMDb orders episode numbers). Everything after it
-    is the future and must stay out of the denominator.
+    Two sources from the SAME cached payload:
+
+      1. the ``last_episode_to_air`` anchor — every position of that
+         season up to the anchor episode is aired (TMDb orders episode
+         numbers);
+      2. every historical season strictly BELOW the anchor season, in
+         full, from TMDb season metadata (``_historical_seasons``) —
+         reconstructing e.g. Banshee (S4E8 anchor) as S1E1..10 ∪
+         S2E1..10 ∪ S3E1..10 ∪ S4E1..8 instead of the anchor season's
+         range alone.
+
+    Everything after the anchor (later seasons, later episodes) is the
+    future and must stay out of the denominator.
     """
     last = (details or {}).get("last_episode_to_air") or {}
     season = _coerce_int(last.get("season_number"))
     episode = _coerce_int(last.get("episode_number"))
     if not season or not episode:
         return set()
-    return {(season, en) for en in range(1, episode + 1)}
+    today = datetime.utcnow().date()
+    aired = {(season, en) for en in range(1, episode + 1)}
+    for sn, ep_count in _historical_seasons(details, season, today).items():
+        aired |= {(sn, en) for en in range(1, ep_count + 1)}
+    return aired
 
 
 def _default_details_loader(show_id):
@@ -188,7 +238,10 @@ def aired_positions_for_show(show_id, details_loader=None):
 
     Union of:
       - the synced UpcomingEpisode calendar rows with ``air_date <= today``
-      - TMDb ``last_episode_to_air`` → 1..episode_number of that season
+      - the cached TMDb details payload: the ``last_episode_to_air``
+        anchor range PLUS every historical season below that anchor in
+        full (season metadata rides on the same payload — no extra TMDb
+        calls)
     with specials (season 0) excluded on both sides. Empty set when
     nothing has verifiably aired. Same failure policy as
     ``_compose_progress``: a details-loader failure degrades to
@@ -281,9 +334,10 @@ def tv_aired_progress(user, show_ids, details_loader=None):
     api/continue_watching.py). Specials (season 0) are excluded on both
     sides, per the application's existing policy.
 
-    ``details_loader`` (optional) resolves cached TMDb show details for the
-    ``last_episode_to_air`` anchor; it is invoked ONLY for shows the user
-    has actually started, and failures degrade to calendar-only data.
+    ``details_loader`` (optional) resolves cached TMDb show details for
+    the aired-resolution anchor and historical season metadata; it is
+    invoked ONLY for shows the user has actually started, and failures
+    degrade to calendar-only data.
     """
     if not show_ids or user is None or not getattr(
             user, "is_authenticated", False):
