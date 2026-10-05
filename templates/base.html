@@ -57,6 +57,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/frameiq-brand.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">
+    <!-- Shared modal system (portal, backdrop, dialog, dark surface).
+         After chrome.css so it owns the 1200 overlay layer. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/modals.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/projector.css') }}">
 
     {% block extra_css %}{% endblock %}

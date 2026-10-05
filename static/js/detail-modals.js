@@ -1,8 +1,14 @@
 /**
  * Shared detail-page actions: Log to Diary + Add to List (movie & TV).
  *
- * Replaces the previously duplicated inline modal scripts on
- * movie_detail.html / tv_detail.html. One module, installed exactly once;
+ * These two forms share ONE modal infrastructure with every other
+ * overlay on the site:
+ *   - static/js/fi-modal.js   (portal, state machine, scroll lock, focus)
+ *   - static/css/modals.css   (backdrop/dialog/surface/animation)
+ * This module owns only the form logic (load lists, submit diary) and
+ * the API contract. It never positions, animates, or closes a dialog
+ * itself.
+ *
  * media_type flows explicitly from the page via #detail-context (never
  * hardcoded here).
  *
@@ -22,9 +28,6 @@
  *    "Already in this list." message; the backend stays authoritative.
  *  - DOM-safe rendering only (textContent/replaceChildren; no innerHTML
  *    for server-controlled strings). List names and titles are content data.
- *  - Modal visibility is set via inline style in addition to the Tailwind
- *    `hidden` class, so dialogs still open/close if the Tailwind Play CDN
- *    fails to load.
  */
 (function () {
     'use strict';
@@ -36,23 +39,23 @@
         return el ? el.content : '';
     }
 
+    var SESSION_MSG = 'Your session has expired. Please log in again.';
+    var NETWORK_MSG = 'Network error — check your connection and try again.';
+    var RATE_MSG = 'Too many requests — please wait a moment and try again.';
+    var SERVER_MSG = 'Server error — please try again later.';
+
     function notify(message, kind) {
         var toast = document.createElement('div');
         toast.setAttribute('role', 'status');
         toast.setAttribute('aria-live', 'polite');
         toast.style.cssText = 'position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);'
-            + 'z-index:60;max-width:90vw;padding:0.65rem 1.1rem;border-radius:0.5rem;'
+            + 'z-index:1300;max-width:90vw;padding:0.65rem 1.1rem;border-radius:0.5rem;'
             + 'color:#fff;font-weight:600;box-shadow:0 10px 25px rgba(0,0,0,.4);'
             + (kind === 'error' ? 'background:#b91c1c;' : 'background:#0e7490;');
         toast.textContent = message; // safe: server/user strings never parsed as HTML
         document.body.appendChild(toast);
         window.setTimeout(function () { toast.remove(); }, 3500);
     }
-
-    var SESSION_MSG = 'Your session has expired. Please log in again.';
-    var NETWORK_MSG = 'Network error — check your connection and try again.';
-    var RATE_MSG = 'Too many requests — please wait a moment and try again.';
-    var SERVER_MSG = 'Server error — please try again later.';
 
     /**
      * Hardened JSON POST. Returns {ok, status, data?, message} and never
@@ -107,39 +110,14 @@
         }).then(finish);
     }
 
-    // ── Modal show/hide (works without the Tailwind CDN) ────────────────────
-    var lastFocus = null;
-    function showModal(id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        lastFocus = document.activeElement;
-        el.classList.remove('hidden');
-        el.style.display = 'flex'; // inline style wins even if `.hidden` is undefined
-        var focusable = el.querySelector('input, select, button');
-        if (focusable) focusable.focus();
+    /* ── Modal open/close, delegated to the shared engine ───────────── */
+    function openModal(id, trigger) {
+        if (!window.FiModal) return null;
+        return window.FiModal.open(id, trigger);
     }
-    function hideModal(id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        el.classList.add('hidden');
-        el.style.display = 'none';
-        if (lastFocus && lastFocus.focus) lastFocus.focus();
+    function closeModal(id) {
+        if (window.FiModal) window.FiModal.close(id);
     }
-    document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape') return;
-        ['diary-modal', 'list-modal'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (el && !el.classList.contains('hidden')) hideModal(id);
-        });
-    });
-    // Backdrop click closes (clicks on the dialog content do not bubble to root).
-    ['diary-modal', 'list-modal'].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('click', function (e) {
-            if (e.target === el) hideModal(id);
-        });
-    });
 
     function requireAuth(userId) {
         // Auth pre-check: send the user to the real login flow (existing
@@ -150,7 +128,15 @@
         return false;
     }
 
-    // ── Log to Diary ────────────────────────────────────────────────────────
+    function setStatus(el, text, kind) {
+        if (!el) return;
+        el.textContent = text; // safe for server-controlled strings
+        el.classList.toggle('hidden', !text);
+        if (kind) el.setAttribute('data-kind', kind);
+        else el.removeAttribute('data-kind');
+    }
+
+    // ── Log to Diary ────────────────────────────────────────────────────
     function initDiary(ctx) {
         var openBtn = document.getElementById('open-diary-modal');
         var modal = document.getElementById('diary-modal');
@@ -162,7 +148,7 @@
             if (dateInput && !dateInput.value) {
                 try { dateInput.valueAsDate = new Date(); } catch (e) { /* noop */ }
             }
-            showModal('diary-modal');
+            openModal('diary-modal', openBtn);
         });
 
         var submitBtn = document.getElementById('diary-submit');
@@ -172,13 +158,10 @@
             var dateInput = document.getElementById('diary-date');
             var ratingSel = document.getElementById('diary-rating');
             if (!dateInput || !dateInput.value) {
-                if (status) {
-                    status.textContent = 'Please select a date.';
-                    status.classList.remove('hidden');
-                }
+                setStatus(status, 'Please select a date.', 'error');
                 return;
             }
-            if (status) status.classList.add('hidden');
+            setStatus(status, '');
             apiPost('/api/diary/log', {
                 media_id: ctx.media.id,          // TMDb id (API contract)
                 media_type: ctx.media.media_type,
@@ -186,7 +169,7 @@
                 rating: (ratingSel && ratingSel.value) || null
             }, submitBtn).then(function (res) {
                 if (res.ok) {
-                    hideModal('diary-modal');
+                    closeModal('diary-modal');
                     notify(res.data && res.data.message ? res.data.message
                            : 'Logged to your diary.', 'ok');
                     // Immediate visible state without a page reload.
@@ -195,10 +178,7 @@
                     document.dispatchEvent(new CustomEvent('detail:diary-logged',
                         { detail: { media_type: ctx.media.media_type } }));
                 } else if (res.message) {
-                    if (status) {
-                        status.textContent = res.message;
-                        status.classList.remove('hidden');
-                    }
+                    setStatus(status, res.message, 'error');
                     notify(res.message, 'error');
                 }
             });
@@ -206,17 +186,11 @@
 
         var cancelBtn = document.getElementById('diary-cancel');
         if (cancelBtn) cancelBtn.addEventListener('click', function () {
-            hideModal('diary-modal');
+            closeModal('diary-modal');
         });
     }
 
-    // ── Add to List ─────────────────────────────────────────────────────────
-    function setStatus(el, text) {
-        if (!el) return;
-        el.textContent = text; // safe for server-controlled strings
-        el.classList.toggle('hidden', !text);
-    }
-
+    // ── Add to List ─────────────────────────────────────────────────────
     function loadListsInto(ctx, select, zeroBox, status) {
         setStatus(status, 'Loading lists…');
         fetch('/api/users/' + ctx.user_id + '/lists')
@@ -229,9 +203,13 @@
                 var lists = (data && data.lists) || [];
                 select.replaceChildren();
                 if (!lists.length) {
-                    select.classList.add('hidden');   // empty dropdown must not look selectable
+                    // Empty dropdown must not look selectable. Hiding the
+                    // control blurs it if it currently has focus, so ask
+                    // the shared engine to re-assert focus afterwards.
+                    select.classList.add('hidden');
                     if (zeroBox) zeroBox.classList.remove('hidden');
                     setStatus(status, '');
+                    if (window.FiModal) window.FiModal.ensureFocus('list-modal');
                     return;
                 }
                 if (zeroBox) zeroBox.classList.add('hidden');
@@ -247,6 +225,7 @@
                     select.appendChild(opt);
                 });
                 setStatus(status, '');
+                if (window.FiModal) window.FiModal.ensureFocus('list-modal');
             })
             .catch(function (err) {
                 var msg = (err && err.auth) ? SESSION_MSG
@@ -270,7 +249,7 @@
 
         openBtn.addEventListener('click', function () {
             if (!requireAuth(ctx.user_id)) return;
-            showModal('list-modal');
+            openModal('list-modal', openBtn);
             var select = document.getElementById('list-select');
             var zeroBox = document.getElementById('list-zero');
             var status = document.getElementById('list-status');
@@ -284,7 +263,7 @@
             var select = document.getElementById('list-select');
             var listId = select ? select.value : '';
             if (!listId) {
-                setStatus(status, 'Please select a list.');
+                setStatus(status, 'Please select a list.', 'error');
                 return;
             }
             setStatus(status, '');
@@ -293,7 +272,7 @@
                 media_type: ctx.media.media_type
             }, addBtn).then(function (res) {
                 if (res.ok) {
-                    hideModal('list-modal');
+                    closeModal('list-modal');
                     notify('Added to list.', 'ok');
                     openBtn.textContent = 'Manage Lists';
                     document.dispatchEvent(new CustomEvent('detail:list-added',
@@ -302,7 +281,7 @@
                     setStatus(status, 'Already in this list.');
                     notify('Already in this list.', 'ok');
                 } else if (res.message) {
-                    setStatus(status, res.message);
+                    setStatus(status, res.message, 'error');
                     notify(res.message, 'error');
                 }
             });
@@ -310,7 +289,7 @@
 
         var cancelBtn = document.getElementById('list-cancel');
         if (cancelBtn) cancelBtn.addEventListener('click', function () {
-            hideModal('list-modal');
+            closeModal('list-modal');
         });
     }
 
@@ -322,8 +301,10 @@
         if (!ctx || !ctx.media) return;
         initDiary(ctx);
         initList(ctx);
-        window.DetailModals = { apiPost: apiPost, notify: notify,
-                                showModal: showModal, hideModal: hideModal };
+        window.DetailModals = {
+            apiPost: apiPost, notify: notify,
+            openModal: openModal, closeModal: closeModal
+        };
     }
 
     if (document.readyState === 'loading') {
