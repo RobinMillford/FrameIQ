@@ -1,15 +1,36 @@
 {# Trailer modal shell (iframe src set by page JS).
-   Requires #trailer-modal open/close handlers on the page. #}
-<div id="trailer-modal" class="modal fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center hidden">
-    <div class="modal-content  rounded-lg overflow-hidden w-full max-w-5xl mx-4">
-        <div class="relative">
-            <button id="close-modal" class="absolute top-4 right-4 text-white bg-black bg-opacity-50 rounded-full p-2 hover:bg-opacity-75 transition-colors">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            </button>
-            <div class="aspect-w-16 aspect-h-9">
-                <iframe id="trailer-iframe" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full min-h-[400px]"></iframe>
+
+   Uses the SAME shared modal infrastructure as Add to List / Log to
+   Diary (static/js/fi-modal.js + static/css/modals.css): rendered inline
+   on the detail page and moved into the body-level portal on first open.
+   The previous markup (class="modal ... z-50 hidden") had the same
+   page-flow / layering defect as the other two modals. #}
+<div id="trailer-modal"
+     class="fi-modal-backdrop"
+     data-state="closed"
+     aria-hidden="true"
+     style="display:none">
+    <div class="fi-modal-dialog fi-modal-dialog--wide"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="trailer-modal-title">
+        <h2 id="trailer-modal-title" class="fi-visually-hidden">Trailer</h2>
+        <div class="fi-modal-body" style="padding:0">
+            <div class="relative">
+                <button id="close-modal"
+                        type="button"
+                        aria-label="Close trailer"
+                        class="absolute top-4 right-4 text-white bg-black/60 rounded-full p-2 hover:bg-black/80 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+                <div class="aspect-video">
+                    <iframe id="trailer-iframe" src="" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen
+                            class="w-full h-full min-h-[300px]"></iframe>
+                </div>
             </div>
         </div>
     </div>

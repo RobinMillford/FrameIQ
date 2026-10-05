@@ -100,15 +100,47 @@
             z-index: -1;
         }
 
+        /* Primary poster sizing — responsive by breakpoint.
+           Previously a flat `w-40 sm:w-64` (160/256px), which left a very
+           small poster beside a very wide detail column on desktop.
+           Mobile  : min(210px, 55vw) centered at the top
+           Tablet  : 190–240px
+           Desktop : 240–300px
+           aspect-ratio + object-fit keep the 2:3 poster shape and never
+           stretch the image; width:100%/max-width keeps it responsive. */
         .movie-poster {
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             transition: transform 0.3s ease;
-            max-width: 100%;
+            width: 100%;
+            max-width: min(210px, 55vw);
             height: auto;
+            aspect-ratio: 2 / 3;
+            object-fit: cover;
+            display: block;
         }
 
         .movie-poster:hover {
             transform: translateY(-10px);
+        }
+
+        /* Tablet 768–1199 */
+        @media (min-width: 768px) {
+            .movie-poster {
+                max-width: 230px;
+            }
+        }
+
+        /* Desktop >=1200 */
+        @media (min-width: 1200px) {
+            .movie-poster {
+                max-width: 280px;
+            }
+        }
+
+        @media (min-width: 1600px) {
+            .movie-poster {
+                max-width: 300px;
+            }
         }
 
         .cast-card {
@@ -179,20 +211,7 @@
             justify-content: center;
         }
 
-        .modal {
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-content {
-            transform: scale(0.9);
-            transition: transform 0.3s ease;
-        }
-
-        .modal.active .modal-content {
-            transform: scale(1);
-        }
-
-        @media (max-width: 768px) {
+        @media (max-width: 767px) {
             .hero-section {
                 height: auto;
                 min-height: auto;
@@ -200,7 +219,7 @@
             }
 
             .movie-poster {
-                max-width: 250px;
+                max-width: min(210px, 55vw);
                 margin: 0 auto 2rem;
             }
 
@@ -223,7 +242,6 @@
         @media (max-width: 640px) {
             .rating-circle { width: 60px; height: 60px; font-size: 1.1rem; }
             .rating-circle::before { width: 52px; height: 52px; }
-            .modal-content { max-width: 95vw; margin: 1rem; }
         }
 
 </style>
@@ -239,7 +257,7 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center min-w-0">
                 <!-- Poster -->
                 <div class="flex justify-center md:justify-start">
-                    <img src="{{ movie.poster_path }}" alt="{{ movie.title }}" class="movie-poster rounded-lg w-40 sm:w-64 h-auto max-w-full">
+                    <img src="{{ movie.poster_path }}" alt="{{ movie.title }}" class="movie-poster rounded-lg" loading="lazy" decoding="async">
                 </div>
 
                 <!-- Movie Info -->
@@ -815,38 +833,48 @@
                     if (trailerUrl && trailerUrl !== 'None' && trailerUrl !== '' && trailerUrl !== 'null') {
                         // Load YouTube trailer with autoplay
                         trailerIframe.src = trailerUrl + (trailerUrl.includes('?') ? '&' : '?') + 'autoplay=1';
-                        trailerModal.classList.remove('hidden');
-                        trailerModal.classList.add('active');
+                        // Shared modal engine: body-level portal, transform
+                        // +opacity animation, scroll lock, ESC, backdrop
+                        // click and focus return all come from one place.
+                        if (window.FiModal) window.FiModal.open('trailer-modal', trailerButton);
+                        else trailerModal.classList.remove('hidden');
                     } else {
                         alert('Sorry, no trailer is available for this movie.');
                     }
                 });
             }
 
+            const stopTrailer = function () {
+                trailerIframe.src = ''; // Stop video
+            };
+
+            // The shared engine owns ESC and backdrop clicks, so the
+            // iframe teardown is registered with it instead of being
+            // duplicated in this page's own key/click handlers.
+            if (window.FiModal) window.FiModal.onClose('trailer-modal', stopTrailer);
+
             if (closeModal) {
                 closeModal.addEventListener('click', function() {
-                    trailerModal.classList.add('hidden');
-                    trailerModal.classList.remove('active');
-                    trailerIframe.src = ''; // Stop video
+                    if (window.FiModal) window.FiModal.close('trailer-modal');
+                    else trailerModal.classList.add('hidden');
+                    stopTrailer();
                 });
             }
 
-            // Close modal when clicking outside
+            // Backdrop click + ESC are handled by the shared engine; this
+            // hook only tears the iframe down when the dialog closes.
             if (trailerModal) {
                 trailerModal.addEventListener('click', function(e) {
-                    if (e.target === trailerModal) {
+                    if (e.target === trailerModal && !window.FiModal) {
                         trailerModal.classList.add('hidden');
-                        trailerModal.classList.remove('active');
-                        trailerIframe.src = ''; // Stop video
+                        stopTrailer();
                     }
                 });
-
-                // Close modal with Escape key
                 document.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape' && !trailerModal.classList.contains('hidden')) {
+                    if (e.key === 'Escape' && !window.FiModal
+                            && !trailerModal.classList.contains('hidden')) {
                         trailerModal.classList.add('hidden');
-                        trailerModal.classList.remove('active');
-                        trailerIframe.src = ''; // Stop video
+                        stopTrailer();
                     }
                 });
             }
@@ -1125,10 +1153,13 @@
     </script>
     <script id="detail-context" type="application/json">{{ {'user_id': (current_user.id if current_user.is_authenticated else None), 'media': {'id': movie.id, 'media_type': 'movie'}}|tojson }}</script>
 
-    <!-- Diary Modal -->
+    <!-- Shared modal engine (body-level portal) + detail forms.
+         Both modals render inline here and are moved into the body-level
+         portal on first open by fi-modal.js, so no transformed ancestor
+         can contain them. -->
     {% include "partials/modal_diary.html" %}
-    <!-- List Modal -->
     {% with media_id = movie['id'], media_type = "movie" %}{% include "partials/modal_list.html" %}{% endwith %}
+    <script src="{{ url_for('static', filename='js/fi-modal.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-modals.js') }}"></script>
 
     <!-- More Like This Section -->
