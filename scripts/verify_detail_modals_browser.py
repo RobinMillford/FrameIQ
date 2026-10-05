@@ -214,7 +214,7 @@ def run_behaviour(pw, engine_name, browser, base, tag):
 
             # ── A. geometry ──────────────────────────────────────────
             y0 = page.evaluate("window.scrollY")
-            
+
             page.click(trigger)
             page.wait_for_timeout(120)
             settled(page, mid)
