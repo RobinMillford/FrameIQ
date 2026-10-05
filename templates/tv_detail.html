@@ -108,34 +108,48 @@
             z-index: -1;
         }
 
+        /* Primary poster sizing — responsive by breakpoint.
+           The old rules stacked max-widths up to 500px, but the poster sat
+           in a 1-of-4 grid column (~230px at 1440) so the rendered width
+           was whatever the column allowed, not what the CSS asked for.
+           Explicit widths + a 2:3 aspect ratio make the poster a stable
+           anchor for the title/metadata/score/action column.
+           Mobile  : min(210px, 55vw) centered at the top
+           Tablet  : 190–240px
+           Desktop : 240–300px */
         .show-poster {
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             transition: transform 0.3s ease;
             width: 100%;
-            max-width: 500px;
+            max-width: min(210px, 55vw);
             height: auto;
+            aspect-ratio: 2 / 3;
             object-fit: cover;
+            display: block;
         }
 
         .show-poster:hover {
             transform: translateY(-5px);
         }
 
+
+        /* Tablet 768–1199 */
         @media (min-width: 768px) {
             .show-poster {
-                max-width: 400px;
+                max-width: 230px;
             }
         }
 
-        @media (min-width: 1024px) {
+        /* Desktop >=1200 */
+        @media (min-width: 1200px) {
             .show-poster {
-                max-width: 450px;
+                max-width: 280px;
             }
         }
 
-        @media (min-width: 1280px) {
+        @media (min-width: 1600px) {
             .show-poster {
-                max-width: 500px;
+                max-width: 300px;
             }
         }
 
@@ -203,19 +217,6 @@
             justify-content: center;
         }
 
-        .modal {
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-content {
-            transform: scale(0.9);
-            transition: transform 0.3s ease;
-        }
-
-        .modal.active .modal-content {
-            transform: scale(1);
-        }
-
         .season-card {
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
@@ -225,7 +226,7 @@
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 767px) {
             .hero-section {
                 height: auto;
                 min-height: auto;
@@ -233,7 +234,7 @@
             }
 
             .show-poster {
-                max-width: 300px !important;
+                max-width: min(210px, 55vw) !important;
                 margin: 0 auto 2rem;
             }
 
@@ -258,7 +259,6 @@
         @media (max-width: 640px) {
             .rating-circle { width: 60px; height: 60px; font-size: 1.1rem; }
             .rating-circle::before { width: 52px; height: 52px; }
-            .modal-content { max-width: 95vw; margin: 1rem; padding: 1.5rem; }
         }
 
 </style>
@@ -274,7 +274,7 @@
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                 <!-- Poster -->
                 <div class="flex justify-center lg:justify-start lg:sticky lg:top-24">
-                    <img src="{{ show.poster_path }}" alt="{{ show.name }}" class="show-poster rounded-lg">
+                    <img src="{{ show.poster_path }}" alt="{{ show.name }}" class="show-poster rounded-lg" loading="lazy" decoding="async">
                 </div>
 
                 <!-- Show Info -->
@@ -915,8 +915,11 @@
                     const trailerKey = '{{ show.trailer_key }}';
                     if (trailerKey && trailerKey !== 'None' && trailerKey !== '') {
                         trailerIframe.src = `https://www.youtube.com/embed/${trailerKey}?autoplay=1`;
-                        trailerModal.classList.remove('hidden');
-                        trailerModal.classList.add('active');
+                        // Shared modal engine: body-level portal, transform
+                        // +opacity animation, scroll lock, ESC, backdrop
+                        // click and focus return all come from one place.
+                        if (window.FiModal) window.FiModal.open('trailer-modal', trailerButton);
+                        else trailerModal.classList.remove('hidden');
                     } else {
                         alert('Sorry, no trailer is available for this TV show.');
                     }
@@ -925,8 +928,17 @@
 
             if (closeModal) {
                 closeModal.addEventListener('click', function() {
-                    trailerModal.classList.add('hidden');
-                    trailerModal.classList.remove('active');
+                    if (window.FiModal) window.FiModal.close('trailer-modal');
+                    else trailerModal.classList.add('hidden');
+                    trailerIframe.src = '';
+                });
+            }
+
+            // The shared engine owns ESC and backdrop clicks, so the
+            // iframe teardown is registered with it instead of being
+            // duplicated in this page's own key/click handlers.
+            if (window.FiModal) {
+                window.FiModal.onClose('trailer-modal', function () {
                     trailerIframe.src = '';
                 });
             }
@@ -1177,13 +1189,13 @@
     </script>
     <script id="detail-context" type="application/json">{{ {'user_id': (current_user.id if current_user.is_authenticated else None), 'media': {'id': show.id, 'media_type': 'tv'}}|tojson }}</script>
 
-    <!-- Diary Modal -->
+    <!-- Shared modal engine (body-level portal) + detail forms.
+         Both modals render inline here and are moved into the body-level
+         portal on first open by fi-modal.js, so no transformed ancestor
+         can contain them. -->
     {% with media_type = "tv" %}{% include "partials/modal_diary.html" %}{% endwith %}
-
-    <!-- Diary Modal -->
-    {% with media_type = "tv" %}{% include "partials/modal_diary.html" %}{% endwith %}
-    <!-- List Modal -->
     {% with media_id = show['id'], media_type = "tv" %}{% include "partials/modal_list.html" %}{% endwith %}
+    <script src="{{ url_for('static', filename='js/fi-modal.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-modals.js') }}"></script>
 
 
