@@ -7,6 +7,13 @@ from flask_login import current_user, login_required
 
 from api.tmdb_client import cached_tmdb_request, fetch_tv_show_details
 from api.tmdb.config import TMDB_API_KEY
+from api.user_view_state import (
+    aired_positions_for_show, apply_completion_gating,
+    canonical_tv_progress, get_or_create_tv_progress,
+    mark_aired_positions_watched, mark_season_aired_watched,
+    memoized_details_loader, season_aired_for_show,
+    sync_tv_progress_counters, tv_aired_progress,
+)
 from models import (
     MediaItem, TVEpisodeWatch, TVShowProgress, UpcomingEpisode, db,
 )
@@ -34,21 +41,25 @@ def start_tracking_show(show_id):
         if existing:
             return jsonify({'error': 'Already tracking this show'}), 400
         
-        # Fetch show details from TMDb
+        # Fetch show details from TMDb (display metadata only)
         show = fetch_tv_show_details(show_id)
         
-        # Create progress entry
+        # Create progress entry. Counters start at zero and are synced
+        # from the canonical AIRED set (never TMDb number_of_episodes,
+        # which counts unaired episodes as an aired denominator).
         progress = TVShowProgress(
             user_id=current_user.id,
             show_id=show_id,
-            total_seasons=show.get('number_of_seasons', 0),
-            total_episodes=show.get('number_of_episodes', 0),
+            total_seasons=0,
+            total_episodes=0,
             watched_seasons=0,
             watched_episodes=0,
             status='watching'
         )
-        
         db.session.add(progress)
+        db.session.flush()
+        sync_tv_progress_counters(progress, current_user.id, show_id)
+
         db.session.commit()
         
         return jsonify({
@@ -102,25 +113,14 @@ def get_show_progress(show_id):
         if not progress:
             return jsonify({'progress': None}), 200
         
-        # Refresh total episodes count from TMDb to catch new releases
-        try:
-            show = fetch_tv_show_details(show_id)
-            current_total = show.get('number_of_episodes', 0)
-            
-            if current_total != progress.total_episodes:
-                logger.debug("Show %s episode count changed: %s → %s", show_id, progress.total_episodes, current_total)
-                progress.total_episodes = current_total
-                progress.total_seasons = show.get('number_of_seasons', 0)
-
-                if current_total > progress.watched_episodes and progress.status == 'completed':
-                    show_status = show.get('status', '')
-                    if show_status not in ['Ended', 'Canceled']:
-                        progress.status = 'watching'
-                        logger.debug("Show %s: reverted status to 'watching' - new episodes available", show_id)
-
-                db.session.commit()
-        except Exception as e:
-            logger.warning("Could not refresh show %s data: %s", show_id, e)
+        # Publish the CANONICAL aired-reality payload (recomputed per
+        # request) so this endpoint can never expose a stale stored
+        # denominator. Falls back to the stored counters only when the
+        # user has no watch rows yet (no personalized progress exists).
+        # NOTE: unlike the pre-F1 version this does NOT refresh
+        # ``total_episodes`` from TMDb ``number_of_episodes`` — that
+        # clobbered the canonical aired count with a future-inflated one.
+        canonical = canonical_tv_progress(current_user, show_id)
         
         # Get watched episodes
         watched_episodes = TVEpisodeWatch.query.filter_by(
@@ -132,7 +132,7 @@ def get_show_progress(show_id):
         ).all()
         
         return jsonify({
-            'progress': progress.to_dict(),
+            'progress': progress.to_dict(canonical),
             'watched_episodes': [ep.to_dict() for ep in watched_episodes]
         }), 200
         
@@ -152,7 +152,8 @@ def mark_episode_watched(show_id, season, episode):
         return jsonify({
             'success': True,
             'message': 'Episode marked as watched',
-            'progress': progress.to_dict()
+            'progress': progress.to_dict(
+                canonical_tv_progress(current_user, show_id))
         }), 200
     except Exception:
         db.session.rollback()
@@ -162,157 +163,55 @@ def mark_episode_watched(show_id, season, episode):
 
 def mark_show_aired_watched_core(user_id, show_id):
     """Bulk "Mark as Viewed" for a TV show — state sync, not rewatch
-    generation (Task D).
+    generation.
 
-    Marks every currently AIRED, valid episode (the EXACT set used by
-    api/user_view_state.tv_aired_progress: synced calendar rows with
-    air_date <= today, unioned with TMDb's cached details — the
-    last_episode_to_air anchor plus every historical season below that
-    anchor in full; specials excluded) as watched for ONE user, in a
-    single transaction:
+    Task F1: this is now a THIN DELEGATE to the canonical write core
+    (``api.user_view_state.mark_aired_positions_watched``). It owns no
+    episode-eligibility logic of its own — the aired set comes from
+    ``aired_positions_for_show()`` inside the core, exactly as it does
+    for Mark Season Watched and Mark All Watched.
 
-      1. one bounded query resolving the eligible aired positions
-      2. one query for the user's existing watch rows (deduped in code —
-         idx_user_show_season_episode is an INDEX, not a constraint)
-      3. one bulk INSERT of only the missing non-rewatch rows
-      4. TVShowProgress created if absent; counters recomputed from the
-         resulting rows; update_season_progress(); completion gated on
-         TMDb status Ended/Canceled (same rule as single-episode marks)
-
-    Existing watch records (including rating/notes/rewatch history) are
-    preserved untouched; repeated calls are idempotent (second call
-    inserts nothing and never creates rewatch entries). No diary events
-    are manufactured. Returns ``(progress, inserted_count, aired_count)``.
+    Preserved contract (all previously pinned by
+    tests/test_tv_mark_as_viewed_sync.py):
+      * existing watch records — ratings, notes, dates, rewatch rows —
+        are preserved untouched; nothing is ever deleted;
+      * repeated calls insert nothing and manufacture no rewatch entries;
+      * no diary events are fabricated;
+      * returns ``(progress, inserted_count, aired_count)`` and, when
+        nothing has verifiably aired, a zero-state rather than an error.
     """
-    from api.user_view_state import aired_positions_for_show
+    from models import User
 
-    aired = aired_positions_for_show(show_id)
-    if not aired:
-        # Nothing has verifiably aired — nothing to synchronize.
-        progress = TVShowProgress.query.filter_by(
-            user_id=user_id, show_id=show_id).first()
-        return progress, 0, 0
-
-    progress = TVShowProgress.query.filter_by(
-        user_id=user_id, show_id=show_id
-    ).first()
-    if not progress:
-        try:
-            show = fetch_tv_show_details(show_id)
-        except Exception:
-            logger.warning(
-                "Could not load show %s for bulk mark-viewed", show_id,
-                exc_info=True)
-            show = {}
-        progress = TVShowProgress(
-            user_id=user_id,
-            show_id=show_id,
-            total_seasons=show.get('number_of_seasons', 0),
-            total_episodes=show.get('number_of_episodes', 0),
-            watched_seasons=0,
-            watched_episodes=0,
-            status='watching',
-        )
-        db.session.add(progress)
-        db.session.flush()
-
-    existing = {
-        (season, episode)
-        for season, episode in db.session.query(
-            TVEpisodeWatch.season_number,
-            TVEpisodeWatch.episode_number,
-        ).filter(
-            TVEpisodeWatch.user_id == user_id,
-            TVEpisodeWatch.show_id == show_id,
-            TVEpisodeWatch.is_rewatch == False,  # noqa: E712
-        ).all()
-    }
-
-    missing = sorted(aired - existing)
-    if missing:
-        db.session.bulk_insert_mappings(
-            TVEpisodeWatch,
-            [
-                {
-                    'user_id': user_id,
-                    'show_id': show_id,
-                    'progress_id': progress.id,
-                    'season_number': season,
-                    'episode_number': episode,
-                    'watched_date': datetime.utcnow().date(),
-                    'is_rewatch': False,
-                }
-                for season, episode in missing
-            ],
-        )
-
-    # Recompute the counters from the resulting canonical rows instead of
-    # incrementing (bulk inserts bypass ORM events; duplicates would
-    # otherwise double-count).
-    db.session.flush()
-    progress.watched_episodes = TVEpisodeWatch.query.filter_by(
-        user_id=user_id, show_id=show_id,
-    ).filter(TVEpisodeWatch.is_rewatch == False).count()  # noqa: E712
-    progress.last_watched = datetime.utcnow()
-    update_season_progress(progress, show_id)
-
-    # Same completion gating as mark_episode_watched_core: only shows TMDb
-    # reports as Ended/Canceled become 'completed'; a running show stays
-    # 'watching' so a future episode can drop it back from 100%.
-    if (progress.watched_episodes >= progress.total_episodes
-            and progress.total_episodes > 0):
-        try:
-            show = fetch_tv_show_details(show_id)
-            show_status = show.get('status', '')
-            if show_status in ['Ended', 'Canceled']:
-                progress.status = 'completed'
-                progress.completed_at = datetime.utcnow()
-            elif progress.status == 'completed':
-                progress.status = 'watching'
-        except Exception as exc:
-            logger.warning(
-                "Could not fetch show %s status: %s", show_id, exc)
-
-    db.session.commit()
-    return progress, len(missing), len(aired)
+    user = db.session.get(User, user_id) if user_id else None
+    if user is None:
+        return TVShowProgress.query.filter_by(
+            user_id=user_id, show_id=show_id).first(), 0, 0
+    return mark_aired_positions_watched(user, show_id)
 
 
 def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
     """Canonical episode-watched state (shared with Continue Watching finish).
 
-    Creates/maintains TVShowProgress + TVEpisodeWatch + season progress and
-    applies the established completion gating (only shows TMDb reports as
-    Ended/Canceled become 'completed'). Idempotent per episode: re-marking
-    updates the existing watch record.
+    Task F1: the row write here stays explicit (a single episode carries
+    user-supplied rating/notes/date/rewatch metadata that a bulk path must
+    never invent), but every DERIVED value now comes from the canonical
+    aired reality:
+
+      * ``TVShowProgress`` counters — canonical aired denominators via
+        ``sync_tv_progress_counters`` (never TMDb ``number_of_episodes``);
+      * season completion — canonical aired season denominators;
+      * completion gating — shared ``apply_completion_gating``.
+
+    Idempotent per episode: re-marking updates the existing watch record.
     """
     logger.debug("Mark episode watched: show=%s S%sE%s user=%s", show_id, season, episode, user_id)
 
     data = data or {}
 
-    # Get or create progress entry
-    progress = TVShowProgress.query.filter_by(
-        user_id=user_id,
-        show_id=show_id
-    ).first()
-
-    if not progress:
-        show = fetch_tv_show_details(show_id)
-        progress = TVShowProgress(
-            user_id=user_id,
-            show_id=show_id,
-            total_seasons=show.get('number_of_seasons', 0),
-            total_episodes=show.get('number_of_episodes', 0),
-            watched_seasons=0,
-            watched_episodes=0,
-            status='watching'
-        )
-        db.session.add(progress)
+    progress = get_or_create_tv_progress(user_id, show_id)
+    if progress.id is None:
         db.session.flush()
-        logger.debug("Created progress id=%s for show %s", progress.id, show_id)
-    else:
-        logger.debug("Using progress id=%s for show %s", progress.id, show_id)
 
-    # Check if episode already marked
     existing = TVEpisodeWatch.query.filter_by(
         user_id=user_id,
         show_id=show_id,
@@ -325,9 +224,8 @@ def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
         existing.rating = data.get('rating')
         existing.notes = data.get('notes')
         existing.is_rewatch = data.get('is_rewatch', False)
-        episode_watch = existing
     else:
-        episode_watch = TVEpisodeWatch(
+        db.session.add(TVEpisodeWatch(
             user_id=user_id,
             show_id=show_id,
             progress_id=progress.id,
@@ -338,38 +236,19 @@ def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
             rating=data.get('rating'),
             notes=data.get('notes'),
             is_rewatch=data.get('is_rewatch', False)
-        )
-        db.session.add(episode_watch)
+        ))
 
-        if not episode_watch.is_rewatch:
-            progress.watched_episodes += 1
-            logger.debug("Progress: %s/%s", progress.watched_episodes, progress.total_episodes)
-
-    # Update last watched time
     progress.last_watched = datetime.utcnow()
+    db.session.flush()
 
-    # Check if season completed
-    update_season_progress(progress, show_id)
-
-    # Check if show completed - but only mark as completed if show has actually ended
-    # For returning series, keep status as 'watching' even if all current episodes are watched
-    if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
-        # Fetch show details to check if it's actually ended
-        try:
-            show = fetch_tv_show_details(show_id)
-            show_status = show.get('status', '')
-
-            # Only mark as completed if show has actually ended
-            if show_status in ['Ended', 'Canceled']:
-                progress.status = 'completed'
-                progress.completed_at = datetime.utcnow()
-                logger.debug("Show %s marked COMPLETED (status: %s)", show_id, show_status)
-            else:
-                logger.debug("Show %s: all episodes watched but status='%s', keeping 'watching'", show_id, show_status)
-                if progress.status == 'completed':
-                    progress.status = 'watching'
-        except Exception as e:
-            logger.warning("Could not fetch show %s status: %s", show_id, e)
+    # Canonical counters + gating — identical math to the bulk paths.
+    loader = memoized_details_loader()
+    aired = aired_positions_for_show(show_id, details_loader=loader)
+    sync_tv_progress_counters(progress, user_id, show_id, aired=aired)
+    apply_completion_gating(progress, show_id, details_loader=loader)
+    logger.debug(
+        "Progress %s: %s/%s aired", show_id,
+        progress.watched_episodes, progress.total_episodes)
 
     db.session.commit()
     return progress
@@ -378,109 +257,57 @@ def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
 @tv_tracking.route('/api/tv/<int:show_id>/season/<int:season>/mark-watched', methods=['POST'])
 @login_required
 def mark_season_watched(show_id, season):
-    """Mark entire season as watched"""
+    """Mark every AIRED episode of one season as watched (Task F1).
+
+    Rewritten to delegate to the canonical season core
+    (``mark_season_aired_watched`` → ``mark_aired_positions_watched``).
+    It no longer fetches the TMDb season episode list, no longer filters
+    by air date itself, and — critically — no longer DELETES existing
+    ``TVEpisodeWatch`` rows before re-inserting them, which used to
+    destroy ratings, notes, watched dates and rewatch history.
+
+    Future episodes, specials and other seasons are excluded because the
+    eligible set is the canonical aired set narrowed to this season.
+    Idempotent: a repeat call inserts nothing.
+    """
     try:
-        logger.debug("Mark season watched: show=%s season=%s user=%s", show_id, season, current_user.id)
+        logger.debug("Mark season watched: show=%s season=%s user=%s",
+                     show_id, season, current_user.id)
 
-        data = request.get_json() or {}
-        watched_date = data.get('watched_date', datetime.utcnow().strftime('%Y-%m-%d'))
-
-        season_url = f'{TMDB_BASE_URL}/tv/{show_id}/season/{season}?api_key={TMDB_API_KEY}'
-        season_data = cached_tmdb_request(season_url)
-        if not season_data:
-            return jsonify({'error': 'Failed to fetch season details'}), 400
-        episodes = season_data.get('episodes', [])
-        logger.debug("Season %s of show %s has %s episodes", season, show_id, len(episodes))
-
-        progress = TVShowProgress.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id
-        ).first()
-
-        if not progress:
-            show = fetch_tv_show_details(show_id)
-            progress = TVShowProgress(
-                user_id=current_user.id,
-                show_id=show_id,
-                total_seasons=show.get('number_of_seasons', 0),
-                total_episodes=show.get('number_of_episodes', 0),
-                watched_seasons=0,
-                watched_episodes=0,
-                status='watching'
-            )
-            db.session.add(progress)
-            db.session.flush()
-            logger.debug("Created progress id=%s for show %s", progress.id, show_id)
-        else:
-            logger.debug("Progress id=%s: %s/%s watched", progress.id, progress.watched_episodes, progress.total_episodes)
-        
-        # IMPORTANT: Delete existing episodes for this season first to ensure clean state
-        existing_count = TVEpisodeWatch.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id,
-            season_number=season
-        ).count()
-        
-        if existing_count > 0:
-            logger.debug("Deleting %s existing episodes for show %s season %s", existing_count, show_id, season)
-            TVEpisodeWatch.query.filter_by(
-                user_id=current_user.id,
-                show_id=show_id,
-                season_number=season
-            ).delete()
-            db.session.flush()
-            progress.watched_episodes -= existing_count
-        
-        # Mark all episodes in season
-        marked_count = 0
-        for ep in episodes:
-            ep_num = ep['episode_number']
-            
-            episode_watch = TVEpisodeWatch(
-                user_id=current_user.id,
-                show_id=show_id,
-                progress_id=progress.id,
-                season_number=season,
-                episode_number=ep_num,
-                episode_name=ep.get('name'),
-                watched_date=datetime.strptime(watched_date, '%Y-%m-%d').date()
-            )
-            db.session.add(episode_watch)
-            marked_count += 1
-        
-        # Update progress
-        old_watched = progress.watched_episodes
-        progress.watched_episodes += marked_count
-        progress.last_watched = datetime.utcnow()
-        update_season_progress(progress, show_id)
-        logger.debug("Progress: %s → %s / %s", old_watched, progress.watched_episodes, progress.total_episodes)
-        
-        # Check completion - but only mark as completed if show has actually ended
-        if progress.watched_episodes >= progress.total_episodes and progress.total_episodes > 0:
-            # Fetch show details to check if it's actually ended
+        data = request.get_json(silent=True) or {}
+        raw_date = data.get('watched_date')
+        watched_date = None
+        if raw_date:
             try:
-                show = fetch_tv_show_details(show_id)
-                show_status = show.get('status', '')
-                
-                # Only mark as completed if show has actually ended
-                if show_status in ['Ended', 'Canceled']:
-                    progress.status = 'completed'
-                    progress.completed_at = datetime.utcnow()
-                    logger.debug("Show %s marked COMPLETED (status: %s)", show_id, show_status)
-                else:
-                    logger.debug("Show %s: all episodes watched but status='%s', keeping 'watching'", show_id, show_status)
-                    if progress.status == 'completed':
-                        progress.status = 'watching'
-            except Exception as e:
-                logger.warning("Could not fetch show %s status: %s", show_id, e)
+                watched_date = datetime.strptime(
+                    raw_date, '%Y-%m-%d').date()
+            except ValueError:
+                watched_date = None
 
-        db.session.commit()
+        progress, inserted, aired = mark_season_aired_watched(
+            current_user, show_id, season, watched_date=watched_date)
+
+        if progress is None:
+            # Nothing aired in this season (or no aired data at all):
+            # a zero-state, not an error and not a fabricated write.
+            return jsonify({
+                'success': True,
+                'message': f'Season {season} marked as watched',
+                'marked_episodes': 0,
+                'aired_episodes': 0,
+                'progress': None,
+            }), 200
+
+        canonical = canonical_tv_progress(current_user, show_id)
+        logger.debug("Season %s of show %s: inserted %s of %s aired",
+                     season, show_id, inserted, aired)
 
         return jsonify({
             'success': True,
             'message': f'Season {season} marked as watched',
-            'marked_episodes': marked_count,
-            'progress': progress.to_dict()
+            'marked_episodes': inserted,
+            'aired_episodes': aired,
+            'progress': progress.to_dict(canonical),
         }), 200
 
     except Exception:
@@ -884,7 +711,13 @@ def get_watched_episodes(show_id):
 @tv_tracking.route('/api/tv/<int:show_id>/season/<int:season_number>/unmark-watched', methods=['POST'])
 @login_required
 def unmark_season_watched(show_id, season_number):
-    """Unmark all episodes in a season as unwatched"""
+    """Unmark all episodes in a season as unwatched.
+
+    Deletes the season's watch rows (rewatches included — an unmark is an
+    explicit removal) and recomputes the show counters from the canonical
+    AIRED state, so the published denominator never reverts to a TMDb
+    count and rewatch rows of OTHER seasons can never inflate the count.
+    """
     try:
         TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
@@ -896,13 +729,15 @@ def unmark_season_watched(show_id, season_number):
             user_id=current_user.id, show_id=show_id
         ).first()
         if progress:
-            progress.watched_episodes = TVEpisodeWatch.query.filter_by(
-                user_id=current_user.id, show_id=show_id
-            ).count()
+            db.session.flush()
+            sync_tv_progress_counters(progress, current_user.id, show_id)
             update_season_progress(progress, show_id)
 
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'progress': progress.to_dict() if progress else None,
+        })
     except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
@@ -912,7 +747,12 @@ def unmark_season_watched(show_id, season_number):
 @tv_tracking.route('/api/tv/<int:show_id>/episode/<int:season_number>/<int:episode_number>/unmark-watched', methods=['POST'])
 @login_required
 def unmark_single_episode(show_id, season_number, episode_number):
-    """Unmark a single episode as unwatched (new version)"""
+    """Unmark a single episode as unwatched (new version).
+
+    Deletes the episode's watch rows (rewatches included) and recomputes
+    the show counters from the canonical AIRED state — the deleted rows
+    and any surviving rewatch rows can no longer skew the count.
+    """
     try:
         TVEpisodeWatch.query.filter_by(
             user_id=current_user.id,
@@ -925,13 +765,15 @@ def unmark_single_episode(show_id, season_number, episode_number):
             user_id=current_user.id, show_id=show_id
         ).first()
         if progress:
-            progress.watched_episodes = max(0, TVEpisodeWatch.query.filter_by(
-                user_id=current_user.id, show_id=show_id
-            ).count())
+            db.session.flush()
+            sync_tv_progress_counters(progress, current_user.id, show_id)
             update_season_progress(progress, show_id)
 
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'progress': progress.to_dict() if progress else None,
+        })
     except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
@@ -941,66 +783,28 @@ def unmark_single_episode(show_id, season_number, episode_number):
 @tv_tracking.route('/api/tv/<int:show_id>/mark-all-watched', methods=['POST'])
 @login_required
 def mark_all_watched(show_id):
-    """Mark all episodes in all seasons as watched (complete series)"""
+    """Mark every AIRED episode in all seasons as watched (Task F1).
+
+    Delegates to the canonical bulk core (``mark_aired_positions_watched``
+    → ``aired_positions_for_show``): one cached details resolution, ONE
+    existing-watch SELECT, set difference in Python, ONE bulk INSERT.
+    The old per-episode ``.first()`` loop (N+1) and its TMDb season
+    fetches are gone; future episodes, specials and rewatch inflation are
+    excluded by the shared aired rule, and existing rows (ratings, notes,
+    dates, rewatches) are never deleted or duplicated.
+    """
     try:
-        # Fetch show details (cached)
-        show_data = fetch_tv_show_details(show_id)
-        if not show_data:
-            return jsonify({'success': False, 'error': 'Failed to fetch show details'}), 400
-        show_status = show_data.get('status', '')
+        progress, inserted, aired = mark_aired_positions_watched(
+            current_user, show_id)
 
-        # Mark each episode in each season
-        for season in show_data.get('seasons', []):
-            if season['season_number'] == 0:  # Skip specials
-                continue
-
-            # Fetch season details (cached)
-            season_url = f'{TMDB_BASE_URL}/tv/{show_id}/season/{season["season_number"]}?api_key={TMDB_API_KEY}'
-            season_data = cached_tmdb_request(season_url)
-            if not season_data:
-                continue
-            
-            # Mark each episode
-            for episode in season_data.get('episodes', []):
-                # Check if already watched
-                existing = TVEpisodeWatch.query.filter_by(
-                    user_id=current_user.id,
-                    show_id=show_id,
-                    season_number=season['season_number'],
-                    episode_number=episode['episode_number']
-                ).first()
-                
-                if not existing:
-                    watch = TVEpisodeWatch(
-                        user_id=current_user.id,
-                        show_id=show_id,
-                        season_number=season['season_number'],
-                        episode_number=episode['episode_number'],
-                        watched_date=datetime.utcnow().date()
-                    )
-                    db.session.add(watch)
-        
-        # Update show progress to completed
-        progress = TVShowProgress.query.filter_by(
-            user_id=current_user.id,
-            show_id=show_id
-        ).first()
-        
-        if progress:
-            # Sync watched_episodes from actual DB count (HI-01)
-            db.session.flush()
-            progress.watched_episodes = TVEpisodeWatch.query.filter_by(
-                user_id=current_user.id, show_id=show_id
-            ).count()
-            if show_status in ['Ended', 'Canceled']:
-                progress.status = 'completed'
-                progress.completed_at = datetime.utcnow()
-            else:
-                progress.status = 'watching'
-
-        db.session.commit()
-
-        return jsonify({'success': True, 'message': 'Series completed!'})
+        canonical = canonical_tv_progress(current_user, show_id)
+        return jsonify({
+            'success': True,
+            'message': 'Series completed!',
+            'marked_episodes': inserted,
+            'aired_episodes': aired,
+            'progress': progress.to_dict(canonical) if progress else None,
+        }), 200
     except Exception:
         db.session.rollback()
         logger.error("Unexpected error in tv_tracking", exc_info=True)
@@ -1008,33 +812,34 @@ def mark_all_watched(show_id):
 
 
 def update_season_progress(progress, show_id):
-    """Update watched seasons count based on completed seasons"""
+    """Recompute ``watched_seasons`` from the canonical AIRED season map.
+
+    Season denominators come from ``season_aired_for_show()`` — a direct
+    projection of ``aired_positions_for_show()`` — never from TMDb's raw
+    ``episode_count`` (which counts unaired episodes). A season becomes
+    complete only when every AIRED episode has a canonical first-watch
+    row; a season with nothing aired is never complete.
+    """
     try:
-        show_data = fetch_tv_show_details(show_id)
-        if not show_data:
+        aired_seasons = season_aired_for_show(show_id)
+        if not aired_seasons:
             return
-        seasons = show_data.get('seasons', [])
-        
-        # Count completed seasons
-        completed_seasons = 0
-        for season in seasons:
-            if season['season_number'] == 0:  # Skip specials
-                continue
-            
-            season_num = season['season_number']
-            episode_count = season['episode_count']
-            
-            # Count watched episodes in this season
-            watched_in_season = TVEpisodeWatch.query.filter_by(
-                user_id=progress.user_id,
-                show_id=show_id,
-                season_number=season_num
-            ).filter(TVEpisodeWatch.is_rewatch == False).count()
-            
-            if watched_in_season >= episode_count:
-                completed_seasons += 1
-        
-        progress.watched_seasons = completed_seasons
-        
+
+        watched = {}
+        for season, episode in (
+                db.session.query(
+                    TVEpisodeWatch.season_number,
+                    TVEpisodeWatch.episode_number)
+                .filter(
+                    TVEpisodeWatch.user_id == progress.user_id,
+                    TVEpisodeWatch.show_id == show_id,
+                    TVEpisodeWatch.is_rewatch == False,  # noqa: E712
+                )
+                .all()):
+            watched[season] = max(watched.get(season, 0), episode)
+
+        progress.watched_seasons = sum(
+            1 for season, count in aired_seasons.items()
+            if watched.get(season, 0) >= count)
     except Exception as e:
         logger.warning("Error updating season progress: %s", e)

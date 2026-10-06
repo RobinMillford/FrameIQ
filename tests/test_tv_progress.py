@@ -365,18 +365,21 @@ def test_existing_episode_mark_unmark_intact(auth_client, sample_user,
 
 
 def test_existing_season_bulk_intact(auth_client, sample_user, monkeypatch):
+    """Task F1: season bulk-mark eligibility is the canonical AIRED set
+    (calendar ∪ last_episode_to_air anchor) — no raw TMDb season fetch, no
+    future episodes. S1E1..2 aired → both inserted."""
     _mock_show(monkeypatch)
+    import api.continue_watching as cw_mod
     monkeypatch.setattr(
-        'routes.tv_tracking.cached_tmdb_request',
-        lambda url, **kw: {'episodes': [
-            {'episode_number': 1, 'name': 'Pilot'},
-            {'episode_number': 2, 'name': 'Two'},
-        ]})
+        cw_mod, 'show_details',
+        lambda sid, **kw: {'id': SHOW_ID, 'last_episode_to_air': {
+            'season_number': 1, 'episode_number': 2}})
     r = auth_client.post(f'/api/tv/{SHOW_ID}/season/1/mark-watched', json={})
     assert r.status_code == 200
     body = r.get_json()
     assert body['marked_episodes'] == 2
     assert body['progress']['watched_episodes'] == 2
+    assert body['progress']['aired_episodes'] == 2
 
 
 def test_existing_status_transitions_still_work(auth_client, sample_user):

@@ -44,7 +44,8 @@ Nothing here is cached globally — callers render per request.
 """
 from datetime import date, datetime
 
-from models import db, DiaryEntry, MediaItem, TVEpisodeWatch, UpcomingEpisode
+from models import (db, DiaryEntry, MediaItem, TVEpisodeWatch,
+                    TVShowProgress, UpcomingEpisode)
 
 
 def user_viewed_keys(user):
@@ -363,3 +364,268 @@ def tv_aired_progress(user, show_ids, details_loader=None):
         if result:
             progress[show_id] = result
     return progress
+
+
+# ── Canonical TV WRITE core (Task F1) ────────────────────────────────
+#
+# ONE aired-episode definition for the whole application:
+#     aired_positions_for_show()
+# Everything below derives from it. No second semantic definition of
+# "aired" may be introduced — see module docstring for the exact rules
+# (historical seasons in, future out, specials out, duplicates collapsed,
+# rewatches never inflating progress).
+#
+# Query contract (enforced by tests):
+#   - aired set          : ≤ 1 calendar SELECT + ≤ 1 cached details load
+#   - existing watches   : exactly 1 SELECT (season, episode, is_rewatch)
+#   - inserts            : exactly 1 bulk INSERT, or 0 when nothing is missing
+# Nothing here is per-episode. TMDb season metadata rides on the one
+# cached details payload; no user-specific state is cached globally.
+
+
+def aired_by_season(aired):
+    """``{season: highest aired episode}`` from an already-resolved set.
+
+    Pure helper so callers that already hold the canonical set never
+    re-resolve it just to count seasons.
+    """
+    counts = {}
+    for season, episode in aired:
+        if season > 0:
+            counts[season] = max(counts.get(season, 0), episode)
+    return counts
+
+
+def memoized_details_loader(details_loader=None):
+    """One-details-resolution-per-operation wrapper (request-scoped).
+
+    Wraps the caller's loader so a single bulk operation resolves each
+    show's cached TMDb details payload at most once — the aired set, the
+    counter recompute and the completion gate all read the SAME
+    resolution. The memo lives only inside the calling operation; it is
+    never a global cache and never holds user-specific state (public TMDb
+    metadata caching stays with the existing shared cache).
+    """
+    base = details_loader or _default_details_loader
+    cache = {}
+
+    def loader(show_id):
+        if show_id not in cache:
+            cache[show_id] = base(show_id)
+        return cache[show_id]
+
+    return loader
+
+
+def _watched_rows_for_show(user_id, show_id):
+    """``(all_positions, non_rewatch_positions)`` in ONE bounded SELECT.
+
+    ``all_positions`` covers every row (including rewatch rows).
+    ``non_rewatch_positions`` is the canonical FIRST-WATCH set: a rewatch
+    never inflates progress, and a position holding ONLY a rewatch row
+    has no canonical watch yet (the bulk core inserts it).
+    """
+    rows = (
+        db.session.query(
+            TVEpisodeWatch.season_number,
+            TVEpisodeWatch.episode_number,
+            TVEpisodeWatch.is_rewatch,
+        )
+        .filter(
+            TVEpisodeWatch.user_id == user_id,
+            TVEpisodeWatch.show_id == show_id,
+        )
+        .all()
+    )
+    all_positions = {(s, e) for s, e, _ in rows}
+    first_watch = {(s, e) for s, e, rw in rows if not rw}
+    return all_positions, first_watch
+
+
+def get_or_create_tv_progress(user_id, show_id):
+    """Fetch (or create) the TVShowProgress row for one user + show.
+
+    Counters are deliberately left at zero here — they are derived from
+    the canonical aired state by ``sync_tv_progress_counters`` rather than
+    from TMDb's ``number_of_episodes``, which counts unaired episodes.
+    """
+    progress = TVShowProgress.query.filter_by(
+        user_id=user_id, show_id=show_id).first()
+    if progress is not None:
+        return progress
+    progress = TVShowProgress(
+        user_id=user_id,
+        show_id=show_id,
+        total_seasons=0,
+        total_episodes=0,
+        watched_seasons=0,
+        watched_episodes=0,
+        status='watching',
+    )
+    db.session.add(progress)
+    db.session.flush()
+    return progress
+
+
+def sync_tv_progress_counters(progress, user_id, show_id, aired=None,
+                              details_loader=None):
+    """Recompute every TVShowProgress counter from the canonical state.
+
+    ``progress.total_episodes`` now means "AIRED episodes", not "TMDb
+    total". ``progress.watched_episodes`` counts distinct non-rewatch
+    positions. ``watched_seasons`` counts seasons whose every AIRED
+    episode is watched — a season with no aired episodes is never
+    complete. That makes ``calculate_progress_percentage()`` correct
+    without the model ever becoming network-aware.
+    """
+    if aired is None:
+        aired = aired_positions_for_show(show_id, details_loader)
+    all_positions, first_watch = _watched_rows_for_show(user_id, show_id)
+    aired_seasons = aired_by_season(aired)
+    watched_by_season = aired_by_season(first_watch & set(aired))
+
+    progress.total_episodes = len(aired)
+    progress.watched_episodes = len(first_watch)
+    progress.total_seasons = len(aired_seasons)
+    progress.watched_seasons = sum(
+        1 for season, count in aired_seasons.items()
+        if watched_by_season.get(season, 0) >= count
+    )
+    return progress
+
+
+def apply_completion_gating(progress, show_id, details_loader=None):
+    """Seal a show as 'completed' only when TMDb reports Ended/Canceled.
+
+    Comparison uses the canonical counters (aired denominator), so a
+    running show is never sealed and a completed show whose denominator
+    grows again falls back to 'watching' without any stored percentage.
+    A show with NO verifiably aired data (metadata failure / empty set)
+    never changes status — un-sealing requires positive aired evidence.
+    """
+    complete = (progress.total_episodes > 0
+                and progress.watched_episodes >= progress.total_episodes)
+    if complete:
+        loader = details_loader or _default_details_loader
+        try:
+            details = loader(show_id) or {}
+        except Exception:
+            details = {}
+        if details.get('status') in ('Ended', 'Canceled'):
+            if progress.status != 'completed':
+                progress.completed_at = datetime.utcnow()
+            progress.status = 'completed'
+            return progress
+    if (progress.status == 'completed'
+            and progress.total_episodes > 0):
+        # Aired reality exists and shows incompleteness — un-seal.
+        progress.status = 'watching'
+        progress.completed_at = None
+    return progress
+
+
+def mark_aired_positions_watched(user, show_id, progress=None, aired=None,
+                                 counter_aired=None, details_loader=None,
+                                 watched_date=None, commit=True):
+    """Canonical bulk "mark watched" core — the single write path.
+
+    Resolves the canonical aired set, inserts ONLY the positions that
+    lack a canonical first-watch row, and never touches an existing row:
+
+      * no DELETE, ever — ratings, notes, dates and rewatch rows survive;
+      * no rewatch rows are manufactured (a position holding only a
+        rewatch row still receives its canonical first-watch row — the
+        rewatch record itself is preserved untouched);
+      * no diary events are fabricated;
+      * idempotent — a second call inserts nothing and mutates nothing;
+      * season-scoped callers pass ``aired`` narrowed to one season and
+        ``counter_aired`` as the FULL canonical set, so the show-level
+        counters always reflect the whole show's aired reality (never a
+        single-season denominator). Mark Season Watched and Mark All
+        Watched share this exact code path.
+
+    The details payload is resolved at most ONCE per operation (shared
+    by the aired set, the counter recompute and the completion gate).
+
+    Returns ``(progress, inserted_count, inserted_set_size)``.
+    """
+    user_id = getattr(user, 'id', user)
+    loader = memoized_details_loader(details_loader)
+    insert_set = aired
+    if insert_set is None:
+        insert_set = counter_aired
+    if insert_set is None:
+        insert_set = counter_aired = aired_positions_for_show(
+            show_id, details_loader=loader)
+    if not insert_set:
+        # Nothing has verifiably aired — never manufacture state.
+        return progress, 0, 0
+
+    if progress is None:
+        progress = get_or_create_tv_progress(user_id, show_id)
+    if progress.id is None:
+        db.session.flush()
+
+    _, first_watch = _watched_rows_for_show(user_id, show_id)
+    missing = sorted(insert_set - first_watch)
+    if missing:
+        day = watched_date or datetime.utcnow().date()
+        db.session.bulk_insert_mappings(
+            TVEpisodeWatch,
+            [
+                {
+                    'user_id': user_id,
+                    'show_id': show_id,
+                    'progress_id': progress.id,
+                    'season_number': season,
+                    'episode_number': episode,
+                    'watched_date': day,
+                    'is_rewatch': False,
+                }
+                for season, episode in missing
+            ],
+        )
+        db.session.flush()
+
+    progress.last_watched = datetime.utcnow()
+    sync_tv_progress_counters(
+        progress, user_id, show_id, aired=counter_aired,
+        details_loader=loader)
+    apply_completion_gating(progress, show_id, details_loader=loader)
+    if commit:
+        db.session.commit()
+    return progress, len(missing), len(insert_set)
+
+
+def mark_season_aired_watched(user, show_id, season, details_loader=None,
+                              watched_date=None, commit=True):
+    """Season-scoped wrapper over ``mark_aired_positions_watched``.
+
+    The aired set is narrowed to ``season`` AFTER canonical resolution, so
+    a season mark can never select episodes outside the aired rule and
+    can never touch specials or another season.
+    """
+    loader = memoized_details_loader(details_loader)
+    aired = aired_positions_for_show(show_id, details_loader=loader)
+    season_int = _coerce_int(season)
+    if not aired or not season_int:
+        return None, 0, 0
+    scoped = {pos for pos in aired if pos[0] == season_int}
+    if not scoped:
+        return None, 0, 0
+    return mark_aired_positions_watched(
+        user, show_id, aired=scoped, counter_aired=aired,
+        details_loader=loader, watched_date=watched_date, commit=commit)
+
+
+def canonical_tv_progress(user, show_id, details_loader=None):
+    """Canonical ``{watched, aired, percent}`` for one show, or ``None``.
+
+    ``None`` means "no personalized progress" (the user has not watched
+    anything), never "0%". Callers use it instead of the stored
+    ``TVShowProgress`` counters so no endpoint can publish a competing
+    denominator.
+    """
+    result = tv_aired_progress(user, [show_id],
+                               details_loader).get(show_id)
+    return dict(result) if result else None
