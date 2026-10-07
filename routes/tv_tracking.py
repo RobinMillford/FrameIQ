@@ -9,10 +9,10 @@ from api.tmdb_client import cached_tmdb_request, fetch_tv_show_details
 from api.tmdb.config import TMDB_API_KEY
 from api.user_view_state import (
     aired_positions_for_show, apply_completion_gating,
-    canonical_tv_progress, get_or_create_tv_progress,
-    mark_aired_positions_watched, mark_season_aired_watched,
-    memoized_details_loader, season_aired_for_show,
-    sync_tv_progress_counters, tv_aired_progress,
+    canonical_progress_map, canonical_tv_progress,
+    get_or_create_tv_progress, mark_aired_positions_watched,
+    mark_season_aired_watched, memoized_details_loader,
+    season_aired_for_show, sync_tv_progress_counters, tv_aired_progress,
 )
 from models import (
     MediaItem, TVEpisodeWatch, TVShowProgress, UpcomingEpisode, db,
@@ -115,11 +115,10 @@ def get_show_progress(show_id):
         
         # Publish the CANONICAL aired-reality payload (recomputed per
         # request) so this endpoint can never expose a stale stored
-        # denominator. Falls back to the stored counters only when the
-        # user has no watch rows yet (no personalized progress exists).
-        # NOTE: unlike the pre-F1 version this does NOT refresh
-        # ``total_episodes`` from TMDb ``number_of_episodes`` — that
-        # clobbered the canonical aired count with a future-inflated one.
+        # denominator. NOTE: unlike the pre-F1 version this does NOT
+        # refresh ``total_episodes`` from TMDb ``number_of_episodes`` —
+        # that clobbered the canonical aired count with a future-inflated
+        # one.
         canonical = canonical_tv_progress(current_user, show_id)
         
         # Get watched episodes
@@ -131,8 +130,24 @@ def get_show_progress(show_id):
             TVEpisodeWatch.episode_number
         ).all()
         
+        # Task F2: no canonical aired-evidence progress exists. A pre-F1
+        # legacy row can still carry stale counters — never publish them
+        # as progress. Blank the derived counter values so a legacy row
+        # reads as "no progress" until canonical aired state exists (the
+        # tracking row itself is kept: tracking is not watch state; the
+        # episode ledger below still renders).
+        if canonical is None:
+            progress_dict = progress.to_dict()
+            progress_dict['total_episodes'] = 0
+            progress_dict['watched_episodes'] = 0
+            progress_dict['total_seasons'] = 0
+            progress_dict['watched_seasons'] = 0
+            progress_dict['progress_percentage'] = 0
+        else:
+            progress_dict = progress.to_dict(canonical)
+
         return jsonify({
-            'progress': progress.to_dict(canonical),
+            'progress': progress_dict,
             'watched_episodes': [ep.to_dict() for ep in watched_episodes]
         }), 200
         
@@ -187,6 +202,50 @@ def mark_show_aired_watched_core(user_id, show_id):
         return TVShowProgress.query.filter_by(
             user_id=user_id, show_id=show_id).first(), 0, 0
     return mark_aired_positions_watched(user, show_id)
+
+
+def unmark_show_watched_core(user_id, show_id):
+    """Bulk "Unmark as Viewed" for a TV show — the inverse write path.
+
+    Task F2 (spec §43, option A): unmarking a TV show is an explicit
+    removal of its watched state, identical in kind to unmark-season and
+    unmark-episode (both already delete rows, rewatches included, and
+    recompute from canonical aired reality). This clears EVERY
+    TVEpisodeWatch row for (user, show), re-syncs the TVShowProgress
+    counters from the canonical aired set (⇒ watched 0), un-seals a
+    'completed' status back to 'watching', and keeps the zero-progress
+    row so the user's tracking state survives the unmark.
+
+    Preserved contract:
+      * one bounded DELETE for the user's own rows — user-scoped, nothing
+        shared is touched; other users' rows are unreachable by filter;
+      * no ratings/notes are orphaned (they live on the deleted rows and
+        the deletion IS the documented unmark semantics);
+      * no TMDb writes, no diary events, no rewatch manufacturing.
+
+    Returns the (refreshed) TVShowProgress row, or ``None`` when the user
+    was not tracking the show.
+    """
+    progress = TVShowProgress.query.filter_by(
+        user_id=user_id, show_id=show_id).first()
+
+    # Bounded, user-scoped removal of the episode ledger for this show.
+    # Delete by column filter (NOT progress_id) so rows written before
+    # the tracking row existed are cleared too.
+    TVEpisodeWatch.query.filter_by(
+        user_id=user_id, show_id=show_id).delete()
+
+    if progress is not None:
+        db.session.flush()
+        sync_tv_progress_counters(progress, user_id, show_id)
+        progress.watched_seasons = 0
+        progress.last_watched = datetime.utcnow()
+        # apply_completion_gating with zero watches: complete=False, and
+        # the existing un-seal branch (total_episodes > 0) flips a sealed
+        # 'completed' back to 'watching' — the exact F1 un-seal path.
+        apply_completion_gating(progress, show_id)
+    db.session.commit()
+    return progress
 
 
 def mark_episode_watched_core(user_id, show_id, season, episode, data=None):
@@ -330,8 +389,20 @@ def get_my_tracked_shows():
         
         shows = query.order_by(TVShowProgress.last_watched.desc()).all()
         
+        # Task F2: every row is serialized through the canonical aired
+        # payload (recomputed per request) — a pre-F1 legacy row can no
+        # longer leak its stale counters through this endpoint.
+        canonical_by_show = canonical_progress_map(
+            current_user, [s.show_id for s in shows])
+
         return jsonify({
-            'shows': [show.to_dict() for show in shows],
+            'shows': [show.to_dict(
+                # Zeroed canonical for shows with no aired-evidence
+                # progress (tracked, not started): to_dict must never
+                # fall back to the stored legacy counters.
+                canonical_by_show.get(show.show_id)
+                or {'watched': 0, 'aired': 0, 'percent': 0})
+                      for show in shows],
             'total': len(shows)
         }), 200
         
@@ -368,9 +439,13 @@ def update_show_status(show_id):
 
         db.session.commit()
         
+        # Task F2: serialize through the canonical aired payload — a
+        # pre-F1 legacy row can no longer leak stale counters here.
+        canonical = canonical_tv_progress(current_user, show_id) or {
+            'watched': 0, 'aired': 0, 'percent': 0}
         return jsonify({
             'success': True,
-            'progress': progress.to_dict()
+            'progress': progress.to_dict(canonical)
         }), 200
         
     except Exception:
@@ -396,25 +471,34 @@ def get_next_episode(show_id):
             return jsonify({'tracked': False, 'next_episode': None}), 200
 
         if progress.status in ('completed', 'dropped'):
+            canonical = canonical_tv_progress(current_user, show_id) or {
+                'watched': 0, 'aired': 0, 'percent': 0}
             return jsonify({
                 'tracked': True,
                 'status': progress.status,
                 'progress': {
-                    'watched': progress.watched_episodes,
-                    'total': progress.total_episodes,
-                    'percent': progress.calculate_progress_percentage(),
+                    'watched': canonical['watched'],
+                    'total': canonical['aired'],
+                    'percent': canonical['percent'],
                 },
                 'next_episode': None,
             }), 200
 
         next_ep = _compute_next_episode_cached(current_user.id, show_id)
+
+        # Task F2: publish the CANONICAL aired-reality payload — never
+        # the stored counters (a pre-F1 legacy row can still carry a
+        # stale denominator). None (show not started / no aired evidence)
+        # reads as zero progress.
+        canonical = canonical_tv_progress(current_user, show_id) or {
+            'watched': 0, 'aired': 0, 'percent': 0}
         return jsonify({
             'tracked': True,
             'status': progress.status,
             'progress': {
-                'watched': progress.watched_episodes,
-                'total': progress.total_episodes,
-                'percent': progress.calculate_progress_percentage(),
+                'watched': canonical['watched'],
+                'total': canonical['aired'],
+                'percent': canonical['percent'],
             },
             'next_episode': next_ep,
         }), 200
@@ -445,6 +529,12 @@ def get_unfinished_shows():
             return jsonify({'shows': []}), 200
 
         show_ids = [s.show_id for s in shows]
+
+        # Task F2: CANONICAL aired-reality progress for every tracked
+        # show in the bounded shelf — one batched read (two SQL statements
+        # total, shared cached-TMDb details), never the stored counters a
+        # pre-F1 legacy row may still carry.
+        canonical_by_show = canonical_progress_map(current_user, show_ids)
 
         # One query for every watched episode across all tracked shows.
         watched_rows = (
@@ -496,14 +586,25 @@ def get_unfinished_shows():
             # An unaired episode must not be offered as playable.
             playable = next_ep is not None and next_ep.get('aired', True)
             info = info_by_show.get(s.show_id, {})
+            # Canonical progress for the shelf card: watched/aired/percent
+            # from aired evidence only. A show with zero watch rows (or
+            # nothing verifiably aired) reads as zero progress — never a
+            # stale stored percentage.
+            canonical = canonical_by_show.get(s.show_id)
+            if canonical:
+                canon_watched, canon_total, canon_percent = (
+                    canonical['watched'], canonical['aired'],
+                    canonical['percent'])
+            else:
+                canon_watched, canon_total, canon_percent = 0, 0, 0
             result.append({
                 'show_id': s.show_id,
                 'name': info.get('name'),
                 'poster_path': info.get('poster_path'),
                 'status': s.status,
-                'watched_episodes': s.watched_episodes,
-                'total_episodes': s.total_episodes,
-                'progress_percent': s.calculate_progress_percentage(),
+                'watched_episodes': canon_watched,
+                'total_episodes': canon_total,
+                'progress_percent': canon_percent,
                 'last_watched': s.last_watched.isoformat() if s.last_watched else None,
                 'last_episode': (
                     {'season': last_ep[0], 'episode': last_ep[1]}

@@ -254,7 +254,28 @@ def remove_from_wishlist(media_id, media_type):
 @main.route('/remove_from_viewed/<int:media_id>/<media_type>', methods=['GET'])
 @login_required
 def remove_from_viewed(media_id, media_type):
-    """Remove a movie or TV show from the user's viewing history"""
+    """Remove a movie or TV show from the user's viewing history.
+
+    Task F2 — SYMMETRIC UNMARK (spec §43, option A): for TV this clears
+    the show's canonical watched state (every TVEpisodeWatch row, rewatches
+    included — the same explicit-removal contract as unmark-season and
+    unmark-episode) before removing the compatibility ``user_viewed`` row,
+    so Viewed OFF can never coexist with 100% progress. No duplicate-row
+    safety valve: no legitimate duplicate can exist (unique identity), so
+    a leftover would mean state was already cleared. Movies keep their
+    exact semantics (junction row only; DiaryEntry events are history and
+    are never touched).
+    """
+    if media_type == 'tv':
+        try:
+            from routes.tv_tracking import unmark_show_watched_core
+            unmark_show_watched_core(current_user.id, media_id)
+        except Exception:
+            db.session.rollback()
+            logger.error("TV unmark-as-viewed failed for show %s",
+                         media_id, exc_info=True)
+            flash('Could not remove that show from your viewing history!')
+            return redirect(request.referrer or url_for('main.index'))
     return _remove_from_collection(
         user_viewed, media_id, media_type, 'viewing history', 'main.viewed')
 

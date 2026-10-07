@@ -366,6 +366,61 @@ def tv_aired_progress(user, show_ids, details_loader=None):
     return progress
 
 
+# ── Canonical TV Viewed derivation (Task F2) ─────────────────────────
+#
+# ONE semantic authority for TV Viewed, derived from the SAME two
+# canonical inputs as progress itself — the TVEpisodeWatch episode
+# ledger and aired_positions_for_show():
+#
+#     TV Viewed  ⇔  watched valid aired unique positions
+#                   == valid aired unique positions
+#                   AND aired_count > 0
+#
+# i.e. canonical percent == 100. ``user_viewed`` is a compatibility
+# mirror (written by /mark_as_viewed, shown on card partials) — it must
+# never become an independent TV truth, and it can never create a TV
+# Viewed badge the canonical state does not support.
+
+
+def tv_viewed_from_progress(progress):
+    """Canonical TV Viewed verdict from one canonical progress payload.
+
+    ``progress`` is a ``{watched, aired, percent}`` dict from
+    ``tv_aired_progress`` / ``canonical_tv_progress`` (or ``None``, which
+    means the user has not watched the show → not viewed). Viewed ⇔
+    percent == 100 (watched == aired > 0). One rule for every surface:
+    the hero badge, the Mark/Unmark action, cross-surface tests, the
+    invariant test.
+    """
+    if not progress:
+        return False
+    return progress.get("watched", 0) > 0 and progress.get(
+        "watched", 0) >= progress.get("aired", 0) > 0
+
+
+def canonical_progress_map(user, show_ids, details_loader=None):
+    """Batched canonical progress for every STARTED show in ``show_ids``.
+
+    The one entry point F2 read surfaces (unfinished shows, profile TV
+    rows, list cards, next-episode) use instead of stored
+    ``TVShowProgress`` counters, so no surface can publish a competing
+    denominator. Backed by ``tv_aired_progress``: exactly two batched
+    SELECTs for ALL ids plus cached-TMDb details only for shows with
+    watch rows.
+
+    A show the user tracks but has not started (zero watch rows) gets
+    NO entry — callers render 0% / no progress for absent ids. That is
+    the canonical verdict: the stored row may claim ``8/8`` from before
+    F1, but absent watch data means the show is simply not in progress.
+    Entries are ``None``-free; ``percent`` is never recomputed by
+    callers (no surface invents its own denominator).
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return {}
+    ids = [sid for sid in show_ids if _coerce_int(sid)]
+    return tv_aired_progress(user, ids, details_loader)
+
+
 # ── Canonical TV WRITE core (Task F1) ────────────────────────────────
 #
 # ONE aired-episode definition for the whole application:

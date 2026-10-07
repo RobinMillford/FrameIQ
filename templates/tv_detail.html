@@ -376,7 +376,14 @@
                     {% if current_user.is_authenticated %}
                     <div class="flex flex-wrap gap-4">
                         <!-- Status indicators -->
-                        {% if (show.id, 'tv') in user_viewed_ids %}
+                        {# Task F2: the TV Viewed badge is CANONICAL — derived
+                           from the aired-episode progress payload
+                           (tv_viewed_from_progress), never from the
+                           user_viewed junction. 100% of currently aired valid
+                           episodes watched ⇔ Viewed; a new episode airing
+                           drops it below 100% and the badge turns off
+                           without any manual reset. #}
+                        {% if tv_viewed %}
                         <span class="text-sm bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -439,12 +446,19 @@
                                     </a>
                                 </div>
                             </div>
-                            {% endif %}                            {% if (show.id, 'tv') not in user_viewed_ids %}
+                            {% endif %}                            {% if not tv_viewed %}
                             <a href="{{ url_for('main.mark_as_viewed', media_id=show.id, media_type='tv') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
                                 Mark as Viewed
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('main.remove_from_viewed', media_id=show.id, media_type='tv') }}" onclick="return confirm('Unmark this show as viewed? This clears its watched episodes (rewatches included).')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-red-600 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                                Unmark Viewed
                             </a>
                             {% endif %}
 

@@ -200,6 +200,24 @@ def test_unfinished_includes_watching_and_paused(auth_client, sample_user, monke
     db.session.add(UpcomingEpisode(show_id=SHOW_ID, show_name='Test Show',
                                    season_number=1, episode_number=1,
                                    air_date=date(2020, 1, 1)))
+    # Task F2: canonical reads require aired evidence + watch rows —
+    # 7 aired episodes (S1:1-4, S2:1-3; S1E1 already added above) with
+    # the first two watched gives the same 2/7 ≈ 28.6% the stored-counter
+    # fixture asserted.
+    for ep in range(2, 8):
+        sn, en = (1, ep) if ep <= 4 else (2, ep - 4)
+        db.session.add(UpcomingEpisode(
+            show_id=SHOW_ID, show_name='Test Show', season_number=sn,
+            episode_number=en, air_date=date(2020, 1, 1)))
+    db.session.add(UpcomingEpisode(show_id=999, show_name='Paused Show',
+                                   season_number=1, episode_number=1,
+                                   air_date=date(2020, 1, 1)))
+    db.session.add(TVEpisodeWatch(user_id=sample_user.id, show_id=999,
+                                  season_number=1, episode_number=1))
+    db.session.add(TVEpisodeWatch(user_id=sample_user.id, show_id=SHOW_ID,
+                                  season_number=1, episode_number=1))
+    db.session.add(TVEpisodeWatch(user_id=sample_user.id, show_id=SHOW_ID,
+                                  season_number=1, episode_number=2))
     db.session.commit()
     r = auth_client.get('/api/tv/unfinished-shows')
     shows = r.get_json()['shows']
@@ -245,6 +263,13 @@ def test_unfinished_next_episode_and_watch_url(auth_client, sample_user, monkeyp
     assert s['next_episode'] == {'season': 1, 'episode': 2}
     assert s['watch_url'] == f'/watch/tv/{SHOW_ID}/1/2'
     assert s['name'] == 'Test Show'
+    # Task F2: canonical progress fields. Only S1E1 has aired here (one
+    # calendar row, no TMDb details stub → calendar-only aired set), so
+    # the canonical payload is 1/1 = 100% — the stored 1/7 would have
+    # contradicted airing reality.
+    assert s['watched_episodes'] == 1
+    assert s['total_episodes'] == 1
+    assert s['progress_percent'] == 100.0
 
 
 # ── Continue Watching rail entries ────────────────────────────────────────────
@@ -569,12 +594,21 @@ def test_progress_and_next_episode_unchanged_by_metadata_fix(
     _watch(sample_user, 1, 2)
     _watch(sample_user, 1, 3)
     _watch(sample_user, 1, 4)
+    # Task F2: the canonical read needs AIRED evidence — all 7 episodes
+    # aired (past calendar rows), so canonical progress is 4/7.
+    for ep in range(1, 8):
+        sn, en = (1, ep) if ep <= 4 else (2, ep - 4)
+        db.session.add(UpcomingEpisode(
+            show_id=SHOW_ID, show_name='Test Show', season_number=sn,
+            episode_number=en, air_date=date(2020, 1, 1)))
     db.session.add(MediaItem(tmdb_id=SHOW_ID, media_type='tv',
                              title='Test Show', poster_path='/test.jpg'))
     db.session.commit()
 
     s = _unfinished_payload(auth_client)[0]
     assert s['status'] == 'paused'
+    # Task F2: canonical aired-evidence payload — 4 watched of the 7
+    # aired episodes (S1:4 + S2:3 from the mocked TMDb seasons).
     assert s['watched_episodes'] == 4
     assert s['total_episodes'] == 7
     assert s['progress_percent'] == pytest.approx(4 / 7 * 100, abs=0.1)

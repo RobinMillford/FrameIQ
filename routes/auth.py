@@ -294,9 +294,12 @@ def _build_tv_progress_rows(progress_rows):
 
     Bounded: three batch queries total regardless of row count —
     titles via one tmdb_id IN scan, last-watched positions via one
-    grouped scan. Percentages are half-up (deterministic UI math).
-    Tracking rows without episode data render a neutral note instead
-    of a fabricated percentage.
+    grouped scan. Percentages come from the canonical aired-reality
+    payload (Task F2) — the same source as /api/view-state,
+    /api/tv/<id>/aired-progress and the TV detail hero, so the profile
+    can never display a competing denominator. Tracking rows without
+    canonical progress render a neutral note instead of a fabricated
+    percentage.
     """
     if not progress_rows:
         return []
@@ -307,6 +310,13 @@ def _build_tv_progress_rows(progress_rows):
     titles = dict(
         db.session.query(MediaItem.tmdb_id, MediaItem.title)
         .filter(MediaItem.tmdb_id.in_(show_ids)).all())
+
+    # Task F2: percentages come from the canonical aired-reality payload
+    # (one batched read — never the stored counters, which a pre-F1
+    # legacy row can still carry). A tracked-but-not-started show has no
+    # canonical entry and renders the neutral "no episode progress" note.
+    from api.user_view_state import canonical_progress_map
+    canonical_by_show = canonical_progress_map(current_user, show_ids)
 
     positions = {}
     if show_ids:
@@ -323,10 +333,11 @@ def _build_tv_progress_rows(progress_rows):
 
     rows = []
     for progress in progress_rows:
-        total = progress.total_episodes or 0
-        watched = progress.watched_episodes or 0
-        percent = (min(100, int(watched * 100 / total + 0.5))
-                   if total > 0 else None)
+        canonical = canonical_by_show.get(progress.show_id)
+        if canonical:
+            percent = min(100, int(canonical['percent'] + 0.5))
+        else:
+            percent = None
         season, episode = positions.get(progress.show_id, (None, None))
         rows.append({
             "show_id": progress.show_id,
