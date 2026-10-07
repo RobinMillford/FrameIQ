@@ -485,11 +485,17 @@ def test_no_python_model_or_migration_touched():
 
 
 def subprocess_changed_files():
-    """Files changed vs the task baseline commit (a72c27c)."""
+    """Files changed by the detail-modals task itself.
+
+    Pinned to the task's own commit range (a72c27c → d7863e5) rather
+    than to a moving HEAD: the guard asserts a property of THAT change
+    (frontend-only), and diffing up to HEAD made every later, unrelated
+    backend task fail this audit.
+    """
     import subprocess
     try:
         out = subprocess.run(
-            ["git", "diff", "--name-only", "a72c27c", "HEAD"],
+            ["git", "diff", "--name-only", "a72c27c", "d7863e5"],
             cwd=str(ROOT), capture_output=True, text=True, timeout=20)
         return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
     except Exception:
