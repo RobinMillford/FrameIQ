@@ -20,6 +20,11 @@
 # and only then recreate web. Each schema-changing release adds its named
 # migration line before the web recreate, in order — never a blind
 # migrates/*.py sweep. Those scripts self-manage SKIP_SCHEMA_GUARD.
+#
+# Since Task F7 release hardening the web process itself performs NO DDL:
+# app.py no longer calls db.create_all() at startup. The schema is owned by
+# these migrations alone, and the read-only guard refuses to boot the
+# application against a database they have not prepared.
 
 name: Deploy to VPS
 
@@ -129,6 +134,29 @@ jobs:
             docker compose build web
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_movie_release_dates.py
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_remove_wishlist.py
+
+            # ── Schema convergence (Task F7 release hardening) ───────────
+            # The web process no longer creates its own schema at startup.
+            # That removes the mechanism by which the live database had
+            # silently fallen behind: 11 declared tables were missing,
+            # because the implicit table-creation call was failing on an
+            # index-name collision and rolling back every time it ran.
+            #
+            # This converges the live schema onto the declared models. It is
+            # additive only (creates absent tables, never alters or drops),
+            # idempotent, and self-verifying. It runs BEFORE web is recreated,
+            # so the web process never starts against an unprepared schema.
+            #
+            # If it exits non-zero the whole step fails and web is NOT
+            # recreated, which is the intended behaviour: an unprepared schema
+            # must not be served.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
+
+            # Prove the schema matches the models BEFORE starting web, so a
+            # migration gap fails the deploy here rather than as a dead worker
+            # later. Read-only: the guard never writes, and this CLI exempts
+            # itself from the startup guard so it can report instead of crash.
+            docker compose run --rm --no-deps web python -m utils.schema_guard
 
             # Recreate only the web service (rebuild is a cache hit).
             # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.
