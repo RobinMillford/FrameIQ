@@ -74,6 +74,7 @@ from models.chat import (                                      # noqa: F401
     UserChatMemory,
 )
 from models.year_in_review_share import YearInReviewShare      # noqa: F401
+from models.import_mapping import ImportSourceMapping  # noqa: F401
 
 __all__ = [
     'db',
@@ -92,4 +93,5 @@ __all__ = [
     'RecommendationFeedback',
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
     'YearInReviewShare',
+    'ImportSourceMapping',
 ]
