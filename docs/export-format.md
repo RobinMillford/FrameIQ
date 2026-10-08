@@ -538,6 +538,8 @@ so a future format regression fails loudly.
 
 ## See also
 
+- [`docs/import-format.md`](import-format.md) — the ingest counterpart:
+  Letterboxd and TV Time import, resolution and idempotency rules.
 - [`docs/conventions.md`](conventions.md) — response cleanup (`call_on_close`
   is not reliable here), the offline TMDb placeholder, generated-vs-canonical
   data rules, and untrusted-upload handling.
