@@ -237,10 +237,23 @@ def cw_start_episode(show_id, season, episode):
 @limiter.limit("60 per minute")
 def cw_finish_episode(show_id, season, episode):
     """Mark the exact episode watched (canonical TV tracking), remove it from
-    Continue Watching, and promote the next valid unwatched episode."""
+    Continue Watching, and promote the next valid unwatched episode.
+
+    Task F4: an episode the canonical model rejects (not yet aired, a
+    season-0 special, a position that does not exist) answers 400 and
+    changes nothing, rather than reporting success on a write that never
+    happened.
+    """
     try:
         result = cw.finish_tv_episode(
             current_user.id, show_id, season, episode)
+        if not result.get('finished', True):
+            return jsonify({
+                'success': False,
+                'finished': False,
+                'reason': result.get('reason'),
+                'error': 'That episode is not available to mark as watched.',
+            }), 400
         return jsonify({'success': True, **result}), 200
     except Exception:
         db.session.rollback()

@@ -451,6 +451,102 @@ def aired_by_season(aired):
     return counts
 
 
+def complete_seasons_from_positions(aired, first_watch):
+    """``watched_seasons`` — how many seasons are FULLY aired and watched.
+
+    The single season-completion rule, expressed over the canonical set
+    arithmetic every writer already uses: a season counts only when EVERY
+    aired position of that season appears in ``first_watch``.
+
+    Task F4: this replaces the older "highest watched episode number >= the
+    highest aired episode number" test, which is not equivalent in either
+    direction. A season with a GAP is the case that breaks it: with aired
+    ``{E1, E2, E4}`` a max-number test needs ``max_watched >= 4``, so
+    watching ``E1, E2, E4`` plus a phantom ``E9`` scores the season complete
+    from a position that does not exist — and, read the other way, a naive
+    fix that walks ``1..max_aired`` would demand ``E3``, which never aired
+    and can never be watched, so the season could never complete at all.
+
+    Iterating the ACTUAL aired positions is the only formulation that is
+    correct for contiguous and gapped seasons alike, and it cannot be
+    fooled by a row outside the aired universe.
+    """
+    if not aired:
+        return 0
+    watched = set(first_watch or ())
+    per_season = {}
+    for season, episode in aired:
+        per_season.setdefault(season, []).append(episode)
+    return sum(
+        1 for season, episodes in per_season.items()
+        if season > 0
+        and all((season, episode) in watched for episode in episodes))
+
+
+class EpisodeNotAired(ValueError):
+    """An episode outside the canonical currently-eligible aired universe.
+
+    Task F4. Raised by every single-episode TV write so a future episode,
+    a season-0 special, or an episode that simply does not exist can never
+    become a watch row — the one guarantee that keeps stored counters from
+    drifting above canonical aired reality.
+    """
+
+    def __init__(self, show_id, season, episode, reason):
+        super().__init__(
+            f"Episode S{season}E{episode} of show {show_id} is not in the "
+            f"currently aired universe ({reason})")
+        self.show_id = show_id
+        self.season = season
+        self.episode = episode
+        self.reason = reason
+
+
+def episode_eligibility(show_id, season, episode, aired=None,
+                        details_loader=None):
+    """``None`` when the position may become watched, else a reason string.
+
+    The ONE eligibility rule for single-episode writes, evaluated against
+    ``aired_positions_for_show()``. Kept here (not in the route) so every
+    writer — the mark route, the Continue Watching finish action and the
+    episode-metadata editor — is gated identically.
+
+    ``season`` is coerced to ``int`` before comparison, and season 0 is
+    rejected BEFORE the aired set is consulted, because specials are not
+    part of a show's episode numbering at all.
+
+    An EMPTY aired universe is treated as "no evidence either way", not as
+    "nothing is eligible". TMDb occasionally returns a show payload with no
+    ``last_episode_to_air`` (and no synced calendar rows exist for a show
+    outside the sync window); refusing every write there would make those
+    shows untrackable, and it buys nothing: with an empty universe the
+    canonical counters stay ``0/0`` and ``sync_tv_progress_counters``
+    intersects the watched set with the aired set, so the write can never
+    inflate a denominator or a percentage. Once ANY aired episode is
+    verifiable, that evidence becomes binding and an episode outside it is
+    refused.
+    """
+    try:
+        season = int(season)
+        episode = int(episode)
+    except (TypeError, ValueError):
+        return "episode position is not a number"
+    if season <= 0:
+        return "specials (season 0) are not trackable episodes"
+    if episode <= 0:
+        return "episode numbers start at 1"
+    if aired is None:
+        aired = aired_positions_for_show(show_id, details_loader=details_loader)
+    if (season, episode) in aired:
+        return None
+    if not aired:
+        # Unknown airing reality — do not block the write, but never let it
+        # become progress either (the counter intersection above guarantees
+        # that). The stored row is the user's own history.
+        return None
+    return "it has not aired yet or does not exist"
+
+
 def memoized_details_loader(details_loader=None):
     """One-details-resolution-per-operation wrapper (request-scoped).
 
@@ -532,20 +628,33 @@ def sync_tv_progress_counters(progress, user_id, show_id, aired=None,
     episode is watched — a season with no aired episodes is never
     complete. That makes ``calculate_progress_percentage()`` correct
     without the model ever becoming network-aware.
+
+    Task F4 — ``watched_episodes`` is intersected with the aired universe
+    whenever one exists, which is what makes the F1/F2 write gate total:
+    every row written through ``mark_episode_watched_core`` is inside
+    ``aired``, so the counter can never report more watched episodes than
+    have verifiably aired, not even from rows that predate the gate. Rows
+    are never deleted to achieve this — a legacy out-of-airing row simply
+    stops counting.
+
+    When NO aired episode can be verified at all (a TMDb payload with no
+    ``last_episode_to_air`` and no synced calendar rows), the universe is
+    empty and there is nothing to intersect against; the count then stays
+    the plain first-watch count, exactly as in F1, because refusing to
+    count the user's own history would be a regression rather than a
+    hardening. Completion gating is unaffected either way — it already
+    requires ``total_episodes > 0``.
     """
     if aired is None:
         aired = aired_positions_for_show(show_id, details_loader)
-    all_positions, first_watch = _watched_rows_for_show(user_id, show_id)
-    aired_seasons = aired_by_season(aired)
-    watched_by_season = aired_by_season(first_watch & set(aired))
+    _, first_watch = _watched_rows_for_show(user_id, show_id)
+    eligible = (first_watch & set(aired)) if aired else set(first_watch)
 
     progress.total_episodes = len(aired)
-    progress.watched_episodes = len(first_watch)
-    progress.total_seasons = len(aired_seasons)
-    progress.watched_seasons = sum(
-        1 for season, count in aired_seasons.items()
-        if watched_by_season.get(season, 0) >= count
-    )
+    progress.watched_episodes = len(eligible)
+    progress.total_seasons = len(aired_by_season(aired))
+    progress.watched_seasons = complete_seasons_from_positions(
+        aired, eligible)
     return progress
 
 

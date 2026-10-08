@@ -341,12 +341,26 @@ def finish_tv_episode(user_id, show_id, season, episode):
     promote the next valid unwatched episode into Continue Watching.
 
     Returns dict describing the outcome; never invents episodes.
+
+    Task F4: the canonical core now refuses an episode outside the aired
+    universe, so a "Finished" click on a not-yet-aired episode is reported
+    back as ``{'finished': False, 'reason': ...}`` and mutates NOTHING —
+    no watch row, no Continue Watching edit. The caller's metadata is also
+    safe here: this path passes no ``data``, and the core now treats an
+    absent key as "leave the stored value alone" rather than clearing it.
     """
+    from api.user_view_state import EpisodeNotAired
     from routes.tv_tracking import mark_episode_watched_core
 
-    # Canonical watched state first (creates/maintains TVShowProgress,
-    # TVEpisodeWatch, season progress, show completion gating).
-    mark_episode_watched_core(user_id, show_id, season, episode)
+    try:
+        # Canonical watched state first (creates/maintains TVShowProgress,
+        # TVEpisodeWatch, season progress, show completion gating).
+        mark_episode_watched_core(user_id, show_id, season, episode)
+    except EpisodeNotAired as e:
+        logger.info(
+            "Continue Watching finish rejected: show=%s S%sE%s user=%s (%s)",
+            show_id, season, episode, user_id, e.reason)
+        return {"finished": False, "next": None, "reason": e.reason}
 
     # The finished episode leaves Continue Watching.
     remove_item(user_id, "tv", show_id, season=season, episode=episode)
