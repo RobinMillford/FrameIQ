@@ -29,17 +29,21 @@ the format, row count and duration. Never the payload — no email, no review
 text, no notes, no CSV bytes.
 
 **Failure is safe.** A generation error returns a generic 500 to the user and
-logs the diagnostic server-side; a partially written ZIP is unlinked rather
-than served.
+logs the diagnostic server-side.
+
+**Nothing touches disk.** The CSV bundle is assembled in a BytesIO and
+streamed. An earlier revision wrote it to a temp file and unlinked it on
+response close; that callback does not actually fire for a ``send_file``
+response, so every export left a copy of the user's whole account in /tmp.
+The temp file was removed rather than its cleanup being patched.
 """
 import logging
-import os
 import time
 
 from flask import current_app, send_file
 from flask_login import current_user, login_required
 
-from api.account_export import (build_csv_bundle_zip, build_export,
+from api.account_export import (build_csv_bundle, build_export,
                                 export_filename_json, serialize_json)
 from extensions import limiter
 from routes._main_bp import main
@@ -101,34 +105,27 @@ def export_account_json():
 @login_required
 @limiter.limit(EXPORT_RATE_LIMIT)
 def export_account_csv():
-    """ZIP bundle of the per-domain CSVs plus a README describing them."""
+    """ZIP bundle of the per-domain CSVs plus a README describing them.
+
+    The archive is assembled in memory and streamed, so nothing containing
+    the user's account is ever written to disk.
+    """
     started = time.perf_counter()
     try:
-        path, filename = build_csv_bundle_zip(current_user)
+        buffer, filename = build_csv_bundle(current_user)
     except Exception:
         logger.exception("account export (csv) failed for user %s",
                          current_user.id)
         return ("We could not generate your export. Please try again.", 500)
 
-    # The temp archive holds the user's entire account: delete it as soon as
-    # the response is closed, and also if the client disconnects mid-transfer.
-    def _cleanup(_=None):
-        try:
-            os.unlink(path)
-        except OSError:
-            logger.warning("account export: temp archive already removed",
-                           exc_info=True)
-
-    response = send_file(path, mimetype='application/zip',
+    response = send_file(buffer, mimetype='application/zip',
                          as_attachment=True, download_name=filename,
                          conditional=False)
-    response.call_on_close(_cleanup)
-
     # send_file sets its own Cache-Control for file responses; force the
     # privacy headers after the fact.
     response.headers.update(_PRIVATE_HEADERS)
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    size_kb = os.path.getsize(path) // 1024 if os.path.exists(path) else 0
-    _log_export('csv_bundle', size_kb, elapsed_ms, current_user.id)
+    _log_export('csv_bundle', buffer.getbuffer().nbytes // 1024, elapsed_ms,
+                current_user.id)
     return response

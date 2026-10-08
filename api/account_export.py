@@ -36,8 +36,6 @@ import csv
 import io
 import json
 import logging
-import os
-import tempfile
 import zipfile
 from datetime import date, datetime, timezone
 
@@ -1427,38 +1425,40 @@ def _describe(domain, text):
     return '  %-28s %s' % (schema['filename'], text)
 
 
-def build_csv_bundle_zip(user, generated_at=None):
-    """Return ``(temp_path, filename)`` for a ZIP of every CSV + README.
+def build_csv_bundle(user, generated_at=None):
+    """Return ``(BytesIO, filename)`` for a ZIP of every CSV + README.
 
-    The archive is written to a securely-created temp file and the caller MUST
-    unlink it after the response — see ``routes/account_export.py``. Filenames
-    inside the archive are fixed literals from ``CSV_SCHEMAS``, so there is no
-    path-traversal or filename-injection surface.
+    Built entirely in memory, so there is no temporary file to leak.
 
-    Uses ``zipfile`` from the standard library: no new dependency for a
-    handful of small text files.
+    An earlier revision wrote the archive to ``tempfile.mkstemp`` and unlinked
+    it via ``response.call_on_close``. Probing showed that callback does not
+    fire for a ``send_file`` response, so every export left a copy of the
+    user's entire account sitting in /tmp — exactly what the "do not persist
+    exports" rule forbids. Rather than harden a cleanup path that cannot be
+    trusted, the temp file is gone: the archive is assembled in a BytesIO and
+    handed to ``send_file`` as a stream.
+
+    Memory cost is not the trade-off it looks like. On a 1,000-movie +
+    1,000-episode account the JSON payload is ~1.7 MB while the compressed ZIP
+    is ~60 KB, because CSV is highly repetitive and DEFLATE collapses it. The
+    JSON endpoint already buffers its whole payload, so this adds no new class
+    of memory pressure.
+
+    Filenames inside the archive are fixed literals from ``CSV_SCHEMAS``, so
+    there is no path-traversal or filename-injection surface. ``zipfile`` is
+    standard library: no new dependency for a handful of small text files.
     """
     stamp = generated_at or datetime.utcnow()
     domains = csv_domains(user)
 
-    handle, path = tempfile.mkstemp(prefix='frameiq-export-', suffix='.zip')
-    os.close(handle)
-    try:
-        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr('README.txt',
-                             _readme(_iso(stamp)))
-            for schema in CSV_SCHEMAS:
-                archive.writestr(schema['filename'],
-                                 csv_bytes(schema, domains[schema['domain']]))
-    except Exception:
-        # Never leave a half-written archive containing user data behind.
-        try:
-            os.unlink(path)
-        except OSError:
-            logger.warning("account_export: could not remove partial archive",
-                           exc_info=True)
-        raise
-    return path, 'frameiq-export-%s.zip' % _stamp(stamp)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('README.txt', _readme(_iso(stamp)))
+        for schema in CSV_SCHEMAS:
+            archive.writestr(schema['filename'],
+                             csv_bytes(schema, domains[schema['domain']]))
+    buffer.seek(0)
+    return buffer, 'frameiq-export-%s.zip' % _stamp(stamp)
 
 
 def _stamp(moment):
