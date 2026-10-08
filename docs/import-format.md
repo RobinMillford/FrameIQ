@@ -99,6 +99,9 @@ It is preserved for future importers.
 Strictly ordered, and **local-only** — `MediaIndex` is preloaded once from
 `MediaItem` for the whole import:
 
+0. **a mapping the user saved themselves** (F7), or the choice they just made
+   in the resolve panel. Both outrank inference: the user compared candidates
+   and picked one, which is information no heuristic has;
 1. a stable external id the record already carries (TV Time supplies a TMDb id,
    so this resolves exactly, with no title matching at all);
 2. a local title match that is **unique** — normalised title, and release year
@@ -115,9 +118,10 @@ Cyrillic characters, normalising those titles to the empty string so they can
 never resolve. Accented Latin legitimately folds to ASCII (`Amélie` →
 `amelie`), which is how a user's unaccented spelling still matches.
 
-> **How to resolve an `unresolved` record:** open that title or show once in
-> FrameIQ, then re-run the import. It then matches on the local cache. There is
-> no "fetch from TMDb and guess" path.
+> **How to resolve an `unresolved` record (F7):** the preview lists local
+> candidates for the row and nothing is pre-selected. Pick one, or leave it out.
+> If no candidate looks right, **Search FrameIQ** searches local titles only.
+> There is still no "fetch from TMDb and guess" path.
 
 ## 5. Idempotency and duplicates
 
@@ -207,7 +211,7 @@ Response samples are capped at 100 rows per category and 50 failures, so a
 ## 10. Supported and unsupported fields
 
 **Imported:** movie title, release year, watch date, movie rating, show identity,
-season, episode number, episode title.
+season, episode number, episode title, and (F7) the Letterboxd review body.
 
 **Intentionally not imported:**
 
@@ -215,8 +219,8 @@ season, episode number, episode title.
 |---|---|
 | Genres, directors, runtime, popularity, streaming availability | FrameIQ caches these from TMDb; the import must not fabricate or duplicate TMDb cache rows. |
 | Letterboxd watchlist / favourites / ratings-only rows | Not watch history. |
-| Letterboxd review text | Not present in `watched.csv`; the adapter does not reach into unrelated files. |
-| Letterboxd diary body | Same reason. |
+| Letterboxd diary body | `diary.csv` overlaps `watched.csv`; reading both would double-count every film. `reviews.csv` is safe because it is read for the review body only (§16). |
+| Letterboxd review **titles**, tags, spoilers flag | `reviews.csv` carries only a body; the other fields live in files FrameIQ does not read. |
 | TV Time per-episode rating | The source does not have one. |
 | `user_viewed`, `TVShowProgress` counters | Derived; F4/F5 treat them as non-canonical. |
 | Notification preferences | **No such model exists** — F5 documents the omission and F6 does not invent one. |
@@ -291,3 +295,152 @@ payload (the F3 registry), never the network.
   used by these source adapters.
 - CSV column layouts are documented per source in the adapter docstrings, not
   versioned as a public contract.
+
+---
+
+# Task F7 additions
+
+F7 changes three things F6 could not do: it remembers a user's answer, it lets
+the user answer a question the importer refuses to guess at, and it imports
+Letterboxd review text.
+
+## 16. Letterboxd reviews
+
+`reviews.csv` is read **for the review body only**.
+
+Letterboxd documents its `Review` column as *"Text/HTML … accepts the same set
+of HTML tags as on the Letterboxd website"*, so a real export carries markup.
+
+**Reduction to plain text.** FrameIQ renders review bodies as auto-escaped text,
+so storing the markup verbatim would show the user literal `<p>` in their own
+review. `<p>`/`<br>`-style tags become line breaks, other tags are dropped,
+`<script>`/`<style>` *content* is discarded, entities are decoded, and no-break
+spaces plus the zero-width family (U+200B/200C/200D/2060/FEFF) are removed so
+two copies of the same review compare equal.
+
+**No double counting.** A Letterboxd review is per *film*, not per watch. A row
+is therefore never emitted as extra watch history:
+
+| Case | Result |
+|---|---|
+| Film in `watched.csv`, reviewed once | Body attaches to the **first** watch; a rewatch stays a plain watch. |
+| Film watched 3×, one review | One body, on the first watch. Two extra events remain. |
+| Review with a whitespace-only body | Skipped silently — nothing to carry, and no phantom record. |
+| Review whose film is missing from `watched.csv` | Becomes its own record: a review still asserts the film was watched. |
+| Review row with no usable URI | Reported `invalid`; never invented. |
+| `reviews.csv` with no `Review` column | Reported `invalid` — not silently treated as "no reviews". |
+| `reviews.csv` present but no `watched.csv` | Whole import refused; watch history cannot come from reviews alone. |
+
+**Per-watch URIs.** `diary.csv` uses `…/film/slug/2` for the second watch.
+`_letterboxd_film_slug` drops that trailing ordinal, so every watch of one film
+collapses to a single identity.
+
+## 17. Source mappings
+
+A mapping is the user's durable answer to "this external title is that FrameIQ
+title". F6 refused to guess, so its only recovery was *open the title once, then
+re-run* — repeated forever, for every file.
+
+### Precedence
+
+    saved mapping  >  explicit in-panel choice  >  source external id
+                  >  unique title match        >  candidates  >  unresolved
+
+A saved mapping outranks a fresh choice. A user who saved `Stalker → 1979` and
+then ticks `2002` in the panel for one row still gets 1979, because silently
+re-resolving behind a saved mapping is exactly the surprise this feature
+exists to remove. Changing a mapping is an explicit edit or delete.
+
+### Source identity (the mapping key)
+
+The key is the **resolution identity**, not the record identity:
+
+| Record | `source_key` | Mapping key |
+|---|---|---|
+| Movie | `(letterboxd, watched, 29qU)` | `(letterboxd, movie, 29qU)` |
+| Movie from `reviews.csv` | `(letterboxd, review, stlk)` | `(letterboxd, movie, stlk)` |
+| TV episode | `(tvtime, 600100001, 1, 4)` | `(tvtime, tv, 600100001)` |
+
+The show collapses to **one** mapping, so mapping a show resolves all of its
+episodes — bulk resolution is a consequence of the key, not a separate feature.
+A `watched.csv` row and its `reviews.csv` counterpart share a key.
+
+TV Time's show identity comes from `tmdb_id` (`tvdb_id` is the fallback), **not**
+the bare export `id`; a show with neither is reported unidentifiable.
+
+### Persistence
+
+Storing a heuristic match as a permanent override is a decision, not a side
+effect, so `save_mappings` is **opt-in** and defaults to off. When on, one
+mapping is written per resolved identity — once per show, not once per episode.
+
+### Conflict and staleness
+
+| Situation | Behaviour |
+|---|---|
+| Same identity saved again | Updated, not duplicated. |
+| Target `MediaItem` deleted | Listed with `stale: true` and a reason. A mapping the user cannot see is one they can never clean up. |
+| Target `media_type` changed | Also `stale`. |
+| Delete | Removes import bookkeeping **only**. Diary entries, reviews and watched episodes are untouched. |
+| Another user's mapping id | `DELETE` matches nothing → 400. Scoped in the `WHERE` clause, not by a prior lookup. |
+
+### Why there is no server-side import session
+
+Resolve needs to carry choices from preview to apply. The browser already holds
+the `File`, and choices are a few KB of JSON, so apply re-uploads the same file
+with the choices attached. Re-parsing at apply is what lets the server check
+every submitted key against the records actually in the file. No upload is
+persisted, and a preview cannot be replayed against a different file.
+
+## 18. Explicit resolution
+
+`unresolved` and `ambiguous` rows carry `resolution_key` and a bounded
+candidate list (`candidates`, ≤ 6 in the preview; more via search).
+
+**Candidates are local and deterministic** — ranked year-agreeing, then
+year-differing, then substring matches; read from the preloaded `MediaIndex` so
+they issue **no queries**. The same file always yields the same list in the same
+order.
+
+**Nothing is auto-selected**, and there is no auto-skip either: an undecided row
+is `unresolved` until the user chooses or explicitly skips it.
+
+**Submissions are validated three ways** before they may influence a write,
+because this is the one path where client data decides which of the user's
+titles an event lands on:
+
+1. the key must be well-formed and belong to the URL's source (a client cannot
+   mint a mapping into a namespace it does not own);
+2. the identity must exist **in this file** — otherwise a client could map
+   identities it invented and steer an unrelated row onto an unrelated title;
+3. the target must be a real `MediaItem` whose `media_type` matches the key.
+
+Any failure is a **400**, never a silent drop: dropping it would let apply
+write fewer rows than the preview promised and still report success.
+
+## 19. Review conflict semantics
+
+`Review` is `UNIQUE(user_id, media_id, media_type)` — one review per film per
+user — so a pre-existing review is a genuine **conflict**, not something to
+merge. There is no honest automatic resolution: a FrameIQ review and a
+Letterboxd review are two different pieces of writing.
+
+**Existing user data always wins.** An import never edits or deletes a review
+the user already has; it reports `conflict` and leaves both texts alone.
+
+| Situation | Result |
+|---|---|
+| No existing review | Created from the imported body + rating. |
+| Existing review | `conflict`; user's text, rating and date untouched. |
+| Soft-deleted review | Not a conflict — a deleted review is not the user's current opinion, so the import restores it. |
+| Another user's review | Irrelevant; reviews are per-user. |
+| No rating anywhere | Not imported. `Review.rating` is `NOT NULL` and a star rating is an opinion, so none is invented. |
+
+A review imports **independently** of the watch event: a review row with no date
+produces no diary entry (`unsupported`) and still imports the body.
+
+## 20. Resolution status counts
+
+`apply` now reports `records_detected` as a denominator. F6 set `details` only
+in `preview`, so every apply summary read "imported N" with no "of M".
+

@@ -76,7 +76,7 @@ python -m utils.schema_guard
   `user_chat_memory`) are imported through `models/__init__.py`, so Docker/VPS
   startup creates them automatically.
 - Column alterations need a manual migration script in `migrates/`
-- Key models: `User`, `MediaItem`, `Review`, `DiaryEntry`, `TVShowProgress`, `TVSeasonProgress`, `TVEpisodeWatch`, `UpcomingEpisode`, `UserFollow`, `ActivityFeed`, `CustomList`, `Tag`, `Like`
+- Key models: `User`, `MediaItem`, `Review`, `DiaryEntry`, `TVShowProgress`, `TVSeasonProgress`, `TVEpisodeWatch`, `UpcomingEpisode`, `UserFollow`, `ActivityFeed`, `CustomList`, `Tag`, `Like`, `ImportSourceMapping` (F7 durable source→FrameIQ title mapping; deliberately its own table, never extra columns on the canonical history models — see `docs/conventions.md`)
 
 ### AI / Chat System
 LangGraph workflow: `START → supervisor_node → [retriever_node | chat_node] → enricher_node → END`
@@ -122,5 +122,6 @@ Copy `.env.example` to `.env` for the full list.
 | `test_feed.py` | Friends activity feed |
 | `test_cache.py` | Cache-layer behaviour |
 | `test_watch.py` | TV episode tracking |
+| `test_import_mappings.py` | Persistent source mappings, explicit resolution, Letterboxd review import + conflicts |
 
 `tests/conftest.py` sets up SQLite in-memory DB for tests. Note: `connect_timeout` is skipped for SQLite (Postgres-only feature).

@@ -141,3 +141,49 @@ the cheapest defence is never extracting.
 
 Long markdown tables and section lists are fine, but avoid underlining a heading
 with 7 or more `=` characters (see the separator rule above).
+
+## Import resolution must never auto-select (Task F7)
+
+FrameIQ refuses to guess which title an external record means. Two rules follow
+from that, and both are load-bearing:
+
+**Nothing is auto-selected and nothing is auto-skipped.** An `unresolved` or
+`ambiguous` row stays `unresolved` until the user picks a candidate or
+explicitly skips it. A default that looks like progress is a guess.
+
+**A saved mapping outranks a fresh choice.** Order of trust is:
+
+    saved mapping > in-panel choice > external id > unique title
+
+A user who saved `Stalker → 1979` and ticks `2002` for one row still gets 1979.
+Silently re-resolving behind a mapping is the surprise the feature exists to
+prevent; changing one is an explicit edit or delete.
+
+## Do not put portability metadata in canonical history models
+
+Import bookkeeping lives in its own table (`import_source_mapping`), never as
+extra columns on `DiaryEntry`, `TVEpisodeWatch`, `MediaItem` or
+`TVShowProgress`. Those are canonical: F1-F4 correctness, TV eligibility and
+every statistics statement read their shape. Adding `letterboxd_uri` to a diary
+row would put import concerns inside the records the product treats as truth.
+
+## Preview must not write — including mappings
+
+`preview()` writes no rows and persists no mappings, even when the request
+carries the user's choices. A durable answer must not appear as a side effect
+of *looking* at a file. `apply_import` owns every write.
+
+## Keep script harnesses out of the app import path
+
+Browser verification scripts set `DATABASE_URL` to a fresh temp SQLite file
+**before** importing the app, because importing `app` runs `db.create_all()`
+against whatever `DATABASE_URL` says. A stray `python -c` without that override
+targets the real database — during F7 this reached production Postgres and
+attempted DDL. It rolled back, but the safe pattern is mandatory:
+
+    _test_db_fd, _test_db_path = tempfile.mkstemp(...)
+    os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
+    os.environ.setdefault("SKIP_SCHEMA_GUARD", "1")
+    ...
+    from app import app
+

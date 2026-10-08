@@ -521,6 +521,26 @@ so a future format regression fails loudly.
 
 ---
 
+## 10b. Source mappings are not exported (Task F7)
+
+F7 added `import_source_mapping` — durable, user-owned "this external title is
+that FrameIQ title" answers. **They are deliberately not in the export.**
+
+A mapping points at `MediaItem.id`, an internal primary key. That id only means
+something inside one installation, so a bundle carrying it would import rows
+whose targets no longer exist. Making it portable needs TMDb-based references,
+which changes the import contract rather than extending it.
+
+Shipping it in version 1 would mean either exporting unusable rows or bumping
+the format version. Neither is a good trade for a feature most accounts will
+have zero rows of, so F7 leaves it out and records the omission here. If it is
+added later it will be a **new versioned section** using `media_tmdb_id` as the
+stable reference.
+
+This is a *scope* decision, not a correctness limit: mappings are import
+bookkeeping that FrameIQ can rebuild, and everything they help create (diary
+entries, reviews, watched episodes) is exported normally.
+
 ## 11. Evolution rules
 
 - `version` is an integer that increments only for **breaking** changes to
