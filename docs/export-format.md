@@ -533,3 +533,11 @@ so a future format regression fails loudly.
   known version, so that additive changes do not break them.
 - `format` is a constant string; a different `format` value means the file is
   not a FrameIQ export at all.
+
+---
+
+## See also
+
+- [`docs/conventions.md`](conventions.md) — response cleanup (`call_on_close`
+  is not reliable here), the offline TMDb placeholder, generated-vs-canonical
+  data rules, and untrusted-upload handling.
