@@ -597,7 +597,7 @@ def test_case21b_cross_surface_progress_agreement(client, factory,
     _banshee_fixture()
     _login(client, u)
 
-    r = client.get(f"/mark_as_viewed/{BANSHEE_SHOW}/tv",
+    r = client.post(f"/mark_as_viewed/{BANSHEE_SHOW}/tv",
                    follow_redirects=True)
     assert r.status_code == 200
     assert _watched_positions(u.id, BANSHEE_SHOW) == BANSHEE_POSITIONS

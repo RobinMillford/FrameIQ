@@ -6,7 +6,7 @@ One semantic authority for the whole application:
 
 ``user_viewed`` is a compatibility mirror written by ``/mark_as_viewed``;
 it can never create a TV Viewed badge the canonical episode ledger does
-not support, and unmarking is symmetric: GET ``/remove_from_viewed/<id>/tv``
+not support, and unmarking is symmetric: POST ``/remove_from_viewed/<id>/tv``
 clears every TVEpisodeWatch row (rewatches included — spec §43 option A,
 the same explicit-removal contract as unmark-season/unmark-episode) plus
 the ``user_viewed`` row, so Viewed-OFF can never coexist with 100%.
@@ -484,14 +484,14 @@ def test_case12_badge_reads_canonical_not_mirror(factory, stub_details,
 
 def _mark_and_mirror(client, u, show_id):
     _login(client, u)
-    r = client.get(f"/mark_as_viewed/{show_id}/tv", follow_redirects=True)
+    r = client.post(f"/mark_as_viewed/{show_id}/tv", follow_redirects=True)
     assert r.status_code == 200
     return r
 
 
 def test_case13_unmark_clears_ledger_and_mirror(factory, stub_details,
                                                 client):
-    """Case 13: after Mark as Viewed, GET /remove_from_viewed/<id>/tv
+    """Case 13: after Mark as Viewed, POST /remove_from_viewed/<id>/tv
     empties the ledger (all 38 rows) and removes the mirror row."""
     u = factory.user()
     factory.media(BANSHEE_SHOW, "tv", "Banshee Fixture")
@@ -500,7 +500,7 @@ def test_case13_unmark_clears_ledger_and_mirror(factory, stub_details,
     assert len(_all_rows(u.id, BANSHEE_SHOW)) == 38
     assert _mirror_exists(u.id, BANSHEE_SHOW)
 
-    r = client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    r = client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                    follow_redirects=True)
     assert r.status_code == 200
     assert _all_rows(u.id, BANSHEE_SHOW) == []
@@ -517,7 +517,7 @@ def test_case14_unmark_clears_rewatches(factory, stub_details, client):
     _mark_and_mirror(client, u, BANSHEE_SHOW)
     factory.watch(u, BANSHEE_SHOW, 1, 1, rewatch=True)
     assert len(_all_rows(u.id, BANSHEE_SHOW)) == 39
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
     assert _all_rows(u.id, BANSHEE_SHOW) == []
 
@@ -534,7 +534,7 @@ def test_case15_unmark_zeroes_progress_and_unseals(factory, stub_details,
         user_id=u.id, show_id=BANSHEE_SHOW).one()
     assert progress.status == "completed"
 
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
     progress = TVShowProgress.query.filter_by(
         user_id=u.id, show_id=BANSHEE_SHOW).one()
@@ -553,7 +553,7 @@ def test_case16_unmark_idempotent(factory, stub_details, client):
     _banshee()
     _mark_and_mirror(client, u, BANSHEE_SHOW)
     for _ in range(2):
-        r = client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+        r = client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                        follow_redirects=True)
         assert r.status_code == 200
     assert _all_rows(u.id, BANSHEE_SHOW) == []
@@ -568,9 +568,9 @@ def test_case17_unmark_then_remark_restores_viewed(factory, stub_details,
     factory.media(BANSHEE_SHOW, "tv", "Banshee Fixture")
     _banshee()
     _mark_and_mirror(client, u, BANSHEE_SHOW)
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
-    client.get(f"/mark_as_viewed/{BANSHEE_SHOW}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{BANSHEE_SHOW}/tv", follow_redirects=True)
     canonical = uvs.canonical_tv_progress(u, BANSHEE_SHOW)
     assert canonical == {"watched": 38, "aired": 38, "percent": 100.0}
     assert uvs.tv_viewed_from_progress(canonical) is True
@@ -591,7 +591,7 @@ def test_case18_no_viewed_off_with_100_percent(factory, stub_details,
     html = client.get(f"/tv/{BANSHEE_SHOW}").get_data(as_text=True)
     assert not _has_badge(html)
     _mark_and_mirror(client, u, BANSHEE_SHOW)
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
     canonical = uvs.canonical_tv_progress(u, BANSHEE_SHOW)
     assert canonical is None
@@ -611,7 +611,7 @@ def test_case19_unmark_single_user_scoped(factory, stub_details, client):
     for (sn, ep) in BANSHEE_POSITIONS:
         factory.watch(u2, BANSHEE_SHOW, sn, ep)
     factory.viewed_mirror(u2, BANSHEE_SHOW)
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
     assert _all_rows(u1.id, BANSHEE_SHOW) == []
     assert not _mirror_exists(u1.id, BANSHEE_SHOW)
@@ -636,7 +636,7 @@ def test_case20_unmark_sql_budget(factory, stub_details, client):
 
     event.listen(db.engine, "before_cursor_execute", _before)
     try:
-        r = client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+        r = client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                        follow_redirects=True)
     finally:
         event.remove(db.engine, "before_cursor_execute", _before)
@@ -661,7 +661,7 @@ def test_case21_mark_preserves_existing_rows(factory, stub_details, client):
     existing = factory.watch(u, BANSHEE_SHOW, 4, 1, rating=4.5,
                              notes="great", watched_date=date(2026, 1, 15))
     _login(client, u)
-    client.get(f"/mark_as_viewed/{BANSHEE_SHOW}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{BANSHEE_SHOW}/tv", follow_redirects=True)
     kept = TVEpisodeWatch.query.filter_by(
         user_id=u.id, show_id=BANSHEE_SHOW,
         season_number=4, episode_number=1, is_rewatch=False).one()
@@ -695,7 +695,7 @@ def test_case23_mark_future_never_manufactured(factory, stub_details,
     factory.future(SPECIALS_SHOW, 1, 11)
     factory.future(SPECIALS_SHOW, 1, 12)
     _login(client, u)
-    r = client.get(f"/mark_as_viewed/{SPECIALS_SHOW}/tv",
+    r = client.post(f"/mark_as_viewed/{SPECIALS_SHOW}/tv",
                    follow_redirects=True)
     assert r.status_code == 200
     positions = {(row.season_number, row.episode_number)
@@ -713,7 +713,7 @@ def test_case24_specials_excluded_from_viewed(factory, stub_details, client):
         10, season=1, seasons={0: 3, 1: 10})
     factory.aired(SPECIALS_SHOW, 0, 1)
     _login(client, u)
-    client.get(f"/mark_as_viewed/{SPECIALS_SHOW}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{SPECIALS_SHOW}/tv", follow_redirects=True)
     positions = {(row.season_number, row.episode_number)
                  for row in _all_rows(u.id, SPECIALS_SHOW)}
     assert (0, 1) not in positions
@@ -889,7 +889,7 @@ def test_case32_running_show_lifecycle(factory, stub_details, client):
     DETAILS_CACHE[RUNNING_SHOW].update(_page_payload(
         RUNNING_SHOW, seasons=seasons_payload, status="Returning Series"))
     _login(client, u)
-    client.get(f"/mark_as_viewed/{RUNNING_SHOW}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{RUNNING_SHOW}/tv", follow_redirects=True)
     canonical = uvs.canonical_tv_progress(u, RUNNING_SHOW)
     assert canonical == {"watched": 10, "aired": 10, "percent": 100.0}
     assert _has_badge(client.get(
@@ -955,7 +955,7 @@ def test_case34_unmark_no_tmdb_calls(factory, stub_details, client,
         return None
 
     monkeypatch.setattr(cw, "show_details", cache_only)
-    client.get(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
+    client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
     assert calls["n"] == 0
 

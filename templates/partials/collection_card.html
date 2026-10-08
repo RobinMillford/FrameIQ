@@ -1,10 +1,30 @@
+{# Task F4: collection mutations are POST + CSRF-protected (the macro), and the
+   Viewed/Watchlist badges come from the CANONICAL TV state (user_tv_viewed_ids),
+   never from the user_viewed mirror. See routes/collections.py. #}
+{% from 'partials/post_action.html' import post_action %}
+
+{# ONE boolean for every Viewed decision on this card, so the badge and the
+   Mark/Unmark control can never disagree (Task F4). A {% set %} is used
+   rather than a macro because a macro renders to a STRING — and the
+   non-empty string "False" is truthy in an {% if %}.
+
+   TV is answered by the canonical, progress-derived set the route computed
+   (utils.collections.canonical_tv_viewed_keys → canonical_progress_map →
+   tv_viewed_from_progress). Movies keep the user_viewed mirror, which is
+   canonical for them. No Viewed formula is duplicated in this template. #}
+{% set card_viewed = ((item.tmdb_id, 'tv') in user_tv_viewed_ids | default(()))
+                     if item.media_type == 'tv'
+                     else ((item.tmdb_id, item.media_type) in user_viewed_ids) %}
+{% set CHECK_ICON_SM %}<svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
+{% set TRASH_ICON %}<svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>{% endset %}
+{% set PLUS_ICON %}<svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
 {# Shared media card for collection pages (watchlist / viewed).
    Params: item        — media object with tmdb_id/media_type/title/etc.
            collection  — 'watchlist' | 'viewed'
            interactive — true for the "All Items" section card (adds data
                          attributes for filters + priority selector)
            priority    — current priority value ('high'|'medium'|'low') #}
-<div class="media-card {{ 'watchlist-card ' if collection == 'watchlist' and interactive else '' }} rounded-lg overflow-hidden shadow-lg"{%- if interactive %} data-category="{{ item.media_type }}"{% endif %}{%- if interactive and collection != 'viewed' %} data-media-id="{{ item.tmdb_id }}" data-priority="{{ priority }}"{% endif %}>
+<div class="media-card {{ 'watchlist-card ' if collection == 'watchlist' and interactive else '' }} rounded-lg overflow-hidden shadow-lg" data-card-tmdb="{{ item.tmdb_id }}"{%- if interactive %} data-category="{{ item.media_type }}"{% endif %}{%- if interactive and collection != 'viewed' %} data-media-id="{{ item.tmdb_id }}" data-priority="{{ priority }}"{% endif %}>
     <a href="/{{ item.media_type }}/{{ item.tmdb_id }}">
         {% if item.poster_path %}
             <img src="https://image.tmdb.org/t/p/w500{{ item.poster_path }}" alt="{{ item.title }}" class="w-full h-64 object-cover">
@@ -38,7 +58,7 @@
         {% endif %}
         <!-- Status indicators -->
         <div class="flex flex-wrap gap-1 mb-3">
-            {% if (item.tmdb_id, item.media_type) in user_viewed_ids %}
+            {% if card_viewed %}
             <span class="text-xs bg-green-600 text-white px-2 py-1 rounded">Viewed</span>
             {% endif %}
             {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
@@ -60,33 +80,19 @@
             <div class="flex gap-1">
                 {% if collection == 'watchlist' %}
                     {% if (item.tmdb_id, item.media_type) in user_watchlist_ids %}
-                    <a href="{{ url_for('main.remove_from_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-red-400 hover:text-red-300 text-sm" title="Remove from Watchlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </a>
+                    {{ post_action(url_for('main.remove_from_watchlist', media_id=item.tmdb_id, media_type=item.media_type), icon=TRASH_ICON, classes='text-red-400 hover:text-red-300 text-sm', title='Remove from Watchlist') }}
                     {% endif %}
-                    {% if (item.tmdb_id, item.media_type) not in user_viewed_ids %}
-                    <a href="{{ url_for('main.mark_as_viewed', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-green-400 hover:text-green-300 text-sm" title="Mark as Viewed">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </a>
+                    {% if not card_viewed %}
+                    {{ post_action(url_for('main.mark_as_viewed', media_id=item.tmdb_id, media_type=item.media_type), icon=CHECK_ICON_SM, classes='text-green-400 hover:text-green-300 text-sm',
+                                  title='Mark as Viewed', name='card-mark-viewed') }}
                     {% endif %}
                 {% else %}
                     {% if (item.tmdb_id, item.media_type) not in user_watchlist_ids %}
-                    <a href="{{ url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm" title="Add to Watchlist">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </a>
+                    {{ post_action(url_for('main.add_to_watchlist', media_id=item.tmdb_id, media_type=item.media_type), icon=PLUS_ICON, classes='text-[var(--accent)] hover:text-[var(--accent-hi)] text-sm', title='Add to Watchlist') }}
                     {% endif %}
-                    {% if (item.tmdb_id, item.media_type) in user_viewed_ids %}
-                    <a href="{{ url_for('main.remove_from_viewed', media_id=item.tmdb_id, media_type=item.media_type) }}" class="text-red-400 hover:text-red-300 text-sm" title="Remove from Viewed">
-                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </a>
+                    {% if card_viewed %}
+                    {{ post_action(url_for('main.remove_from_viewed', media_id=item.tmdb_id, media_type=item.media_type), icon=TRASH_ICON, classes='text-red-400 hover:text-red-300 text-sm',
+                                      title='Remove from Viewed', name='card-unmark-viewed') }}
                     {% endif %}
                 {% endif %}
             </div>

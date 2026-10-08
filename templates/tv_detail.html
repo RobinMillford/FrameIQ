@@ -1,4 +1,13 @@
 {% extends "base.html" %}
+{# Task F4: watchlist adds are CSRF-protected POSTs; the
+   priority travels as a form field, not a query argument. #}
+{% set WL_ICON %}<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
+
+{# Task F4: the two hero control icons, shared by the CSRF-protected POST
+   action macro below. Defined once so the markup is not duplicated. #}
+{% set CHECK_ICON %}<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
+{% set XMARK_ICON %}<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>{% endset %}
+{% from 'partials/post_action.html' import post_action %}
 
 {% block title %}{{ show.name }} - FrameIQ{% endblock %}
 
@@ -435,31 +444,26 @@
                                     </svg>
                                 </button>
                                 <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0  rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">🔥</span> High Priority
-                                    </a>
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='medium') }}" class="block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">📌</span> Medium Priority
-                                    </a>
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=show.id, media_type='tv', priority='low') }}" class="block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">💤</span> Low Priority
-                                    </a>
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=show.id, media_type='tv'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2', fields={'priority': 'high'}) }}
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=show.id, media_type='tv'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2', fields={'priority': 'medium'}) }}
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=show.id, media_type='tv'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2', fields={'priority': 'low'}) }}
                                 </div>
                             </div>
                             {% endif %}                            {% if not tv_viewed %}
-                            <a href="{{ url_for('main.mark_as_viewed', media_id=show.id, media_type='tv') }}" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                Mark as Viewed
-                            </a>
+                            {# name= adds a stable data-action hook so browser verification never has
+   to match on element type or exact copy. #}
+                            {{ post_action(url_for('main.mark_as_viewed', media_id=show.id, media_type='tv'),
+                                               label='Mark as Viewed',
+                                               name='tv-mark-viewed',
+                                               icon=CHECK_ICON,
+                                               classes='glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-green-600 transition-colors') }}
                             {% else %}
-                            <a href="{{ url_for('main.remove_from_viewed', media_id=show.id, media_type='tv') }}" onclick="return confirm('Unmark this show as viewed? This clears its watched episodes (rewatches included).')" class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-red-600 transition-colors">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                                Unmark Viewed
-                            </a>
+                            {{ post_action(url_for('main.remove_from_viewed', media_id=show.id, media_type='tv'),
+                                               label='Unmark Viewed',
+                                               name='tv-unmark-viewed',
+                                               icon=XMARK_ICON,
+                                               confirm='Unmark this show as viewed? This clears its watched episodes (rewatches included).',
+                                               classes='glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-red-600 transition-colors') }}
                             {% endif %}
 
                             <!-- NEW: Diary and Lists buttons -->

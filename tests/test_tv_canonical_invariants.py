@@ -229,7 +229,7 @@ def test_write_path_matrix_mark_as_viewed(app, db, client, tmdb, tv):
     show = banshee(tmdb, tv, user)
     login(client, user)
 
-    client.get(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
 
     assert watched_rows(user, show) == positions(BANSHEE_SEASONS)
     assert viewed_state(user, show) is True
@@ -262,7 +262,7 @@ def test_write_path_matrix_unmark_show(app, db, client, tmdb, tv):
     client.post(f"/api/tv/{show}/mark-all-watched")
     assert viewed_state(user, show) is True
 
-    client.get(f"/remove_from_viewed/{show}/tv", follow_redirects=True)
+    client.post(f"/remove_from_viewed/{show}/tv", follow_redirects=True)
 
     assert watched_rows(user, show) == set()
     assert progress(user, show) is None
@@ -321,7 +321,7 @@ def test_write_path_matrix_repeated_invocation_is_idempotent(app, db, client,
     for _ in range(3):
         client.post(f"/api/tv/{show}/mark-all-watched")
         client.post(f"/api/tv/{show}/season/1/mark-watched")
-        client.get(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
+        client.post(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
 
     from models.tv import TVEpisodeWatch
 
@@ -849,7 +849,7 @@ def test_view_state_does_not_leak_across_users(app, db, client, tmdb, tv):
     tv.watch_many(alice, show, positions(BANSHEE_SEASONS))
 
     login(client, alice)
-    client.get(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
     alice_state = client.get(f"/api/view-state?tv={show}").get_json()
     assert alice_state["tv_progress"][str(show)]["watched"] == 38
 
@@ -894,7 +894,7 @@ def test_the_viewed_mirror_row_is_scoped_to_one_user(app, db, client, tmdb,
     tv.watch_all(bob, show, BANSHEE_SEASONS)
 
     login(client, alice)
-    client.get(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{show}/tv", follow_redirects=True)
     assert mirror_exists(alice, show) is True
     assert mirror_exists(bob, show) is False
 
@@ -1150,7 +1150,7 @@ def test_unmark_show_removes_the_whole_ledger_including_rewatches(
     tv.watch(user, show, 1, 1, rewatch=True)
 
     login(client, user)
-    client.get(f"/remove_from_viewed/{show}/tv", follow_redirects=True)
+    client.post(f"/remove_from_viewed/{show}/tv", follow_redirects=True)
 
     from models.tv import TVEpisodeWatch
 
