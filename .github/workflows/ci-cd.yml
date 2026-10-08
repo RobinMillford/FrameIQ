@@ -90,7 +90,14 @@ jobs:
           # fails loudly. Real-TMDb integration tests are opt-in
           # (`pytest -m tmdb`) and are deselected here by the
           # `-m "not tmdb"` in pyproject's addopts.
-          TMDB_API_KEY: "ci-offline-placeholder"
+          #
+          # This value must stay identical to the one conftest defaults to and
+          # the one tests/test_tmdb_offline.py asserts. Because this env var
+          # is SET, it wins over conftest's setdefault, so any drift between
+          # the three silently fails the placeholder contract test. The
+          # canonical value is asserted by
+          # tests/test_tmdb_offline.py::test_tmdb_key_is_a_throwaway_placeholder
+          TMDB_API_KEY: "test-tmdb-key"
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short
 
