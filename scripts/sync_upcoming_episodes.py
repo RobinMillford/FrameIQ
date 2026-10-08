@@ -1,6 +1,41 @@
 """
 Sync upcoming episodes for tracked TV shows
 Run this periodically (daily) to keep upcoming episodes updated
+
+Task F4 — recently AIRED episodes are retained, not purged on the day they
+air.
+
+The sync used to delete every row with ``air_date < today``, so the table
+could only ever hold ``air_date == today``. That quietly weakened the
+canonical aired universe (``api/user_view_state._batched_aired_calendar``
+reads ``air_date <= today``): the only calendar contribution to aired
+reality was the single day a row spent on the boundary.
+
+Two things changed, and only these two:
+
+  * the TMDb season fetch looks back ``AIRED_RETENTION_DAYS`` as well as
+    forward ``UPCOMING_HORIZON_DAYS``, so recently aired episodes are
+    written at all;
+  * the purge keeps the same look-back window instead of cutting at today.
+
+Why this is safe for every consumer (audited before choosing):
+
+  * ``_batched_aired_calendar`` (canonical aired) reads ``air_date <= today``
+    — this is the consumer that WANTS the history;
+  * ``/api/tv/upcoming-episodes`` filters ``air_date >= today``;
+  * ``/api/tv/calendar`` and ``api/calendar.py`` filter an explicit
+    ``start <= air_date <= end`` window, which is correct for a calendar;
+  * ``api/notifications.py`` filters ``air_date <= today`` and is already
+    idempotent per (user, show, season, episode), so a wider scan cannot
+    re-notify;
+  * the next-episode resolver only looks up specific ``(season, episode)``
+    keys, so extra rows cannot change its answer.
+
+Growth stays bounded: rows exist only for shows someone is tracking, and
+only for episodes inside a fixed day window. No schema change, no new
+table, no per-request TMDb call — the canonical resolver's historical
+reconstruction from cached TMDb season metadata is unchanged and remains the
+primary source.
 """
 import sys
 import os
@@ -14,7 +49,7 @@ from models import TVShowProgress, UpcomingEpisode
 from api.tmdb_client import fetch_tv_show_details
 
 # Feature 04: notify tracked users about episodes that just aired. Runs BEFORE
-# the "air_date < today" purge below so the fresh transition is never missed.
+# the expiry purge below so the fresh transition is never missed.
 from api.notifications import notify_newly_aired_episodes
 import requests
 
@@ -22,6 +57,15 @@ TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 if not TMDB_API_KEY:
     sys.exit("TMDB_API_KEY environment variable is required")
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
+
+# How far ahead to sync. Unchanged from the original behaviour.
+UPCOMING_HORIZON_DAYS = 60
+
+# How far back to KEEP aired episodes (Task F4). Four weeks covers roughly
+# four episodes of a weekly show, which is enough to keep the canonical
+# aired universe reconstructable through a TMDb outage while staying small:
+# rows only exist for tracked shows, and only inside this window.
+AIRED_RETENTION_DAYS = 28
 
 
 def fetch_show_upcoming_episodes(show_id):
@@ -42,8 +86,9 @@ def fetch_show_upcoming_episodes(show_id):
         
         upcoming_episodes = []
         today = datetime.now().date()
-        sixty_days = today + timedelta(days=60)
-        print(f"  Looking for episodes between {today} and {sixty_days}")
+        window_start = today - timedelta(days=AIRED_RETENTION_DAYS)
+        horizon_end = today + timedelta(days=UPCOMING_HORIZON_DAYS)
+        print(f"  Looking for episodes between {window_start} and {horizon_end}")
         
         # Get all seasons
         seasons = show.get('seasons', [])
@@ -81,9 +126,11 @@ def fetch_show_upcoming_episodes(show_id):
                     except Exception:
                         continue
                     
-                    # Only include episodes within next 60 days
-                    if today <= air_date <= sixty_days:
-                        print(f"      Found upcoming: S{season_number}E{episode.get('episode_number')} on {air_date}")
+                    # Task F4: keep a bounded window of RECENTLY AIRED
+                    # episodes as well as the upcoming horizon — the
+                    # canonical aired universe reads `air_date <= today`.
+                    if window_start <= air_date <= horizon_end:
+                        print(f"      Found: S{season_number}E{episode.get('episode_number')} on {air_date}")
                         still_path = episode.get('still_path', '')
                         if still_path:
                             still_path = f"https://image.tmdb.org/t/p/w500{still_path}"
@@ -140,11 +187,15 @@ def sync_upcoming_episodes():
             db.session.rollback()
             print(f"  Notification fan-out failed (sync continues): {e}")
 
-        # Clear old upcoming episodes (older than today)
+        # Task F4: expire rows that have fallen out of BOTH windows. The cut
+        # used to be `air_date < today`, which destroyed the only calendar
+        # record of anything that had aired — see the module docstring.
         today = datetime.now().date()
-        deleted = UpcomingEpisode.query.filter(UpcomingEpisode.air_date < today).delete()
+        retention_cutoff = today - timedelta(days=AIRED_RETENTION_DAYS)
+        deleted = UpcomingEpisode.query.filter(
+            UpcomingEpisode.air_date < retention_cutoff).delete()
         db.session.commit()
-        print(f"\nDeleted {deleted} old episode entries")
+        print(f"\nDeleted {deleted} episode entries aired before {retention_cutoff}")
         
         # Fetch and store upcoming episodes for each show
         total_added = 0

@@ -51,17 +51,24 @@ def notify_newly_aired_episodes(now=None):
     """Create notifications for tracked users for episodes that just aired.
 
     "Just aired" = an UpcomingEpisode whose air_date is <= today and still
-    present in the upcoming table. The sync purges `air_date < today` at the
-    START of each run, so this window is exactly the fresh transition; the
-    unique constraint makes the operation idempotent across runs.
+    present in the upcoming table.
+
+    Task F4: that table now retains ``AIRED_RETENTION_DAYS`` of aired
+    episodes instead of purging them the day after they air, so this scan
+    is no longer bounded by "arrived today" — it covers the whole retention
+    window. That is safe and intended: the per-(user, show, season, episode)
+    unique constraint is what makes the fan-out idempotent, so a wider scan
+    re-finds rows it already notified about and skips them. The scan stays
+    one bounded SELECT regardless of how long the window is.
 
     Returns the number of notifications created.
     """
     now = now or datetime.utcnow()
     today = now.date()
 
-    # Ep1 — episodes that transitioned to "aired" (bounded; next sync will
-    # purge them). Ordered for deterministic newest-first notification order.
+    # Ep1 — every retained episode that has aired. Ordered for deterministic
+    # newest-first notification order; already-notified rows are filtered out
+    # downstream by the unique constraint.
     aired = (UpcomingEpisode.query
              .filter(UpcomingEpisode.air_date <= today)
              .order_by(UpcomingEpisode.show_id,
