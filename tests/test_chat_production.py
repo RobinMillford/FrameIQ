@@ -284,6 +284,13 @@ def _file_backed_app(tmp_path, monkeypatch):
     try:
         from app import create_app
         file_app = create_app()
+        # The application no longer creates its own schema, so this test
+        # harness owns schema setup explicitly. That is the documented
+        # test/dev path (docs/conventions.md): the app boots, then the test
+        # prepares the database it needs.
+        from models import db as _db
+        with file_app.app_context():
+            _db.create_all()
     finally:
         os.environ["DATABASE_URL"] = "sqlite:///:memory:"
     file_app.config.update(TESTING=True, WTF_CSRF_ENABLED=False,
