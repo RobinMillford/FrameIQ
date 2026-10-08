@@ -19,7 +19,10 @@ Both report malformed rows as :class:`InvalidRow` rather than dropping them, so
 the preview can say "3 rows were malformed" instead of silently losing data.
 """
 import csv
+import html as html_mod
 import io
+import re
+from dataclasses import replace
 from datetime import datetime
 from typing import List, Tuple
 
@@ -96,6 +99,87 @@ def _letterboxd_id(uri):
     return parts[-1] if parts else None
 
 
+def _letterboxd_film_slug(uri):
+    """The FILM slug from any Letterboxd URI, ignoring a per-watch ordinal.
+
+    A Letterboxd export uses two different URI shapes:
+
+    * ``https://boxd.it/29qU`` / ``.../film/the-matrix`` — the film page
+    * ``.../film/the-matrix/2`` — one specific *watch*, used by ``diary.csv``
+
+    For review identity the trailing zero-based ordinal is dropped, so every
+    watch of one film collapses onto the same key. Returning ``None`` for such
+    a URI instead would make a rewatched film look like two different films,
+    and the second review would be reported as an unidentifiable row.
+    """
+    if not uri:
+        return None
+    parts = [p for p in str(uri).strip().split('/') if p]
+    if not parts:
+        return None
+    slug = parts[-1]
+    if slug.isdigit() and len(parts) >= 2:
+        slug = parts[-2]
+    if not slug or slug.isdigit():
+        # A bare ordinal with no film segment carries no identity at all.
+        return None
+    return slug
+
+
+_BLOCK_TAGS = ('p', 'div', 'br', 'li', 'tr', 'blockquote', 'h1', 'h2', 'h3',
+               'h4', 'h5', 'h6')
+
+
+def _html_to_text(raw):
+    """Letterboxd review bodies are HTML; FrameIQ review bodies are plain text.
+
+    Letterboxd documents its ``Review`` column as "Text/HTML ... accepts the
+    same set of HTML tags as on the Letterboxd website", so a real export can
+    contain ``<p>``, ``<em>``, ``<a href>`` and friends.
+
+    Storing that markup verbatim would be wrong twice over: FrameIQ renders
+    review bodies as auto-escaped text, so the user would literally see
+    ``<p>`` in their own review. Converting block boundaries to newlines and
+    dropping the tags keeps the author's words and loses only presentation,
+    which FrameIQ has no way to render faithfully anyway.
+    """
+    if raw is None:
+        return None
+    text = str(raw)
+    if not text.strip():
+        return None
+
+# Turn block-level tags into line breaks BEFORE stripping, so paragraphs
+    # do not run together into one line.
+    for tag in _BLOCK_TAGS:
+        text = re.sub(r'</?\s*%s\b[^>]*>' % tag, '\n', text, flags=re.I)
+
+    # Drop <script>/<style> CONTENT, not just the tags. Flattening the tags
+    # would paste the program text into the middle of the user's review.
+    text = re.sub(r'<\s*(script|style)\b[^>]*>.*?<\s*/\s*\1\s*>', ' ',
+                  text, flags=re.I | re.S)
+    # An unterminated <script> would otherwise keep everything after it.
+    text = re.sub(r'<\s*(script|style)\b[^>]*>.*\Z', ' ', text,
+                  flags=re.I | re.S)
+    # Every remaining tag is dropped, including its attributes.
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Unescape entities that survive, so the text reads like prose rather than
+    # "&amp;" appearing literally in the review body.
+    text = html_mod.unescape(text)
+    # Reviews may carry invisible characters left over from copy/paste: no-break
+    # spaces and the zero-width family (ZWSP/ZWJ/ZWNJ/BOM). They are invisible
+    # but break equality, so two copies of the same review compare unequal.
+    text = text.replace('\xa0', ' ')
+    # Explicit escapes, not literal invisible characters: a zero-width
+    # codepoint in source is invisible in review and silently lost by
+    # editors, so the class below can quietly lose a member.
+    text = re.sub('[\u200b\u200c\u200d\u2060\ufeff]', '', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip() or None
+
+
 def _excerpt(text, limit=60):
     """A short, safe preview of a bad row. Never the whole row."""
     if text is None:
@@ -105,6 +189,157 @@ def _excerpt(text, limit=60):
 
 
 # ── Letterboxd ───────────────────────────────────────────────────────────────
+
+def _basename(member):
+    return member.name.rsplit('/', 1)[-1].lower()
+
+
+def _int_or_none(raw):
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _read_csv_member(member, filename, invalid):
+    """Decode one CSV member into a DictReader, or None if unusable."""
+    try:
+        text = member.data.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        invalid.append(InvalidRow(SOURCE_LETTERBOXD, 0,
+                                  '%s is not valid UTF-8' % filename))
+        return None
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        invalid.append(InvalidRow(SOURCE_LETTERBOXD, 0,
+                                  '%s has no header row' % filename))
+        return None
+    return reader
+
+
+def _watched_row_to_record(row, position, invalid):
+    """One ``watched.csv`` row → a record, or None if the row is unusable."""
+    name = (row.get('Name') or row.get('Film Name') or '').strip()
+    if not name:
+        invalid.append(InvalidRow(
+            SOURCE_LETTERBOXD, position, 'row has no film name',
+            _excerpt(row.get('Name'))))
+        return None
+
+    slug = _letterboxd_id(row.get('Letterboxd URI'))
+    if not slug:
+        # No stable identity => repeated imports could duplicate.
+        invalid.append(InvalidRow(
+            SOURCE_LETTERBOXD, position,
+            'row has no Letterboxd URI, so it cannot be identified reliably',
+            _excerpt(name)))
+        return None
+
+    return MovieImportRecord(
+        source=SOURCE_LETTERBOXD,
+        source_key=(SOURCE_LETTERBOXD, 'watched', slug),
+        title=name,
+        release_year=_int_or_none(row.get('Year')),
+        watched_at=_parse_date(row.get('Date')),
+        rating=_parse_rating(row.get('Rating')),
+        # Filled in from reviews.csv below when the film has one.
+        review_text=None,
+        source_metadata={'letterboxd_uri': row.get('Letterboxd URI')},
+    )
+
+
+def _parse_watched_members(members, records, invalid):
+    """Append records for every ``watched.csv`` row; return first-per-film."""
+    first_record = {}
+    for member in sorted(members, key=lambda m: m.name):
+        reader = _read_csv_member(member, 'watched.csv', invalid)
+        if reader is None:
+            continue
+        for position, row in enumerate(reader, start=2):
+            record = _watched_row_to_record(row, position, invalid)
+            if record is None:
+                continue
+            records.append(record)
+            first_record.setdefault(record.source_key[-1], record)
+    return first_record
+
+
+def _review_row_record(row, position, body, invalid):
+    """A review-only film (absent from watched.csv) → its own record."""
+    name = (row.get('Name') or row.get('Film Name') or '').strip()
+    return MovieImportRecord(
+        source=SOURCE_LETTERBOXD,
+        source_key=(SOURCE_LETTERBOXD, 'review', _letterboxd_film_slug(
+            row.get('Letterboxd URI'))),
+        title=name,
+        release_year=_int_or_none(row.get('Year')),
+        watched_at=_parse_date(row.get('Date')),
+        rating=_parse_rating(row.get('Rating')),
+        review_text=body,
+        source_metadata={'letterboxd_uri': row.get('Letterboxd URI'),
+                         'from_reviews_csv': True},
+    )
+
+
+def _apply_review_row(row, position, review_column, name_column, body,
+                      first_record, records, invalid):
+    """Attach one review to its film, without creating a second watch event."""
+    slug = _letterboxd_film_slug(row.get('Letterboxd URI'))
+    name = (row.get(name_column) or '').strip() if name_column else ''
+    if not slug:
+        invalid.append(InvalidRow(
+            SOURCE_LETTERBOXD, position,
+            'review row has no usable Letterboxd URI, so its film cannot be '
+            'identified reliably', _excerpt(name)))
+        return
+
+    existing = first_record.get(slug)
+    if existing is not None:
+        if existing.review_text:
+            # One body per film; the first wins and the duplicate is reported
+            # rather than silently overwritten.
+            invalid.append(InvalidRow(
+                SOURCE_LETTERBOXD, position,
+                'more than one review for this film; the first was kept',
+                _excerpt(name)))
+            return
+        updated = replace(existing, review_text=body)
+        records[records.index(existing)] = updated
+        first_record[slug] = updated
+        return
+
+    orphan = _review_row_record(row, position, body, invalid)
+    records.append(orphan)
+    first_record[slug] = orphan
+
+
+def _parse_review_member(member, first_record, records, invalid):
+    reader = _read_csv_member(member, 'reviews.csv', invalid)
+    if reader is None:
+        return
+
+    # Guard rather than guess: with no review body column the file is reported,
+    # because silently treating it as empty would look like "wrote no reviews".
+    review_column = _first_present(reader.fieldnames, ('Review', 'Review Text'))
+    if review_column is None:
+        invalid.append(InvalidRow(
+            SOURCE_LETTERBOXD, 0,
+            'reviews.csv has no "Review" column, so its review text cannot be '
+            'read; the file was left unimported rather than guessed at'))
+        return
+
+    name_column = _first_present(reader.fieldnames, ('Name', 'Film Name'))
+    for position, row in enumerate(reader, start=2):
+        body = _html_to_text(row.get(review_column))
+        if not body:
+            # An empty body is not an error and must not create a record.
+            continue
+        _apply_review_row(row, position, review_column, name_column, body,
+                          first_record, records, invalid)
+
 
 def parse_letterboxd(members) -> Tuple[
         List[MovieImportRecord], List[InvalidRow]]:
@@ -117,71 +352,36 @@ def parse_letterboxd(members) -> Tuple[
     ``ratings.csv`` and ``watchlist.csv`` are deliberately NOT imported: a
     rating without a watch event is not a watch event, and the watchlist is not
     watch history. They are reported as unsupported rather than invented.
+
+    ``reviews.csv`` IS read (Task F7) for the review body only. It never
+    becomes extra watch history: a Letterboxd review is per-FILM, so emitting
+    a row per review next to ``watched.csv`` would double-count every reviewed
+    film. Each review attaches to the FIRST watch of that film and a rewatch
+    stays a plain watch. A review whose film is missing from ``watched.csv``
+    (only possible in a partial export) becomes its own record, because a
+    review still asserts the film was watched.
     """
-    wanted = {'watched.csv'}
     records: List[MovieImportRecord] = []
     invalid: List[InvalidRow] = []
 
-    csv_members = [m for m in members
-                   if m.name.rsplit('/', 1)[-1].lower() in wanted]
-    if not csv_members:
+    watched_members = [m for m in members if _basename(m) == 'watched.csv']
+    review_members = [m for m in members if _basename(m) == 'reviews.csv']
+    if not watched_members:
         raise ValueError(
             'No watched.csv found — is this a Letterboxd data export?')
 
-    for member in sorted(csv_members, key=lambda m: m.name):
-        try:
-            text = member.data.decode('utf-8-sig')
-        except UnicodeDecodeError:
-            invalid.append(InvalidRow(
-                SOURCE_LETTERBOXD, 0,
-                'watched.csv is not valid UTF-8'))
-            continue
-
-        reader = csv.DictReader(io.StringIO(text))
-        if not reader.fieldnames:
-            invalid.append(InvalidRow(
-                SOURCE_LETTERBOXD, 0, 'watched.csv has no header row'))
-            continue
-
-        for position, row in enumerate(reader, start=2):
-            name = (row.get('Name') or '').strip()
-            if not name:
-                invalid.append(InvalidRow(
-                    SOURCE_LETTERBOXD, position,
-                    'row has no film name', _excerpt(row.get('Name'))))
-                continue
-
-            year = None
-            raw_year = (row.get('Year') or '').strip()
-            if raw_year:
-                try:
-                    year = int(raw_year)
-                except ValueError:
-                    year = None
-
-            slug = _letterboxd_id(row.get('Letterboxd URI'))
-            if not slug:
-                # No stable identity => repeated imports could duplicate.
-                invalid.append(InvalidRow(
-                    SOURCE_LETTERBOXD, position,
-                    'row has no Letterboxd URI, so it cannot be identified '
-                    'reliably', _excerpt(name)))
-                continue
-
-            records.append(MovieImportRecord(
-                source=SOURCE_LETTERBOXD,
-                source_key=(SOURCE_LETTERBOXD, 'watched', slug),
-                title=name,
-                release_year=year,
-                watched_at=_parse_date(row.get('Date')),
-                rating=_parse_rating(row.get('Rating')),
-                # Letterboxd exports no review text in watched.csv, and the
-                # diary body is a separate user-authored artefact this
-                # adapter deliberately does not reach for.
-                review_text=None,
-                source_metadata={'letterboxd_uri': row.get('Letterboxd URI')},
-            ))
+    first_record = _parse_watched_members(watched_members, records, invalid)
+    for member in sorted(review_members, key=lambda m: m.name):
+        _parse_review_member(member, first_record, records, invalid)
     return records, invalid
+
+
+def _first_present(fieldnames, candidates):
+    for candidate in candidates:
+        for name in fieldnames:
+            if name and name.strip().lower() == candidate.lower():
+                return name
+    return None
 
 
 # ── TV Time ──────────────────────────────────────────────────────────────────
