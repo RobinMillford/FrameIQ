@@ -173,17 +173,111 @@ row would put import concerns inside the records the product treats as truth.
 carries the user's choices. A durable answer must not appear as a side effect
 of *looking* at a file. `apply_import` owns every write.
 
-## Keep script harnesses out of the app import path
+## Production schema is changed only through migrations
 
-Browser verification scripts set `DATABASE_URL` to a fresh temp SQLite file
-**before** importing the app, because importing `app` runs `db.create_all()`
-against whatever `DATABASE_URL` says. A stray `python -c` without that override
-targets the real database — during F7 this reached production Postgres and
-attempted DDL. It rolled back, but the safe pattern is mandatory:
+The production web process performs **no DDL**. The architecture is:
 
-    _test_db_fd, _test_db_path = tempfile.mkstemp(...)
-    os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
-    os.environ.setdefault("SKIP_SCHEMA_GUARD", "1")
-    ...
-    from app import app
+    BUILD EXACT SHA -> DEPENDENCY HEALTH -> MIGRATION -> SCHEMA GUARD
+    -> WEB START -> HEALTH -> SMOKE
+
+Never:
+
+    WEB START -> implicit table creation -> hope the schema is right
+
+`app.py` used to call `db.create_all()` on every start. It does not any more.
+Schema creation is off by default and only happens when a caller explicitly sets
+`FRAMEIQ_AUTO_CREATE_SCHEMA=1`, which logs a warning when used.
+
+Two consequences worth stating plainly:
+
+- **A web worker does not own the schema.** A forgotten migration now stops the
+  deploy, rather than "fixing itself" on the next boot and hiding the omission.
+- **The parity guard became load-bearing.** With implicit creation gone, an
+  unprepared schema makes startup *fail loudly* instead of quietly repairing
+  itself. That is deliberate: failing to boot on a bad schema is correct, and is
+  the same posture the guard already took for missing columns.
+
+`create_all()` is still legitimate in explicitly controlled contexts, and each
+existing one was left alone because it already was one:
+
+| Where | Why it is fine |
+|---|---|
+| `tests/conftest.py` | Session fixture on a throwaway temp SQLite, created explicitly. |
+| `scripts/verify_*_browser.py` | Each boots a throwaway SQLite and creates its own schema explicitly. |
+| `scripts/bootstrap_dev_schema.py` | The explicit local/test path. Prints its target before connecting and refuses production. |
+| `migrates/*.py` | Run deliberately as a named one-off step, never at web start. |
+
+## Do not reach a database through a module import
+
+Importing `app` executes `create_app()`, which used to execute
+`db.create_all()`. **Any** diagnostic that imported the app therefore inherited
+DDL authority over whatever `DATABASE_URL` pointed at.
+
+Never run an app-importing Python diagnostic while `DATABASE_URL` points at a
+production database. Before any command that could import the application or
+initialise SQLAlchemy, print and confirm the target, and run it through a
+wrapper that hard-fails on a non-scratch URL.
+
+For inspecting a live database, use
+`scripts/check_production_schema_readonly.py`. It never imports the app, opens a
+plain driver connection, and sets the session `READ ONLY` so the server itself
+rejects any write — a guarantee rather than a promise in a docstring.
+
+## PostgreSQL index names are schema-scoped, not table-scoped
+
+Two different tables cannot declare the same index or constraint name in
+PostgreSQL. This is invisible in development on SQLite, which permits the
+duplicate, and it fails *mid-transaction* — so one colliding name rolls back
+every other statement sharing that transaction.
+
+`TasteProfile` and the legacy `UserTasteProfile` table both declared
+`idx_taste_profile_updated`. The legacy table is created by
+`migrate_week4_discovery.py` and is deliberately not declared by any model, so
+"who owns this name?" answered from model metadata returns *nobody*. The
+collision could therefore only be found by a failing `CREATE INDEX`.
+
+Rules that follow:
+
+- Before creating a table, read the **live catalog** for the names it wants, not
+  the models. `migrate_schema_convergence.py` does this and aborts with the
+  conflicting names before attempting any DDL.
+- `tests/test_startup_schema_safety.py` asserts schema-wide uniqueness of every
+  declared index and constraint name, which is the only check that catches this
+  on a SQLite-based test suite.
+- Do not "fix" a name collision by editing a legacy table. Rename the newer
+  declaration. The legacy tables are depended on by migrations that promise not
+  to disturb them.
+
+## Repair drift with a migration, never by hand
+
+If production schema drift is found, the repair is a new named idempotent
+migration. Do not `CREATE`/`ALTER`/`DROP` production by hand and do not
+`DROP INDEX`/`DROP TABLE`/`CASCADE` on a hunch. Diagnosis is read-only; the
+change happens later through the normal migration-first deploy.
+
+There is no migration *version table* in this repository. Idempotency comes from
+inspecting the live catalog, which means nothing can report "which migrations
+has production run?" — so a migration must be safe to run against a database in
+any state, including one that is fully current.
+
+## Incident note: F7 accidental production DDL probe
+
+While probing why a migration appeared to be a no-op during Task F7, a
+`python -c` snippet was run without overriding `DATABASE_URL`, which pointed at
+the production Neon database. `from app import app` ran `create_all()` and
+attempted DDL. It failed on its first statement (`DuplicateTable`, from the
+index-name collision above) and the transaction **rolled back**.
+
+Verified afterwards: no table had been added, removed or altered, and the
+database's table count was unchanged.
+
+Two changes came out of it, and both are now enforced by tests:
+
+1. Production no longer creates its own schema, so an app import has no DDL
+   authority at all.
+2. `scripts/check_production_schema_readonly.py` gives a safe way to inspect a
+   live database, and `scripts/bootstrap_dev_schema.py` refuses a
+   production-looking target before opening a connection.
+
+No credentials, hostnames or connection strings are recorded in this note.
 
