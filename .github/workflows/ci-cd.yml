@@ -71,17 +71,33 @@ jobs:
             --exclude=venv,env,.venv,__pycache__,.git,migrations,migrates
 
       - name: Full test suite
+        # Task F3: this job is OFFLINE — no TMDb key, no DNS, no internet.
+        # TMDb payloads come from deterministic fixtures (tests/tmdb_offline.py)
+        # and every other outbound connection fails loudly. Genuine external
+        # integration tests are opt-in (`pytest -m tmdb`) and are deselected
+        # by the `-m "not tmdb"` in pyproject's addopts, so this step needs no
+        # credentials and its failures never depend on a third party.
         env:
           # conftest sets these via setdefault; providing them here ensures
           # the CI environment doesn't inherit a stale DATABASE_URL.
-          # NOTE: conftest now force-overrides DATABASE_URL to a throwaway
+          # NOTE: conftest force-overrides DATABASE_URL to a throwaway
           # temp-file SQLite, so tests can never touch a real database.
           DATABASE_URL: "sqlite:///:memory:"
           SECRET_KEY: "ci-test-secret-key"
-          # Real key when the repo secret is set (push/same-repo PRs);
-          # falls back to 'test' on fork PRs, where GitHub blocks secrets.
-          # The suite is hermetic either way — tests mock all TMDb calls.
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || 'test' }}
+          # A throwaway placeholder, NOT a secret. The suite is offline by
+          # design (tests/tmdb_offline.py): TMDb payloads come from
+          # deterministic fixtures and every other outbound connection
+          # fails loudly. Real-TMDb integration tests are opt-in
+          # (`pytest -m tmdb`) and are deselected here by the
+          # `-m "not tmdb"` in pyproject's addopts.
+          #
+          # This value must stay identical to the one conftest defaults to and
+          # the one tests/test_tmdb_offline.py asserts. Because this env var
+          # is SET, it wins over conftest's setdefault, so any drift between
+          # the three silently fails the placeholder contract test. The
+          # canonical value is asserted by
+          # tests/test_tmdb_offline.py::test_tmdb_key_is_a_throwaway_placeholder
+          TMDB_API_KEY: "test-tmdb-key"
           OPENAI_API_KEY: "test"
         run: pytest tests/ -v --tb=short
 

@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{# Task F4: watchlist adds are CSRF-protected POSTs; the
+   priority travels as a form field, not a query argument. #}
+{% from 'partials/post_action.html' import post_action %}
+{% set WL_ICON %}<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
 
 {% block title %}{{ movie.title }} - FrameIQ{% endblock %}
 
@@ -374,15 +378,9 @@
                                     </svg>
                                 </button>
                                 <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0  rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie', priority='high') }}" class="block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">🔥</span> High Priority
-                                    </a>
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie', priority='medium') }}" class="block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">📌</span> Medium Priority
-                                    </a>
-                                    <a href="{{ url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie', priority='low') }}" class="block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2">
-                                        <span class="text-xl">💤</span> Low Priority
-                                    </a>
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2', fields={'priority': 'high'}) }}
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2', fields={'priority': 'medium'}) }}
+                                    {{ post_action(url_for('main.add_to_watchlist', media_id=movie.id, media_type='movie'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-blue-600 transition-colors flex items-center gap-2', fields={'priority': 'low'}) }}
                                 </div>
                             </div>
                             {% endif %}

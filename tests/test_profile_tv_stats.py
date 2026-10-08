@@ -22,6 +22,7 @@ from itertools import count
 
 import pytest
 
+import api.continue_watching
 from models import DiaryEntry, MediaItem, TVShowProgress
 from models.tv import TVEpisodeWatch
 
@@ -235,16 +236,32 @@ class TestProfileRouteSemantics:
         resp = client.get("/profile")
         assert resp.status_code == 200
 
-    def test_profile_tv_progress_section(self, db, app, client):
+    def test_profile_tv_progress_section(self, db, app, client, monkeypatch):
         u = _user(db)
         s = _show(db)
         db.session.add(TVShowProgress(user_id=u.id, show_id=s.tmdb_id,
                                       status="watching", total_episodes=8,
                                       watched_episodes=4))
-        _episode(db, u, s, 1, 4)
+        # Task F2: profile percentages read the canonical aired payload —
+        # the LEDGER is the truth, so the 4-watched intent needs 4 rows
+        # (S1E1..E4); stub the TMDb seasons so 8 episodes of S1 have
+        # aired → canonical 4/8 = 50%, matching the original assertion.
+        for ep in range(1, 5):
+            _episode(db, u, s, 1, ep)
+        monkeypatch.setattr(
+            "api.continue_watching.show_details",
+            lambda sid, **kw: {
+                "id": sid,
+                "last_episode_to_air": {"season_number": 1,
+                                        "episode_number": 8},
+                "seasons": [{"season_number": 1, "episode_count": 8,
+                             "air_date": "2010-01-01"}],
+            })
+        api.continue_watching._memo.clear()
         db.session.commit()
         _login(client, u)
         resp = client.get("/profile")
+        api.continue_watching._memo.clear()
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
         assert "TV Progress" in html

@@ -13,10 +13,13 @@ class TVShowProgress(db.Model):
     show_id = db.Column(db.Integer, nullable=False, index=True)  # TMDB show ID
 
     # Progress tracking
-    total_seasons = db.Column(db.Integer, default=0)  # Total seasons in show
+    total_seasons = db.Column(db.Integer, default=0)  # AIRED seasons
     watched_seasons = db.Column(db.Integer, default=0)  # Completed seasons
-    total_episodes = db.Column(db.Integer, default=0)  # Total episodes in show
-    watched_episodes = db.Column(db.Integer, default=0)  # Episodes watched
+    # Task F1: `total_episodes` is the canonical AIRED episode count, not
+    # TMDb's `number_of_episodes` (which counts unaired episodes). It is
+    # written only by api.user_view_state.sync_tv_progress_counters().
+    total_episodes = db.Column(db.Integer, default=0)  # AIRED episodes
+    watched_episodes = db.Column(db.Integer, default=0)  # First watches
 
     # Status
     status = db.Column(db.String(20), default='watching')  # 'watching', 'completed', 'plan_to_watch', 'dropped'
@@ -42,13 +45,47 @@ class TVShowProgress(db.Model):
         super(TVShowProgress, self).__init__(**kwargs)
 
     def calculate_progress_percentage(self):
-        """Calculate completion percentage"""
+        """Completion percentage over the canonical AIRED denominator.
+
+        Correct only because ``total_episodes`` is maintained as the aired
+        count and ``watched_episodes`` counts distinct non-rewatch
+        positions (Task F1). The model stays network-free: the canonical
+        aired set is resolved by api.user_view_state and written in.
+        """
         if self.total_episodes == 0:
             return 0
         return round((self.watched_episodes / self.total_episodes) * 100, 1)
 
-    def to_dict(self):
-        """Convert to dictionary for JSON responses"""
+    def to_dict(self, aired_progress=None):
+        """Convert to dictionary for JSON responses.
+
+        ``aired_progress`` is the canonical ``{watched, aired, percent}``
+        payload from api.user_view_state.canonical_tv_progress(). When
+        supplied it is the ONLY percentage published and the stored
+        counters are omitted, so a response can never expose a
+        denominator that disagrees with the canonical aired set.
+        """
+        if aired_progress:
+            return {
+                'id': self.id,
+                'user_id': self.user_id,
+                'show_id': self.show_id,
+                'watched_seasons': self.watched_seasons,
+                'total_seasons': self.total_seasons,
+                # Canonical payload keeps the legacy field names so JS
+                # consumers (tv-tracker.js, tv-seasons.js) render
+                # unchanged — but every value is the AIRED reality.
+                'total_episodes': aired_progress['aired'],
+                'watched_episodes': aired_progress['watched'],
+                'aired_episodes': aired_progress['aired'],
+                'progress_percentage': aired_progress['percent'],
+                'status': self.status,
+                'is_favorite': self.is_favorite,
+                'started_at': self.started_at.isoformat() if self.started_at else None,
+                'last_watched': self.last_watched.isoformat() if self.last_watched else None,
+                'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+                'created_at': self.created_at.isoformat()
+            }
         return {
             'id': self.id,
             'user_id': self.user_id,

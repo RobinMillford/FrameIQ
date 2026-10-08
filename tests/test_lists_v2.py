@@ -15,6 +15,10 @@ import uuid
 
 import pytest
 
+import api.continue_watching
+from models import TVShowProgress
+from models.tv import TVEpisodeWatch
+
 
 # ---------------------------------------------------------------------------
 # Helpers (module-local, deterministic IDs)
@@ -696,11 +700,52 @@ class TestWatchedState:
                            status='watching', total_episodes=24,
                            watched_episodes=15),
         ])
-        db.session.commit()
+        # Task F2: canonical list progress reads the episode LEDGER (not
+        # stored counters) against the AIRED set from the cached-TMDb
+        # payload — add ledger rows (20/20 done; 15 of 24 for WIP) and
+        # stub both shows' details so the canonical progress for the WIP
+        # card is 15/24 = 63% (same expected values as before).
+        db.session.add_all([
+            TVEpisodeWatch(user_id=u.id, show_id=show_done.tmdb_id,
+                           season_number=sn, episode_number=en)
+            for sn, hi in ((1, 10), (2, 10)) for en in range(1, hi + 1)
+        ])
+        db.session.add_all([
+            TVEpisodeWatch(user_id=u.id, show_id=show_wip.tmdb_id,
+                           season_number=1, episode_number=e)
+            for e in range(1, 16)
+        ])
+        from unittest.mock import patch
+
+        def _tv_details(show_id, **kw):
+            if show_id == show_done.tmdb_id:
+                return {'id': show_id,
+                        'last_episode_to_air': {'season_number': 2,
+                                                'episode_number': 10},
+                        'seasons': [
+                            {'season_number': 1, 'episode_count': 10,
+                             'air_date': '2010-01-01'},
+                            {'season_number': 2, 'episode_count': 10,
+                             'air_date': '2011-01-01'}],
+                        'status': 'Ended'}
+            return {'id': show_id,
+                    'last_episode_to_air': {'season_number': 2,
+                                            'episode_number': 9},
+                    'seasons': [
+                        {'season_number': 1, 'episode_count': 15,
+                         'air_date': '2010-01-01'},
+                        {'season_number': 2, 'episode_count': 9,
+                         'air_date': '2011-01-01'}],
+                    'status': 'Returning'}
 
         _login(auth_client, u.username)
-        r = auth_client.get(f'/api/lists/{lst.id}/watched-state')
-        data = r.get_json()
+        with patch('api.continue_watching.show_details', _tv_details), \
+                patch('routes.tv_tracking.fetch_tv_show_details',
+                      _tv_details):
+            api.continue_watching._memo.clear()
+            r = auth_client.get(f'/api/lists/{lst.id}/watched-state')
+            data = r.get_json()
+            api.continue_watching._memo.clear()
         by_id = {i['id']: i for i in data['items']}
         assert by_id[i_done.id]['watched'] == 'watched'
         assert by_id[i_wip.id]['watched'] == 'watching'

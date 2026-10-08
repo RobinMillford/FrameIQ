@@ -1,12 +1,25 @@
+{# Task F4: the collection controls below are CSRF-protected POST forms
+   (partials/post_action.html). The underlying routes were state-changing
+   GETs, which Flask-WTF's CSRFProtect does not guard. #}
+{% from 'partials/post_action.html' import post_action %}
+{% set ICON %}<svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>{% endset %}
 {# Shared media poster card (movie or TV show).
    Params: item — dict/obj with id + title/name + release_date/first_air_date
            media_type — 'movie' or 'tv'
-           user_watchlist_ids, user_viewed_ids — set context #}
+           user_watchlist_ids, user_viewed_ids — set context #
+   Task F4: `user_tv_viewed_ids` is the CANONICAL, progress-derived TV
+   viewed set (see utils.collections.canonical_tv_viewed_keys). The card
+   badge and both controls read one boolean, `card_viewed`, so they cannot
+   disagree, and no Viewed formula is duplicated in this template. Movies
+   keep the user_viewed mirror, which is canonical for them. #}
 {% set is_movie = media_type == 'movie' %}
 {% set card_cls = 'movie-card' if is_movie else 'show-card' %}
 {% set img_cls = 'movie-image' if is_movie else 'show-image' %}
 {% set item_title = item.title if is_movie else item.name %}
 {% set item_date = item.release_date if is_movie else item.first_air_date %}
+{% set card_viewed = ((item.id, 'tv') in user_tv_viewed_ids | default(()))
+                     if not is_movie
+                     else ((item.id, 'movie') in user_viewed_ids) %}
 <div class="{{ card_cls }} glass-effect rounded-lg overflow-hidden">
   <a href="/{{ media_type }}/{{ item.id }}">
     <img
@@ -27,7 +40,7 @@
   {% if current_user.is_authenticated %}
   <div class="px-4 pb-4 flex flex-wrap gap-2 justify-center">
     <!-- Status indicators -->
-    {% if (item.id, media_type) in user_viewed_ids %}
+    {% if card_viewed %}
     <span
       class="text-xs bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1"
     >
@@ -70,30 +83,11 @@
     <!-- Action buttons - allow adding to multiple lists -->
     <div class="flex flex-wrap gap-1 justify-center mt-2">
       {% if (item.id, media_type) not in user_watchlist_ids %}
-      <a
-        href="{{ url_for('main.add_to_watchlist', media_id=item.id, media_type=media_type) }}"
-        class="text-xs bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-2 py-1 rounded flex items-center gap-1"
-        title="Add to Watchlist"
-      >
-        <svg
-          class="w-3 h-3"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path>
-        </svg>
-        WL
-      </a>
-      {% endif %} {% if (item.id, media_type) not in user_viewed_ids %}
+      {{ post_action(url_for('main.add_to_watchlist', media_id=item.id, media_type=media_type), classes='text-xs bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white px-2 py-1 rounded flex items-center gap-1', title='Add to Watchlist', icon=ICON) }}
+      {% endif %} {% if not card_viewed %}
         Wish
       </a>
-      {% endif %} {% if (item.id, media_type) not in user_viewed_ids %}
+      {% endif %} {% if not card_viewed %}
       {% if is_movie %}
       {# One-tap quick log — creates today's watch event via /api/media/<id>/log.
          The action wording distinguishes state (✓ Viewed badge above) from
@@ -123,29 +117,6 @@
         <span class="ql-log-label">Log Watched</span>
       </button>
       {% else %}
-      <a
-        href="{{ url_for('main.mark_as_viewed', media_id=item.id, media_type=media_type) }}"
-        class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1"
-        title="Mark as Viewed"
-      >
-        <svg
-          class="w-3 h-3"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path>
-        </svg>
-        View
-      </a>
+      {{ post_action(url_for('main.mark_as_viewed', media_id=item.id, media_type=media_type), classes='text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded flex items-center gap-1', title='Mark as Viewed', icon=ICON) }}
       {% endif %}
       {% endif %}
-    </div>
-  </div>
-  {% endif %}
-</div>

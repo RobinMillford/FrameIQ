@@ -211,6 +211,27 @@ def find_next_episode(user_id, show_id, after=None, counts=None):
         for u in UpcomingEpisode.query.filter_by(show_id=show_id).all()
     }
 
+    return _select_next_episode(counts, watched, upcoming, today, after=after)
+
+
+def _select_next_episode(counts, watched, upcoming, today, after=None):
+    """THE canonical next-episode rule (pure, no I/O).
+
+    Earliest unwatched, non-special episode of a show, validated against
+    authoritative TMDb season sizes so a nonexistent episode is never
+    emitted. Shared by ``find_next_episode`` (Continue Watching, the
+    just-finished promotion) and ``next_episode_map`` (batched page reads
+    such as the profile TV rows) — one rule, so the surfaces cannot drift.
+
+    ``counts``   — ``{season: episode_count}`` (specials already excluded by
+                   ``season_episode_counts``)
+    ``watched``  — set of ``(season, episode)`` positions
+    ``upcoming`` — ``{(season, episode): UpcomingEpisode}`` synced air rows
+    ``today``    — date used for the aired verdict (no row / no date ⇒ aired,
+                   so shows outside the sync window still continue)
+    ``after``    — optional just-finished position; the search resumes at the
+                   first position AFTER it
+    """
     for sn in sorted(counts):
         if after is not None and sn < after[0]:
             continue
@@ -232,17 +253,114 @@ def find_next_episode(user_id, show_id, after=None, counts=None):
     return None
 
 
+def watched_episode_keys_bulk(user_id, show_ids):
+    """``{show_id: {(season, episode)}}`` for many shows — ONE query.
+
+    Rewatch rows are excluded exactly like ``watched_episode_keys``, so a
+    rewatch can never change which episode is next.
+    """
+    from models import TVEpisodeWatch, db
+
+    ids = list(dict.fromkeys(int(s) for s in show_ids if s))
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(
+            TVEpisodeWatch.show_id,
+            TVEpisodeWatch.season_number,
+            TVEpisodeWatch.episode_number,
+        )
+        .filter(
+            TVEpisodeWatch.user_id == user_id,
+            TVEpisodeWatch.show_id.in_(ids),
+            TVEpisodeWatch.is_rewatch == False,  # noqa: E712
+        )
+        .all()
+    )
+    positions = {}
+    for show_id, sn, en in rows:
+        positions.setdefault(show_id, set()).add((sn, en))
+    return positions
+
+
+def _upcoming_rows_bulk(show_ids):
+    """``{show_id: {(season, episode): UpcomingEpisode}}`` — ONE query."""
+    from models import UpcomingEpisode
+
+    ids = list(dict.fromkeys(int(s) for s in show_ids if s))
+    if not ids:
+        return {}
+    by_show = {}
+    for row in (UpcomingEpisode.query
+                .filter(UpcomingEpisode.show_id.in_(ids)).all()):
+        by_show.setdefault(row.show_id, {})[
+            (row.season_number, row.episode_number)] = row
+    return by_show
+
+
+def next_episode_map(user_id, show_ids, after=None, details_loader=None):
+    """Batched ``{show_id: next_episode}`` — the SAME rule as
+    ``find_next_episode``, for a whole page of shows at once.
+
+    Two SQL statements regardless of how many shows (or episodes) the page
+    carries, plus one *show*-level details lookup per show through the
+    existing cached/memoized TMDb layer — never a per-episode request. Shows
+    with no authoritative season data, or with nothing left to watch, are
+    simply absent from the map (callers render no label for those).
+    """
+    from datetime import datetime
+
+    ids = list(dict.fromkeys(int(s) for s in show_ids if s))
+    if not ids:
+        return {}
+
+    watched_by_show = watched_episode_keys_bulk(user_id, ids)
+    upcoming_by_show = _upcoming_rows_bulk(ids)
+    today = datetime.utcnow().date()
+    loader = details_loader or show_details
+
+    result = {}
+    for show_id in ids:
+        try:
+            details = loader(show_id)
+        except Exception:  # degrade: a broken lookup yields no label
+            details = None
+        counts = season_episode_counts(details)
+        if not counts:
+            continue
+        episode = _select_next_episode(
+            counts, watched_by_show.get(show_id, frozenset()),
+            upcoming_by_show.get(show_id, {}), today, after=after)
+        if episode:
+            result[show_id] = episode
+    return result
+
+
 def finish_tv_episode(user_id, show_id, season, episode):
     """Mark the exact episode watched via the canonical TV tracking path and
     promote the next valid unwatched episode into Continue Watching.
 
     Returns dict describing the outcome; never invents episodes.
+
+    Task F4: the canonical core now refuses an episode outside the aired
+    universe, so a "Finished" click on a not-yet-aired episode is reported
+    back as ``{'finished': False, 'reason': ...}`` and mutates NOTHING —
+    no watch row, no Continue Watching edit. The caller's metadata is also
+    safe here: this path passes no ``data``, and the core now treats an
+    absent key as "leave the stored value alone" rather than clearing it.
     """
+    from api.user_view_state import EpisodeNotAired
     from routes.tv_tracking import mark_episode_watched_core
 
-    # Canonical watched state first (creates/maintains TVShowProgress,
-    # TVEpisodeWatch, season progress, show completion gating).
-    mark_episode_watched_core(user_id, show_id, season, episode)
+    try:
+        # Canonical watched state first (creates/maintains TVShowProgress,
+        # TVEpisodeWatch, season progress, show completion gating).
+        mark_episode_watched_core(user_id, show_id, season, episode)
+    except EpisodeNotAired as e:
+        logger.info(
+            "Continue Watching finish rejected: show=%s S%sE%s user=%s (%s)",
+            show_id, season, episode, user_id, e.reason)
+        return {"finished": False, "next": None, "reason": e.reason}
 
     # The finished episode leaves Continue Watching.
     remove_item(user_id, "tv", show_id, season=season, episode=episode)

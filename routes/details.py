@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
+from api.user_view_state import tv_viewed_from_progress
 from datetime import datetime
 from models import UserListItem, DiaryEntry, Review, MediaItem
 from sqlalchemy.orm import joinedload
@@ -141,11 +142,16 @@ def tv_detail(show_id):
         # Overall aired-episode progress for the hero (shared contract,
         # api/user_view_state.py). Recomputed per request so a newly aired
         # episode immediately lowers a "100% watched" running show.
+        # Task F2: the hero Viewed badge and the Mark/Unmark action are
+        # derived from this SAME canonical payload (tv_viewed_from_progress)
+        # — ``user_viewed`` can never put a Viewed badge on a show whose
+        # canonical watched state is below 100% (spec §18).
         tv_progress = None
         if current_user.is_authenticated:
             from api.user_view_state import tv_aired_progress
             tv_progress = tv_aired_progress(
                 current_user, [show_id]).get(show_id)
+        tv_viewed = tv_viewed_from_progress(tv_progress)
 
         # Last-watched episode for Watch Now button (Continue Watching intent)
         watch_resume = None
@@ -171,6 +177,7 @@ def tv_detail(show_id):
                                user_lists_with_show=user_lists_with_show,
                                diary_entries=diary_entries,
                                tv_progress=tv_progress,
+                               tv_viewed=tv_viewed,
                                watch_resume=watch_resume,
                                today=datetime.now().strftime('%Y-%m-%d'))
     except Exception as e:

@@ -68,15 +68,15 @@ def test_wishlist_page_redirects_to_watchlist(auth_user, client):
 
 def test_add_to_wishlist_redirects_to_watchlist_add(auth_user, client):
     m = _media(880001)
-    resp = client.get(f'/add_to_wishlist/{m.tmdb_id}/movie',
-                      follow_redirects=False)
-    assert resp.status_code == 302
+    resp = client.post(f'/add_to_wishlist/{m.tmdb_id}/movie',
+                       follow_redirects=False)
+    assert resp.status_code == 307
     assert f'/add_to_watchlist/{m.tmdb_id}/movie' in resp.headers['Location']
 
 
 def test_add_to_wishlist_preserves_priority_param(auth_user, client):
     m = _media(880002)
-    resp = client.get(
+    resp = client.post(
         f'/add_to_wishlist/{m.tmdb_id}/movie?priority=high',
         follow_redirects=False)
     assert 'priority=high' in resp.headers['Location']
@@ -85,9 +85,11 @@ def test_add_to_wishlist_preserves_priority_param(auth_user, client):
 def test_remove_from_wishlist_redirects_to_watchlist_remove(
         auth_user, client):
     m = _media(880003)
-    resp = client.get(f'/remove_from_wishlist/{m.tmdb_id}/movie',
+    resp = client.post(f'/remove_from_wishlist/{m.tmdb_id}/movie',
                       follow_redirects=False)
-    assert resp.status_code == 302
+    # Task F4: 307 preserves POST across the redirect; a 302 would turn the
+    # follow-up into a GET and the POST-only destination would 405.
+    assert resp.status_code == 307
     assert (f'/remove_from_watchlist/{m.tmdb_id}/movie'
             in resp.headers['Location'])
 
@@ -95,8 +97,8 @@ def test_remove_from_wishlist_redirects_to_watchlist_remove(
 def test_legacy_wishlist_routes_require_auth(client):
     # No user logged in: legacy routes must not bypass login.
     assert client.get('/wishlist').status_code in (302, 401)
-    assert client.get('/add_to_wishlist/1/movie').status_code in (302, 401)
-    assert client.get('/remove_from_wishlist/1/movie').status_code in (302, 401)
+    assert client.post('/add_to_wishlist/1/movie').status_code in (302, 401)
+    assert client.post('/remove_from_wishlist/1/movie').status_code in (302, 401)
 
 
 def test_priority_api_rejects_wishlist_list_type(auth_user, client):
@@ -117,7 +119,7 @@ def test_wishlist_add_redirect_creates_watchlist_row_not_wishlist(
     # Chasing the legacy redirect performs a REAL watchlist add —
     # wishlist state can no longer be created anywhere.
     m = _media(880005)
-    client.get(f'/add_to_wishlist/{m.tmdb_id}/movie?priority=high',
+    client.post(f'/add_to_wishlist/{m.tmdb_id}/movie?priority=high',
                follow_redirects=True)
     rows = db.session.execute(user_watchlist.select().where(
         user_watchlist.c.user_id == auth_user.id)).fetchall()
@@ -132,12 +134,12 @@ def test_wishlist_add_redirect_creates_watchlist_row_not_wishlist(
 
 def test_watchlist_add_remove_still_works(auth_user, client):
     m = _media(880006)
-    client.get(f'/add_to_watchlist/{m.tmdb_id}/movie')
+    client.post(f'/add_to_watchlist/{m.tmdb_id}/movie')
     rows = db.session.execute(user_watchlist.select().where(
         user_watchlist.c.user_id == auth_user.id)).fetchall()
     assert len(rows) == 1
 
-    client.get(f'/remove_from_watchlist/{m.tmdb_id}/movie')
+    client.post(f'/remove_from_watchlist/{m.tmdb_id}/movie')
     rows = db.session.execute(user_watchlist.select().where(
         user_watchlist.c.user_id == auth_user.id)).fetchall()
     assert len(rows) == 0

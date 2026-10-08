@@ -292,50 +292,58 @@ def _build_recommendations(unique_user_items, max_total, max_per_item):
 def _build_tv_progress_rows(progress_rows):
     """Compact TV-progress rows for the profile surface (Phase 6).
 
-    Bounded: three batch queries total regardless of row count —
-    titles via one tmdb_id IN scan, last-watched positions via one
-    grouped scan. Percentages are half-up (deterministic UI math).
-    Tracking rows without episode data render a neutral note instead
-    of a fabricated percentage.
+    Bounded: one batched title scan, one batched canonical-progress read and
+    one batched canonical next-episode read — none of them grows with the
+    episode count of the shows involved. Percentages come from the canonical
+    aired-reality payload (Task F2) — the same source as /api/view-state,
+    /api/tv/<id>/aired-progress and the TV detail hero, so the profile can
+    never display a competing denominator. Tracking rows without canonical
+    progress render a neutral note instead of a fabricated percentage.
+
+    The "up next" label shares the canonical next-episode resolver with the
+    TV-tracking API and Continue Watching (Task F3): the earlier independent
+    ``max(season_number)`` / ``max(episode_number) + 1`` arithmetic could
+    emit an episode that does not exist (S2E11 when the real next episode is
+    S3E1, the first episode of the following season).
     """
     if not progress_rows:
         return []
     from models.media import MediaItem
-    from models.tv import TVEpisodeWatch
 
     show_ids = [p.show_id for p in progress_rows]
     titles = dict(
         db.session.query(MediaItem.tmdb_id, MediaItem.title)
         .filter(MediaItem.tmdb_id.in_(show_ids)).all())
 
-    positions = {}
-    if show_ids:
-        from sqlalchemy import func as _func
-        for show_id, season, episode in (
-                db.session.query(
-                    TVEpisodeWatch.show_id,
-                    _func.max(TVEpisodeWatch.season_number),
-                    _func.max(TVEpisodeWatch.episode_number))
-                .filter(TVEpisodeWatch.user_id == current_user.id,
-                        TVEpisodeWatch.show_id.in_(show_ids))
-                .group_by(TVEpisodeWatch.show_id).all()):
-            positions[show_id] = (season, episode)
+    # Task F2: percentages come from the canonical aired-reality payload
+    # (one batched read — never the stored counters, which a pre-F1
+    # legacy row can still carry). A tracked-but-not-started show has no
+    # canonical entry and renders the neutral "no episode progress" note.
+    from api.user_view_state import canonical_progress_map
+    canonical_by_show = canonical_progress_map(current_user, show_ids)
+
+    # Task F3: the next-episode label is resolved by the ONE canonical rule
+    # (api.continue_watching) in a single batched call for the whole page.
+    from api.continue_watching import next_episode_map
+    next_by_show = next_episode_map(current_user.id, show_ids)
 
     rows = []
     for progress in progress_rows:
-        total = progress.total_episodes or 0
-        watched = progress.watched_episodes or 0
-        percent = (min(100, int(watched * 100 / total + 0.5))
-                   if total > 0 else None)
-        season, episode = positions.get(progress.show_id, (None, None))
+        canonical = canonical_by_show.get(progress.show_id)
+        if canonical:
+            percent = min(100, int(canonical['percent'] + 0.5))
+        else:
+            percent = None
+        next_episode = next_by_show.get(progress.show_id)
         rows.append({
             "show_id": progress.show_id,
             "title": titles.get(progress.show_id, "Untitled show"),
             "status_label": (progress.status or "tracking")
             .replace("_", " ").capitalize(),
             "percent": percent,
-            "next_label": (f"S{season}E{episode + 1} up next"
-                           if season is not None else None),
+            "next_label": (
+                f"S{next_episode['season']}E{next_episode['episode']} up next"
+                if next_episode else None),
         })
     return rows
 

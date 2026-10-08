@@ -694,7 +694,7 @@ def test_mark_as_viewed_route_syncs_tv_state(client, factory, stub_details):
     factory.future(SHOW_ID, 1, 3)
     _login(client, u)
 
-    r = client.get(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
+    r = client.post(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
     assert r.status_code == 200
     assert _watched_positions(u.id, SHOW_ID) == {(1, 1), (1, 2)}
     assert (SHOW_ID, "tv") in uvs.user_viewed_keys(u)
@@ -710,7 +710,7 @@ def test_mark_as_viewed_route_user_scoped(client, factory, stub_details):
     factory.aired(SHOW_ID, 1, 2)
     _login(client, a)
 
-    r = client.get(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
+    r = client.post(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
     assert r.status_code == 200
     assert _watched_positions(a.id, SHOW_ID) == {(1, 1), (1, 2)}
     assert _watched_positions(b.id, SHOW_ID) == set()
@@ -724,7 +724,7 @@ def test_mark_as_viewed_route_anonymous_cannot_bulk_mark(
     DETAILS_CACHE[SHOW_ID] = _details(1, season=1)
     factory.aired(SHOW_ID, 1, 1)
 
-    r = client.get(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=False)
+    r = client.post(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=False)
     assert r.status_code in (301, 302)
     assert _watched_positions(u.id, SHOW_ID) == set()
     assert (SHOW_ID, "tv") not in uvs.user_viewed_keys(u)
@@ -737,7 +737,7 @@ def test_mark_as_viewed_movie_route_untouched(client, factory):
     factory.media(MOVIE_ID, "movie", "Just A Movie")
     _login(client, u)
 
-    r = client.get(f"/mark_as_viewed/{MOVIE_ID}/movie",
+    r = client.post(f"/mark_as_viewed/{MOVIE_ID}/movie",
                    follow_redirects=True)
     assert r.status_code == 200
     assert (MOVIE_ID, "movie") in uvs.user_viewed_keys(u)
@@ -761,7 +761,7 @@ def test_cross_surface_detail_matches_payloads(client, factory,
             factory.aired(SHOW_ID, season, ep)
     factory.aired(SHOW_ID, 4, 1)
     _login(client, u)
-    client.get(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
+    client.post(f"/mark_as_viewed/{SHOW_ID}/tv", follow_redirects=True)
 
     # shared page payload (homepage/browse/trending/For You/CineBot source)
     r = client.get(f"/api/view-state?tv={SHOW_ID}")

@@ -179,6 +179,32 @@ def test_ci_validation_gates_present_in_order(ci):
     assert idxs == sorted(idxs)
 
 
+def test_ci_test_job_is_offline_and_needs_no_tmdb_secret(ci_raw, ci):
+    """Task F3: the ordinary suite must not depend on a TMDb credential.
+
+    The offline boundary (tests/tmdb_offline.py) serves every TMDb payload
+    from fixtures and fails loudly on any other outbound connection, so CI
+    supplies a throwaway placeholder rather than a repo secret. Re-injecting
+    `secrets.TMDB_API_KEY` here would silently reintroduce a network
+    dependency and make CI results depend on a third party.
+    """
+    step = next(s for s in ci["jobs"]["test"]["steps"]
+                if s.get("name") == "Full test suite")
+    assert "secrets.TMDB_API_KEY" not in step["env"]["TMDB_API_KEY"], (
+        "the offline suite must not require a TMDb secret")
+    assert step["env"]["TMDB_API_KEY"], "a throwaway placeholder is expected"
+
+    # The default command is the plain offline suite; the opt-in integration
+    # layer is deselected by pyproject's addopts, not by editing this run.
+    assert "pytest tests/" in step["run"]
+    assert "-m tmdb" not in step["run"]
+    # ...and the marker itself must be registered so the opt-in layer does
+    # not emit PytestUnknownMarkWarning.
+    pyproject = (Path("pyproject.toml")).read_text(encoding="utf-8")
+    assert '"tmdb' in pyproject or "'tmdb" in pyproject
+    assert 'not tmdb' in pyproject
+
+
 def test_ci_migrations_are_never_executed(ci_raw):
     # py_compile only — executing migrations in CI would touch nothing
     # (no DB) but the convention forbids it anyway.

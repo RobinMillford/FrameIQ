@@ -159,9 +159,60 @@
                     </button>
                 </div>
             </form>
+
+            <!-- Your data — account export (Task F5) -->
+            <section id="account-export"
+                     class="mt-8 border-t border-gray-700 pt-6"
+                     aria-labelledby="account-export-heading">
+                <h2 id="account-export-heading" class="text-lg font-semibold mb-1">
+                    Your data
+                </h2>
+                <p class="text-gray-400 text-sm mb-4">
+                    Download a copy of your FrameIQ account data.
+                </p>
+
+                <div class="space-y-4">
+                    <div class="bg-gray-800/40 border border-gray-700 rounded-lg p-4">
+                        <h3 class="font-medium text-white mb-1">JSON</h3>
+                        <p class="text-gray-400 text-sm mb-3">
+                            Complete machine-readable export — your profile,
+                            watch history, TV episodes, ratings, reviews,
+                            lists, tags and preferences.
+                        </p>
+                        <a href="{{ url_for('main.export_account_json') }}"
+                           data-action="export-json"
+                           class="inline-flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white py-2 px-4 rounded transition duration-300 focus:outline-none focus:ring-2 focus:ring-[var(--accent-hi)] focus:ring-offset-2 focus:ring-offset-gray-900">
+                            Download JSON
+                        </a>
+                    </div>
+
+                    <div class="bg-gray-800/40 border border-gray-700 rounded-lg p-4">
+                        <h3 class="font-medium text-white mb-1">CSV</h3>
+                        <p class="text-gray-400 text-sm mb-3">
+                            Spreadsheet-friendly files for watch history,
+                            TV episodes, lists, reviews, ratings and tags,
+                            bundled as one ZIP with a README.
+                        </p>
+                        <a href="{{ url_for('main.export_account_csv') }}"
+                           data-action="export-csv"
+                           class="inline-flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded transition duration-300 focus:outline-none focus:ring-2 focus:ring-[var(--accent-hi)] focus:ring-offset-2 focus:ring-offset-gray-900">
+                            Download CSV bundle
+                        </a>
+                    </div>
+                </div>
+
+                <p class="text-gray-500 text-xs mt-4">
+                    Exports contain only your own data and are never cached.
+                    JSON is the complete export; the CSV files are
+                    per-domain views of the same data.
+                </p>
+                <p id="export-status" role="status" aria-live="polite"
+                   class="mt-2 text-sm text-gray-300 empty:hidden"></p>
+            </section>
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/my-services.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/account-export.js') }}"></script>
 </body>
 </html>

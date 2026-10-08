@@ -728,25 +728,35 @@ def _load_tmdb_keys(items):
     return out
 
 
-def _apply_tv_progress(items, tmdb_by_item, progress_rows):
-    """Stamp watched state + progress for TV items (helper, keeps caller flat)."""
+def _apply_tv_progress(items, tmdb_by_item, progress_rows,
+                       canonical_by_show=None):
+    """Stamp watched state + progress for TV items (helper, keeps caller flat).
+
+    Task F2: ``watch_progress`` comes from the CANONICAL aired-reality
+    payload (``canonical_by_show`` from canonical_progress_map) — never
+    the stored counters, which a pre-F1 legacy row can still carry
+    (spec §15: stored 8/8 while canonical is 38/38 must read 38/38 100%,
+    and a tracked-but-not-started show must read 0, not 8/8). ``status``
+    on the tracking row remains the 'watched'/'watching' intent label.
+    """
     progress_by_show = {p.show_id: p for p in progress_rows}
+    canonical_by_show = canonical_by_show or {}
     for item in items:
         key = tmdb_by_item.get(item['id'])
         if key and key[0] in progress_by_show:
             p = progress_by_show[key[0]]
             item['watched'] = ('watched' if p.status == 'completed'
                                else 'watching')
-            total = p.total_episodes or 0
-            if total > 0:
+            canonical = canonical_by_show.get(key[0])
+            if canonical and canonical['aired'] > 0:
                 # Half-up rounding (62.5% -> 63%): deterministic UI math,
-                # independent of Python's banker's rounding.
+                # independent of Python's banker's rounding. Percent is
+                # the canonical value — no surface recomputes a ratio.
                 item['watch_progress'] = {
-                    'watched': p.watched_episodes or 0,
-                    'total': total,
+                    'watched': canonical['watched'],
+                    'total': canonical['aired'],
                     'percent': min(100,
-                                   int((p.watched_episodes or 0) * 100
-                                       / total + 0.5)),
+                                   int(canonical['percent'] + 0.5)),
                 }
 
 
@@ -810,12 +820,18 @@ def _enrich_items_with_watched_state(items):
 
     # Batch 3: TV progress rows (one scan; TVShowProgress.show_id is the
     # TMDb show id, so TV items resolve through the serialized media.id).
+    # Progress percentages come from the canonical aired-reality payload
+    # (Task F2) — one batched read, never the stored legacy counters.
     if tmdb_show_ids:
         progress_rows = (TVShowProgress.query
                          .filter(TVShowProgress.user_id == viewer_id,
                                  TVShowProgress.show_id.in_(tmdb_show_ids))
                          .all())
-        _apply_tv_progress(items, _load_tmdb_keys(items), progress_rows)
+        from api.user_view_state import canonical_progress_map
+        canonical_by_show = canonical_progress_map(
+            current_user, sorted(tmdb_show_ids))
+        _apply_tv_progress(items, _load_tmdb_keys(items), progress_rows,
+                           canonical_by_show)
 
 
 def _comments_pages(user_list):

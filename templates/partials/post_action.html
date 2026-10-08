@@ -1,0 +1,37 @@
+{# Task F4 — a CSRF-protected POST action that looks like the link-button it replaces.
+
+   The collection mutations (mark_as_viewed / remove_from_viewed /
+   add_to_watchlist / remove_from_watchlist) used to be <a href> links, which
+   meant a state-changing GET with no CSRF protection — Flask-WTF's
+   CSRFProtect only guards unsafe methods, so any page could trigger the
+   write with an <img src>. They are POST now.
+
+   This macro keeps every call site a single line and preserves the previous
+   appearance:
+
+     * `class="contents"` on the <form> makes the button the direct flex/grid
+       child of whatever container the link used to sit in, so wrapping the
+       control in a form does not disturb the surrounding layout (the F1/F2
+       browser suites assert no horizontal overflow at 320–1440px).
+     * the button carries `appearance-none border-0 bg-transparent p-0` to
+       cancel browser button chrome, then the caller's own classes.
+     * the CSRF token is rendered explicitly rather than left to the
+       base.html auto-inject script, so the control still works if that
+       script has not run.
+
+   Params: action (url), label (visible text), classes, title, icon (svg
+   markup, rendered raw), confirm (browser confirm text), fields (extra
+   hidden inputs), name (stable ``data-action`` hook for verification
+   scripts, so a script never has to match on element type or copy). #}
+{% macro post_action(action, label='', classes='', title='', icon='',
+                     confirm='', fields=None, name='') -%}
+<form method="post" action="{{ action }}" class="contents"{% if confirm %} onsubmit="return confirm('{{ confirm }}');"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {%- if fields %}
+  {% for field_name, value in fields.items() %}
+  <input type="hidden" name="{{ field_name }}" value="{{ value }}">
+  {%- endfor %}
+  {%- endif %}
+  <button type="submit" class="appearance-none border-0 bg-transparent p-0 cursor-pointer font-inherit {{ classes }}" title="{{ title }}"{% if label %} aria-label="{{ label }}"{% endif %}{% if name %} data-action="{{ name }}"{% endif %}>{{ icon|safe }}{{ label }}</button>
+</form>
+{%- endmacro %}

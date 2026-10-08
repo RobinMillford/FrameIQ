@@ -193,7 +193,7 @@ python app.py          # http://localhost:5000
 ### Run Tests
 
 ```bash
-pytest tests/ -v        # 143 tests, ~45s
+pytest tests/ -v        # offline suite (~7 min), no TMDb key needed
 uv run flake8 .         # lint (max-line 127, complexity 10)
 ```
 
@@ -336,7 +336,7 @@ FrameIQ/
 
 | Workflow | Trigger | Actions |
 |----------|---------|---------|
-| **ci-cd.yml** | Push to `main`/`develop` | pytest (143) + flake8 |
+| **ci-cd.yml** | Push to `main`/`develop` | offline pytest + flake8 |
 | **deploy.yml** | Push to `main` (after CI pass) | SSH → VPS → `make deploy` |
 | **sync-upcoming-episodes.yml** | Daily 02:00 UTC | Sync TMDb → PostgreSQL |
 
@@ -348,8 +348,10 @@ Health: `/health` (app) and `/agent_health` (chat graph loaded?) — `make statu
 
 ## 🧪 Testing & Quality
 
+The ordinary test suite is **offline**: no `TMDB_API_KEY`, no DNS, no internet.
+
 ```bash
-# Full suite (143 tests)
+# Full offline suite (the default, and what CI runs)
 pytest tests/
 
 # Smoke only
@@ -362,7 +364,41 @@ pytest tests/test_models.py
 pytest -k "test_name"
 ```
 
-**Quality gates:** 143 tests passing • flake8 clean • vulture clean • 0 secrets • 0 dead code
+### How the offline boundary works
+
+Every TMDb payload is served from deterministic fixtures, so tests exercise
+the real cache, fetchers, parsers and resolvers against fake payloads rather
+than against a live service:
+
+| Concern | Where |
+|---|---|
+| Fixture payloads + fake transport | `tests/tmdb_offline.py` |
+| Network guard + per-test isolation | `tests/conftest.py` |
+| Shared deterministic TV fixtures | `tests/tv_fixtures.py` |
+| The contract itself (pinned) | `tests/test_tmdb_offline.py` |
+
+`requests` is intercepted at `requests.sessions.Session.send`, so an
+unregistered TMDb endpoint returns the real "invalid API key" payload and any
+*other* host raises immediately. Raw sockets, `socket.getaddrinfo`,
+`httpx` and `urllib` are blocked too — an accidental request fails loudly
+with `Unexpected network access during offline test: <url>` rather than
+silently reaching `api.themoviedb.org`.
+
+### TMDb integration tests (opt-in, needs a real key)
+
+Genuine external verification lives behind a marker and is deselected by
+default:
+
+```bash
+pytest -m tmdb             # real TMDb; requires TMDB_API_KEY in the env
+pytest -m "not tmdb"       # the offline suite (same as plain `pytest tests/`)
+```
+
+Browser/data verification scripts under `scripts/` (`verify_tv_*_browser.py`)
+are a separate, manual layer: they use a configured TMDb key and are never
+part of `pytest tests/`.
+
+**Quality gates:** offline suite green with no TMDb secret • flake8 clean • vulture clean • 0 secrets • 0 dead code
 
 ---
 

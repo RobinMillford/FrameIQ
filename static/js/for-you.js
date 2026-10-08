@@ -260,9 +260,19 @@
         if (!markBusy(card)) return;
         // Canonical watchlist persistence first; the saved learning event
         // is recorded ONLY after it succeeds (never a fake save).
+        //
+        // Task F4: this is a POST now. The route used to be a GET, which
+        // meant a state-changing request reachable cross-site without a
+        // token; it is protected by the app's existing CSRFProtect, so the
+        // token comes from the same meta tag the other POSTs in this file
+        // already read.
         fetch(SAVE_URL_BASE + item.tmdb_id + '/' + item.media_type, {
+            method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Accept': 'text/html' }
+            headers: {
+                'Accept': 'text/html',
+                'X-CSRFToken': csrfToken()
+            }
         }).then(function (res) {
             if (!res.ok) throw new Error('save HTTP ' + res.status);
             queueFeedback(buildEvent(item, 'saved', position));
