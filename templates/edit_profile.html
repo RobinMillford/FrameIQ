@@ -209,10 +209,146 @@
                 <p id="export-status" role="status" aria-live="polite"
                    class="mt-2 text-sm text-gray-300 empty:hidden"></p>
             </section>
+
+            <!-- Account Data Import (Task F6) -->
+            <section id="account-import"
+                     class="mt-8 border-t border-gray-700 pt-6"
+                     aria-labelledby="account-import-heading">
+                <h2 id="account-import-heading" class="text-lg font-semibold mb-1">
+                    Import your data
+                </h2>
+                <p class="text-gray-400 text-sm mb-2">
+                    Bring your watch history in from another service. This
+                    <strong class="text-gray-300">adds watch-history data</strong>
+                    to your account.
+                </p>
+                <p class="text-gray-500 text-xs mb-4">
+                    Nothing is saved until you review the preview and confirm.
+                    Only titles you have already opened in FrameIQ can be
+                    matched.
+                </p>
+
+                <div class="space-y-4">
+                    <div class="bg-gray-800/40 border border-gray-700 rounded-lg p-4">
+                        <h3 class="font-medium text-white mb-1">Letterboxd</h3>
+                        <p class="text-gray-400 text-sm mb-3">
+                            Upload your Letterboxd data export (a ZIP containing
+                            <code class="text-gray-300">watched.csv</code>).
+                        </p>
+                        <label for="import-file-letterboxd"
+                               class="block text-gray-300 text-sm mb-1">
+                            Letterboxd export file (.zip)
+                        </label>
+                        <input type="file" id="import-file-letterboxd"
+                               data-import-source="letterboxd"
+                               accept=".zip,application/zip"
+                               class="w-full text-sm text-gray-300 bg-gray-700
+                                      border border-gray-600 rounded px-3 py-2
+                                      file:mr-3 file:py-1 file:px-3
+                                      file:rounded file:border-0
+                                      file:bg-gray-600 file:text-white
+                                      focus:outline-none focus:ring-2
+                                      focus:ring-[var(--accent-hi)]">
+                        <button type="button"
+                                data-action="import-preview"
+                                data-source="letterboxd"
+                                class="mt-3 inline-flex items-center gap-2
+                                       bg-[var(--accent)] hover:bg-[var(--accent-hi)]
+                                       text-white py-2 px-4 rounded
+                                       transition duration-300
+                                       focus:outline-none focus:ring-2
+                                       focus:ring-[var(--accent-hi)]
+                                       focus:ring-offset-2
+                                       focus:ring-offset-gray-900">
+                            Preview Letterboxd import
+                        </button>
+                    </div>
+
+                    <div class="bg-gray-800/40 border border-gray-700 rounded-lg p-4">
+                        <h3 class="font-medium text-white mb-1">TV Time</h3>
+                        <p class="text-gray-400 text-sm mb-3">
+                            Upload your TV Time GDPR export
+                            (<code class="text-gray-300">.json</code>, or a
+                            <code class="text-gray-300">.zip</code> containing it).
+                        </p>
+                        <label for="import-file-tvtime"
+                               class="block text-gray-300 text-sm mb-1">
+                            TV Time export file (.json or .zip)
+                        </label>
+                        <input type="file" id="import-file-tvtime"
+                               data-import-source="tvtime"
+                               accept=".json,.zip,application/zip"
+                               class="w-full text-sm text-gray-300 bg-gray-700
+                                      border border-gray-600 rounded px-3 py-2
+                                      file:mr-3 file:py-1 file:px-3
+                                      file:rounded file:border-0
+                                      file:bg-gray-600 file:text-white
+                                      focus:outline-none focus:ring-2
+                                      focus:ring-[var(--accent-hi)]">
+                        <button type="button"
+                                data-action="import-preview"
+                                data-source="tvtime"
+                                class="mt-3 inline-flex items-center gap-2
+                                       bg-[var(--accent)] hover:bg-[var(--accent-hi)]
+                                       text-white py-2 px-4 rounded
+                                       transition duration-300
+                                       focus:outline-none focus:ring-2
+                                       focus:ring-[var(--accent-hi)]
+                                       focus:ring-offset-2
+                                       focus:ring-offset-gray-900">
+                            Preview TV Time import
+                        </button>
+                    </div>
+                </div>
+
+                <div id="import-preview-panel" class="hidden mt-6"
+                     aria-live="polite">
+                    <h3 class="font-medium text-white mb-2">
+                        Import preview
+                    </h3>
+                    <p class="text-gray-400 text-sm mb-3">
+                        Review what will be added, then confirm. Nothing has
+                        been saved yet.
+                    </p>
+                    <dl id="import-summary"
+                        class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4"></dl>
+
+                    <div id="import-samples" class="text-sm"></div>
+
+                    <div class="mt-4 flex flex-wrap gap-3">
+                        <button type="button" id="import-apply"
+                                data-action="import-apply"
+                                class="inline-flex items-center gap-2
+                                       bg-green-700 hover:bg-green-600
+                                       text-white py-2 px-4 rounded
+                                       transition duration-300
+                                       focus:outline-none focus:ring-2
+                                       focus:ring-green-400 focus:ring-offset-2
+                                       focus:ring-offset-gray-900">
+                            Confirm import
+                        </button>
+                        <button type="button" id="import-cancel"
+                                data-action="import-cancel"
+                                class="inline-flex items-center gap-2
+                                       bg-gray-600 hover:bg-gray-500
+                                       text-white py-2 px-4 rounded
+                                       transition duration-300
+                                       focus:outline-none focus:ring-2
+                                       focus:ring-gray-400 focus:ring-offset-2
+                                       focus:ring-offset-gray-900">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                <p id="import-error" role="alert"
+                   class="mt-4 text-sm text-red-400 empty:hidden"></p>
+            </section>
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/my-services.js') }}"></script>
     <script src="{{ url_for('static', filename='js/account-export.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/account-import.js') }}"></script>
 </body>
 </html>
