@@ -315,6 +315,59 @@
 
                     <div id="import-samples" class="text-sm"></div>
 
+                    <!-- Resolution (Task F7): nothing is auto-picked, so a
+                         title FrameIQ cannot identify is decided here. -->
+                    <div id="import-resolve-panel" class="hidden mt-5"
+                         aria-labelledby="import-resolve-heading">
+                        <h4 id="import-resolve-heading"
+                            class="text-white font-medium mb-1">
+                            Titles that need your choice
+                        </h4>
+                        <p class="text-gray-400 text-xs mb-3">
+                            FrameIQ will not guess which title you meant. Pick
+                            the right one for each, or leave it out — rows you
+                            skip are not imported.
+                        </p>
+                        <div id="import-resolve-list" class="space-y-4"></div>
+                        <div class="mt-4">
+                            <button type="button" id="import-resolve-refresh"
+                                    data-action="import-resolve-refresh"
+                                    class="inline-flex items-center gap-2
+                                           bg-gray-600 hover:bg-gray-500
+                                           text-white py-2 px-4 rounded
+                                           transition duration-300
+                                           focus:outline-none focus:ring-2
+                                           focus:ring-gray-400
+                                           focus:ring-offset-2
+                                           focus:ring-offset-gray-900">
+                                Update preview
+                            </button>
+                            <p id="import-resolve-status" role="status"
+                               aria-live="polite"
+                               class="mt-2 text-xs text-gray-400 empty:hidden"></p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label for="import-save-mappings"
+                               class="flex items-start gap-2 text-sm
+                                      text-gray-300 cursor-pointer">
+                            <input type="checkbox" id="import-save-mappings"
+                                   class="mt-1 rounded border-gray-600
+                                          bg-gray-700 text-[var(--accent-hi)]
+                                          focus:ring-2
+                                          focus:ring-[var(--accent-hi)]">
+                            <span>
+                                Remember these matches for next time
+                                <span class="block text-xs text-gray-500">
+                                    Saves which FrameIQ title each external title
+                                    is. You can change or remove them later.
+                                    Nothing is saved if you leave this unticked.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
                     <div class="mt-4 flex flex-wrap gap-3">
                         <button type="button" id="import-apply"
                                 data-action="import-apply"
@@ -343,6 +396,29 @@
 
                 <p id="import-error" role="alert"
                    class="mt-4 text-sm text-red-400 empty:hidden"></p>
+            </section>
+
+            <!-- Saved import matches (Task F7). Removing one never touches the
+                 watch history it helped create. -->
+            <section id="import-mappings"
+                     class="mt-8 border-t border-gray-700 pt-6"
+                     aria-labelledby="import-mappings-heading">
+                <h2 id="import-mappings-heading"
+                    class="text-lg font-semibold mb-1">
+                    Saved import matches
+                </h2>
+                <p class="text-gray-400 text-sm mb-2">
+                    Titles you have told FrameIQ how to recognise when you
+                    import. These are checked first, before any automatic
+                    matching.
+                </p>
+                <p class="text-gray-500 text-xs mb-4">
+                    Removing a match only removes the shortcut. Anything it
+                    already imported stays in your history.
+                </p>
+                <div id="import-mappings-list"
+                     class="space-y-2"
+                     aria-live="polite"></div>
             </section>
         </div>
     </div>
