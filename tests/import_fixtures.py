@@ -252,3 +252,101 @@ def tvtime_tmdb_shape(show_tmdb=TVTIME_SHOW_TMDB, episodes_per_season=3,
 
 def days_ago(count):
     return date.today() - timedelta(days=count)
+
+
+# ── Task F7: Letterboxd reviews.csv ──────────────────────────────────────────
+#
+# Letterboxd's documented export includes a `reviews.csv` whose `Review` column
+# is "Text/HTML ... accepts the same set of HTML tags as on the Letterboxd
+# website". These fixtures therefore carry REAL markup, not plain text, so the
+# suite proves the HTML is reduced to plain text rather than stored verbatim.
+
+LETTERBOXD_REVIEWS_HEADER = ['Date', 'Name', 'Year', 'Letterboxd URI',
+                             'Rating', 'Review']
+
+B_REVIEW_PLAIN = 'Plain review text that should survive untouched.'
+
+
+def letterboxd_reviews_rows():
+    """``reviews.csv`` rows covering the cases F7 must get right.
+
+    Includes: a multi-paragraph HTML body, inline tags, an HTML entity, a
+    review for a film that has NO watched.csv row, a review whose body is only
+    whitespace (which must not create a record), and a review with no URI
+    (which must be reported rather than invented).
+    """
+    return [
+        ['2021-03-04 21:00', 'The Matrix', '1999', '/film/the-matrix/',
+         '4.5', '<p>Groundbreaking and still sharp.</p>'
+                '<p>The second viewing landed differently.</p>'],
+        ['2021-04-10 20:30', 'The Matrix', '1999', '/film/the-matrix/1',
+         '4.0', '<em>Rewatch</em> with <strong>fresh</strong> eyes'],
+        ['2022-01-02 19:00', BENGALI_TITLE, '2019', '/film/abar-dekha/',
+         '4.5', '<p>Tom &amp; Jerry &lt;3</p>'],
+        ['2023-05-05 12:00', 'Review Only Film', '2020',
+         '/film/review-only/', '4', '<p>This film is not in watched.csv.</p>'],
+        ['2023-06-06 12:00', 'Blank Review Film', '2021',
+         '/film/blank-review/', '3', '   '],
+        ['2023-07-07 12:00', 'Review No URI', '2022', '', '3',
+         '<p>Cannot be identified.</p>'],
+    ]
+
+
+def build_letterboxd_zip_with_reviews(watched_rows=None, review_rows=None):
+    """A Letterboxd export carrying BOTH watched.csv and reviews.csv."""
+    watched_rows = (letterboxd_watched_rows() if watched_rows is None
+                    else watched_rows)
+    review_rows = (letterboxd_reviews_rows() if review_rows is None
+                   else review_rows)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        watched = io.StringIO(newline='')
+        writer = csv.writer(watched, lineterminator='\r\n')
+        writer.writerow(LETTERBOXD_HEADER)
+        writer.writerows(watched_rows)
+        archive.writestr('watched.csv', watched.getvalue())
+
+        reviews = io.StringIO(newline='')
+        writer = csv.writer(reviews, lineterminator='\r\n')
+        writer.writerow(LETTERBOXD_REVIEWS_HEADER)
+        writer.writerows(review_rows)
+        archive.writestr('reviews.csv', reviews.getvalue())
+    return buffer.getvalue()
+
+
+def build_letterboxd_reviews_without_body_column():
+    """reviews.csv with NO ``Review`` column.
+
+    The adapter must report this rather than silently treat the file as
+    review-free, which would look to the user like "I wrote no reviews".
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        watched = io.StringIO(newline='')
+        writer = csv.writer(watched, lineterminator='\r\n')
+        writer.writerow(LETTERBOXD_HEADER)
+        writer.writerows(letterboxd_watched_rows())
+        archive.writestr('watched.csv', watched.getvalue())
+        archive.writestr('reviews.csv',
+                         'Date,Name,Year,Letterboxd URI,Rating\r\n'
+                         '2021-03-04,The Matrix,1999,/film/the-matrix/,4.5\r\n')
+    return buffer.getvalue()
+
+
+def build_letterboxd_reviews_only(review_rows=None):
+    """A ZIP with reviews.csv but NO watched.csv.
+
+    Must be rejected outright: without watched.csv this is not a usable
+    history import, and inventing watch events from reviews would fabricate
+    history.
+    """
+    review_rows = (letterboxd_reviews_rows() if review_rows is None
+                   else review_rows)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        reviews = io.StringIO(newline='')
+        writer = csv.writer(reviews, lineterminator='\r\n')
+        writer.writerow(LETTERBOXD_REVIEWS_HEADER)
+        writer.writerows(review_rows)
+        archive.writestr('reviews.csv', reviews.getvalue())
+    return buffer.getvalue()
