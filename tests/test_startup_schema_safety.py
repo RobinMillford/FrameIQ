@@ -472,3 +472,232 @@ class TestF7MigrationUnderNewRegime:
                           scratch_db)
         assert rc == 0, output
         assert 'BOOTED' in output
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# The convergence migration must fail CLOSED, not silently create whatever a
+# future model happens to declare.
+# ════════════════════════════════════════════════════════════════════════════
+
+class TestConvergenceIsBounded:
+    """The repair set is fixed, and anything outside it stops the run.
+
+    Without this bound, adding a model in some future release would silently
+    become production DDL the next time this script ran — the exact hazard a
+    bounded repair exists to remove.
+    """
+
+    def _migration(self):
+        import migrates.migrate_schema_convergence as conv
+        return conv
+
+    def _run(self, database_url):
+        env = _child_env(database_url, SKIP_SCHEMA_GUARD='1')
+        result = subprocess.run(
+            [sys.executable, 'migrates/migrate_schema_convergence.py'],
+            cwd=REPO, env=env, capture_output=True, text=True, timeout=300)
+        return result.returncode, result.stdout + result.stderr
+
+    def _build(self, path, missing, legacy=()):
+        """A database with every declared table EXCEPT `missing`."""
+        import models
+        from sqlalchemy.dialects import sqlite as sqlite_dialect
+        from sqlalchemy.schema import CreateTable
+        import sqlite3
+        dialect = sqlite_dialect.dialect()
+        if os.path.exists(path):
+            os.remove(path)
+        conn = sqlite3.connect(path)
+        conn.execute('PRAGMA foreign_keys=OFF')
+        for table in models.db.metadata.sorted_tables:
+            if table.name in missing:
+                continue
+            conn.execute(str(CreateTable(table).compile(dialect=dialect)))
+        for name in legacy:
+            conn.execute('CREATE TABLE %s (id INTEGER PRIMARY KEY, '
+                         'user_id INTEGER, updated_at DATETIME)' % name)
+        conn.commit()
+        conn.close()
+        return 'sqlite:///%s' % path
+
+    def _tables(self, url):
+        from sqlalchemy import inspect as _inspect
+        return set(_inspect(create_engine(url)).get_table_names())
+
+    def test_expected_repair_set_is_the_diagnosed_one(self):
+        """Eleven tables, each already created by a named migration."""
+        conv = self._migration()
+        assert len(conv.EXPECTED_REPAIR_SET) == 11
+        assert conv.EXPECTED_REPAIR_SET == {
+            'continue_watching_item', 'director', 'import_source_mapping',
+            'media_director', 'movie_release_date', 'notification',
+            'recommendation_feedback', 'smart_list', 'taste_profile',
+            'user_streaming_services', 'year_in_review_share',
+        }
+
+    def test_every_expected_table_has_its_own_migration(self):
+        """The allow-list is the union of existing migrations, not a guess."""
+        import re
+        sources = {}
+        for name in os.listdir(os.path.join(REPO, 'migrates')):
+            if not name.endswith('.py') or name == 'migrate_schema_convergence.py':
+                continue
+            with open(os.path.join(REPO, 'migrates', name)) as handle:
+                sources[name] = handle.read()
+
+        for table in self._migration().EXPECTED_REPAIR_SET:
+            creators = [name for name, body in sources.items()
+                        if re.search(r'\b%s\b' % re.escape(table), body)]
+            assert creators, (
+                '%s is allow-listed but no migration mentions it' % table)
+
+    def test_converges_the_exact_production_like_state(self, scratch_db):
+        """Scenario A: the diagnosed 34-table production shape."""
+        conv = self._migration()
+        legacy = ('user_taste_profile', 'user_similarity', 'user_wishlist')
+        url = self._build(
+            scratch_db.replace('sqlite:///', ''),
+            conv.EXPECTED_REPAIR_SET, legacy=legacy)
+        before = self._tables(url)
+
+        rc, output = self._run(url)
+        assert rc == 0, output
+        assert 'within the expected repair set' in output, output
+
+        created = self._tables(url) - before
+        assert created == conv.EXPECTED_REPAIR_SET, sorted(
+            created ^ conv.EXPECTED_REPAIR_SET)
+
+    def test_preserves_legacy_tables_rows_and_indexes(self, scratch_db):
+        """Requirement 6: nothing existing is disturbed."""
+        import sqlite3
+        conv = self._migration()
+        path = scratch_db.replace('sqlite:///', '')
+        url = self._build(path, conv.EXPECTED_REPAIR_SET,
+                          legacy=('user_taste_profile', 'user_similarity',
+                                  'user_wishlist'))
+        conn = sqlite3.connect(path)
+        conn.execute('CREATE INDEX idx_taste_profile_updated '
+                     'ON user_taste_profile(updated_at DESC)')
+        conn.execute('INSERT INTO user_taste_profile (id, updated_at) '
+                     "VALUES (1, CURRENT_TIMESTAMP)")
+        conn.execute('INSERT INTO user_similarity (id) VALUES (1)')
+        conn.execute('INSERT INTO user_wishlist (id) VALUES (1)')
+        conn.commit()
+        conn.close()
+
+        rc, output = self._run(url)
+        assert rc == 0, output
+
+        conn = sqlite3.connect(path)
+        assert conn.execute(
+            'SELECT COUNT(*) FROM user_taste_profile').fetchone()[0] == 1
+        assert conn.execute(
+            'SELECT COUNT(*) FROM user_similarity').fetchone()[0] == 1
+        assert conn.execute(
+            'SELECT COUNT(*) FROM user_wishlist').fetchone()[0] == 1
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'")}
+        assert 'idx_taste_profile_updated' in names, 'index was dropped'
+        conn.close()
+
+    def test_clean_database_is_a_no_op(self, scratch_db):
+        """Scenario B."""
+        path = scratch_db.replace('sqlite:///', '')
+        url = self._build(path, set())
+        rc, output = self._run(url)
+        assert rc == 0, output
+        assert 'nothing to do' in output, output
+
+    def test_empty_database_bootstrap_still_allowed(self, scratch_db):
+        """A brand-new database has nothing to protect."""
+        conv = self._migration()
+        ok, reason = conv.check_repair_is_expected(
+            list(conv.db.metadata.sorted_tables), set())
+        assert ok, reason
+        assert 'bootstrap' in reason
+
+    def test_refuses_an_unexpected_missing_table(self, scratch_db):
+        """Scenario C: the fail-closed branch, with NO partial repair."""
+        conv = self._migration()
+        assert conv.EXPECTED_REPAIR_SET, 'allow-list must not be empty'
+        path = scratch_db.replace('sqlite:///', '')
+        missing = conv.EXPECTED_REPAIR_SET | {'user_viewed'}
+        url = self._build(path, missing)
+        before = self._tables(url)
+
+        rc, output = self._run(url)
+        assert rc != 0, 'it ran despite unexpected drift: %s' % output
+        assert 'unexpected tables missing' in output, output
+        assert 'user_viewed' in output, output
+
+        assert self._tables(url) == before, (
+            'partial repair happened despite the refusal')
+        # The expected tables were NOT created either: the whole run stops.
+        assert 'taste_profile' not in self._tables(url)
+
+    def test_refuses_when_only_an_unexpected_table_is_missing(self, scratch_db):
+        """One unrelated gap is enough to stop the run."""
+        path = scratch_db.replace('sqlite:///', '')
+        url = self._build(path, {'review_like'})
+        before = self._tables(url)
+        rc, output = self._run(url)
+        assert rc != 0, output
+        assert self._tables(url) == before
+
+    def test_refuses_a_database_that_is_not_frameiq(self, scratch_db):
+        """Guards against running this against the wrong target entirely."""
+        import sqlite3
+        conv = self._migration()
+        path = scratch_db.replace('sqlite:///', '')
+        conn = sqlite3.connect(path)
+        conn.execute('CREATE TABLE something_else (id INTEGER PRIMARY KEY)')
+        conn.commit()
+        conn.close()
+        url = 'sqlite:///%s' % path
+
+        ok, reason = conv.check_repair_is_expected(
+            [conv.db.metadata.tables['taste_profile']],
+            {'something_else'})
+        assert not ok
+        assert 'does not look like a FrameIQ database' in reason
+
+        rc, output = self._run(url)
+        assert rc != 0, output
+
+    def test_gate_precedes_any_ddl(self, scratch_db):
+        """The refusal has to happen before the first CREATE TABLE."""
+        conv = self._migration()
+        path = scratch_db.replace('sqlite:///', '')
+        url = self._build(path, conv.EXPECTED_REPAIR_SET | {'tag'})
+        rc, output = self._run(url)
+        lines = output.splitlines()
+        gate = next(i for i, l in enumerate(lines) if 'refusing to run' in l)
+        ddl = [i for i, l in enumerate(lines) if l.strip().startswith('[DONE]')]
+        assert not ddl, 'DDL was attempted despite the refusal'
+        assert gate < (ddl[0] if ddl else len(lines))
+
+    def test_migration_never_drops_anything(self):
+        """Additive-only, stated as an executable property."""
+        import re
+        with open(os.path.join(REPO, 'migrates',
+                               'migrate_schema_convergence.py')) as handle:
+            source = handle.read()
+        code = re.sub(r'""".*?"""', '', source, flags=re.S)
+        for banned in ('DROP TABLE', 'DROP COLUMN', 'DROP INDEX', 'CASCADE',
+                       'DELETE FROM', 'TRUNCATE'):
+            assert banned not in code.upper(), banned
+
+    def test_guard_passes_after_a_bounded_convergence(self, scratch_db):
+        """Requirement 11."""
+        conv = self._migration()
+        path = scratch_db.replace('sqlite:///', '')
+        url = self._build(path, conv.EXPECTED_REPAIR_SET,
+                          legacy=('user_taste_profile', 'user_similarity',
+                                  'user_wishlist'))
+        rc, output = self._run(url)
+        assert rc == 0, output
+
+        rc, output = _run('from app import app; print("BOOTED")', url)
+        assert rc == 0, output
+        assert 'BOOTED' in output
