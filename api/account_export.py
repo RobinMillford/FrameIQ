@@ -1302,7 +1302,7 @@ def csv_domains(user):
 
 
 _README = """FrameIQ account data export
-================================
+--------------------------------
 
 Format : {format}
 Version: {version}
