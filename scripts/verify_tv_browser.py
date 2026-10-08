@@ -61,6 +61,30 @@ def check(name, cond, detail=""):
         FAILURES.append(name)
 
 
+def click_action(page, page_url, selector, timeout=15000):
+    """Activate a CSRF-protected collection control the way a user does.
+
+    Task F4: mark_as_viewed / remove_from_viewed are POST-only now — a
+    state-changing GET was reachable cross-site without a token, and GET now
+    answers 405. A verification script must therefore open the page that
+    renders the control and CLICK it, which is the real user path (and the
+    only one that carries the token).
+    """
+    page.goto(page_url, wait_until="domcontentloaded")
+    button = page.locator(selector).first
+    button.wait_for(timeout=timeout)
+    # Destructive controls carry an onsubmit="return confirm(...)" guard.
+    # Playwright DISMISSES dialogs by default, which makes confirm() return
+    # false and silently cancels the submit — so accept explicitly.
+    page.once("dialog", lambda dialog: dialog.accept())
+    # The control submits a POST that 302-redirects back, so wait for THAT
+    # navigation rather than for the already-settled page — otherwise the
+    # caller can read state before the write has landed.
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=timeout):
+        button.click()
+    page.wait_for_timeout(400)
+
+
 def main():
     from playwright.sync_api import sync_playwright
 
@@ -166,8 +190,8 @@ def main():
         check("P17 before mark: hero progress hidden (not started)",
               page.locator("[data-tv-progress]").count() == 0)
 
-        page.goto(f"{base}/mark_as_viewed/{RUNNING_ID}/tv",
-                  wait_until="domcontentloaded")
+        click_action(page, f"{base}/tv/{RUNNING_ID}",
+                     "[data-action=tv-mark-viewed]")
         page.goto(f"{base}/tv/{RUNNING_ID}",
                   wait_until="domcontentloaded")
         page.wait_for_load_state("domcontentloaded")
@@ -220,8 +244,8 @@ def main():
         check("P16 before mark: hero progress hidden (not started)",
               page.locator("[data-tv-progress]").count() == 0)
 
-        page.goto(f"{base}/mark_as_viewed/{BANSHEE_ID}/tv",
-                  wait_until="domcontentloaded")
+        click_action(page, f"{base}/tv/{BANSHEE_ID}",
+                     "[data-action=tv-mark-viewed]")
         page.goto(f"{base}/tv/{BANSHEE_ID}",
                   wait_until="domcontentloaded")
         page.wait_for_load_state("domcontentloaded")
@@ -258,14 +282,30 @@ def main():
                   per_season == {1: 10, 2: 10, 3: 10, 4: 8},
                   f"got {per_season}")
 
-        # Idempotency through the UI: second click inserts nothing.
-        page.goto(f"{base}/mark_as_viewed/{BANSHEE_ID}/tv",
-                  wait_until="domcontentloaded")
+        # Idempotency through the UI, Task F4: a canonically Viewed show now
+        # offers UNMARK (not a second Mark), which is the correct control for
+        # that state. So the repeat is driven honestly — unmark, then mark —
+        # which exercises the bulk write twice and is a stronger check than
+        # the old "click Mark again": the row count must return to exactly 38
+        # with no duplicates and no rewatch rows manufactured.
+        click_action(page, f"{base}/tv/{BANSHEE_ID}",
+                     "[data-action=tv-unmark-viewed]")
         with flask_app.app_context():
-            n = TVEpisodeWatch.query.filter_by(
+            cleared = TVEpisodeWatch.query.filter_by(
                 user_id=uid, show_id=BANSHEE_ID).count()
+            check("P16 UI unmark clears every canonical row",
+                  cleared == 0, f"got {cleared}")
+        click_action(page, f"{base}/tv/{BANSHEE_ID}",
+                     "[data-action=tv-mark-viewed]")
+        with flask_app.app_context():
+            rows = TVEpisodeWatch.query.filter_by(
+                user_id=uid, show_id=BANSHEE_ID).all()
+            n = len(rows)
             check("P16 repeated mark inserts zero additional rows",
                   n == 38, f"got {n}")
+            check("P16 repeated mark manufactures no rewatch rows",
+                  not any(r.is_rewatch for r in rows),
+                  f"{sum(1 for r in rows if r.is_rewatch)} rewatch rows")
 
         # Cross-surface: homepage / browse / trending / CineBot pages.
         for name, path in [("Homepage", "/"), ("Browse", "/tv_shows"),

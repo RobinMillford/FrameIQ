@@ -62,6 +62,30 @@ def check(name, cond, detail=""):
         FAILURES.append(name)
 
 
+def click_action(page, page_url, selector, timeout=15000):
+    """Activate a CSRF-protected collection control the way a user does.
+
+    Task F4: mark_as_viewed / remove_from_viewed are POST-only now — a
+    state-changing GET was reachable cross-site without a token, and GET now
+    answers 405. A verification script must therefore open the page that
+    renders the control and CLICK it, which is the real user path (and the
+    only one that carries the token).
+    """
+    page.goto(page_url, wait_until="domcontentloaded")
+    button = page.locator(selector).first
+    button.wait_for(timeout=timeout)
+    # Destructive controls carry an onsubmit="return confirm(...)" guard.
+    # Playwright DISMISSES dialogs by default, which makes confirm() return
+    # false and silently cancels the submit — so accept explicitly.
+    page.once("dialog", lambda dialog: dialog.accept())
+    # The control submits a POST that 302-redirects back, so wait for THAT
+    # navigation rather than for the already-settled page — otherwise the
+    # caller can read state before the write has landed.
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=timeout):
+        button.click()
+    page.wait_for_timeout(400)
+
+
 def main():
     from playwright.sync_api import sync_playwright
 
@@ -221,10 +245,13 @@ def main():
                     # a text-exact "Viewed" link that must not count.
                     "badge": page.locator(
                         "span.bg-green-600:has-text('Viewed')").count(),
+                    # Task F4: these are CSRF-protected POST buttons now,
+                    # so they are addressed by their stable data-action hook
+                    # rather than by element type and copy.
                     "mark": page.locator(
-                        "a:has-text('Mark as Viewed')").count(),
+                        "[data-action=tv-mark-viewed]").count(),
                     "unmark": page.locator(
-                        "a:has-text('Unmark Viewed')").count()}
+                        "[data-action=tv-unmark-viewed]").count()}
 
         def badge_count(page):
             return page.locator(
@@ -272,8 +299,8 @@ def main():
               db_watched_count(uid, BANSHEE_ID) == 38)
 
         # ══ F2-B: symmetric unmark → ALL rows cleared (§43-A) ═════════
-        page.goto(f"{base}/remove_from_viewed/{BANSHEE_ID}/tv",
-                  wait_until="domcontentloaded")
+        click_action(page, f"{base}/tv/{BANSHEE_ID}",
+                     "[data-action=tv-unmark-viewed]")
         page.wait_for_timeout(400)
         check("F2-B unmark clears ALL 38 canonical rows (option A)",
               db_watched_count(uid, BANSHEE_ID) == 0,
@@ -284,9 +311,9 @@ def main():
               page.locator("[data-tv-progress]").count() == 0)
         check("F2-B Viewed badge OFF", badge_count(page) == 0)
         check("F2-B Mark-as-Viewed offered again",
-              page.locator("a:has-text('Mark as Viewed')").count() >= 1)
+              page.locator("[data-action=tv-mark-viewed]").count() >= 1)
         check("F2-B Unmark action gone",
-              page.locator("a:has-text('Unmark Viewed')").count() == 0)
+              page.locator("[data-action=tv-unmark-viewed]").count() == 0)
         p = page.evaluate(
             "fetch('/api/tv/%d/progress').then(r => r.json())"
             % BANSHEE_ID)["progress"]

@@ -52,6 +52,30 @@ def check(name, cond, detail=""):
         FAILURES.append(name)
 
 
+def click_action(page, page_url, selector, timeout=15000):
+    """Activate a CSRF-protected collection control the way a user does.
+
+    Task F4: mark_as_viewed / remove_from_viewed are POST-only now — a
+    state-changing GET was reachable cross-site without a token, and GET now
+    answers 405. A verification script must therefore open the page that
+    renders the control and CLICK it, which is the real user path (and the
+    only one that carries the token).
+    """
+    page.goto(page_url, wait_until="domcontentloaded")
+    button = page.locator(selector).first
+    button.wait_for(timeout=timeout)
+    # Destructive controls carry an onsubmit="return confirm(...)" guard.
+    # Playwright DISMISSES dialogs by default, which makes confirm() return
+    # false and silently cancels the submit — so accept explicitly.
+    page.once("dialog", lambda dialog: dialog.accept())
+    # The control submits a POST that 302-redirects back, so wait for THAT
+    # navigation rather than for the already-settled page — otherwise the
+    # caller can read state before the write has landed.
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=timeout):
+        button.click()
+    page.wait_for_timeout(400)
+
+
 def main():
     from playwright.sync_api import sync_playwright
 
@@ -276,8 +300,8 @@ def main():
               "30 of 38 aired episodes" in hero.inner_text())
 
         # ══ F1-E: running show 25/25 → 25/26 → 26/26 ═════════════════
-        page.goto(f"{base}/mark_as_viewed/{RUNNING_ID}/tv",
-                  wait_until="domcontentloaded")
+        click_action(page, f"{base}/tv/{RUNNING_ID}",
+                     "[data-action=tv-mark-viewed]")
         page.goto(f"{base}/tv/{RUNNING_ID}", wait_until="domcontentloaded")
         hero = page.locator("[data-tv-progress]")
         hero.wait_for(timeout=10000)

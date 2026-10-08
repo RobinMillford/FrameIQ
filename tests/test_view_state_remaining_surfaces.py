@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from models import (db, MediaItem, TVEpisodeWatch, TVShowProgress,
+from models import (db, DiaryEntry, MediaItem, TVEpisodeWatch, TVShowProgress,
                     UpcomingEpisode)
 from models.associations import user_viewed, user_watchlist
 import api.user_view_state as uvs
@@ -105,6 +105,17 @@ def factory(db):
         ).delete(synchronize_session=False)
         TVShowProgress.query.filter(
             TVShowProgress.user_id.in_([u.id for u in users])
+        ).delete(synchronize_session=False)
+        # `test_diary_movie_log_creates_no_duplicate_records` posts a real
+        # quick-log, which writes a DiaryEntry. It used to outlive the test:
+        # every other module deletes its users, SQLite reuses the freed
+        # primary keys, and the orphan row then re-attached to whichever
+        # later test was handed user id 1 — inflating that module's
+        # total_watch_events by exactly one (the cross-file failure in
+        # test_statistics_tv_invariant.py). Journal rows are history in
+        # production; in tests they are residue and must go with the user.
+        DiaryEntry.query.filter(
+            DiaryEntry.user_id.in_([u.id for u in users])
         ).delete(synchronize_session=False)
         from models.associations import user_watchlist as _uw
         db.session.execute(user_viewed.delete().where(

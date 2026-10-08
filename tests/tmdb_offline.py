@@ -321,9 +321,21 @@ class TMDbOfflineRegistry:
     # -- registration -----------------------------------------------------
     def register(self, path_pattern, payload, host=None):
         """Register a payload for requests whose URL *path* matches
-        ``path_pattern`` (a regex, anchored with ``match``)."""
+        ``path_pattern`` (a regex, anchored with ``match``).
+
+        Re-registering the SAME pattern replaces the earlier payload instead
+        of queueing behind it. Without this, a test that registers an
+        endpoint and then registers it again with a changed payload (the
+        natural way to simulate "a new episode aired") would silently keep
+        serving the FIRST payload forever, because dispatch returns on the
+        first match — the second registration would be dead code that reads
+        as if it had taken effect.
+        """
         if isinstance(path_pattern, str):
             path_pattern = re.compile(path_pattern)
+        self._routes = [route for route in self._routes
+                        if not (route[0].pattern == path_pattern.pattern
+                                and route[1] == host)]
         self._routes.append((path_pattern, host, payload))
         return self
 
