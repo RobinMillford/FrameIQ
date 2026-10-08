@@ -280,4 +280,3 @@ Two changes came out of it, and both are now enforced by tests:
    production-looking target before opening a connection.
 
 No credentials, hostnames or connection strings are recorded in this note.
-

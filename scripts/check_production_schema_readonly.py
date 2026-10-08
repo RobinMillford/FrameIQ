@@ -94,31 +94,34 @@ def _yesno(value):
     return "present" if value else "MISSING"
 
 
-def report(connection):
+def _print_identity(connection):
     print("=" * 68)
     print("READ-ONLY production schema diagnostic")
     print("=" * 68)
-
-    database = _one(connection, "SELECT current_database()")
-    user = _one(connection, "SELECT current_user")
-    version = _one(connection, "SHOW server_version")
-    read_only = _one(connection, "SHOW transaction_read_only")
-    print("database          : %s" % database)
-    print("user              : %s" % user)
-    print("server version    : %s" % version)
-    print("transaction       : READ ONLY = %s" % read_only)
+    print("database          : %s" % _one(connection, "SELECT current_database()"))
+    print("user              : %s" % _one(connection, "SELECT current_user"))
+    print("server version    : %s" % _one(connection, "SHOW server_version"))
+    print("transaction       : READ ONLY = %s"
+          % _one(connection, "SHOW transaction_read_only"))
     print()
 
+
+def _print_tables(connection):
     print("-- declared tables " + "-" * 50)
     for table in TABLES_OF_INTEREST:
         regclass = _one(connection,
                         "SELECT to_regclass(%s)", ("public." + table,))
-        if regclass:
-            print("  %-26s %s" % (table, _yesno(True)))
-        else:
-            print("  %-26s %s" % (table, _yesno(False)))
+        print("  %-26s %s" % (table, _yesno(bool(regclass))))
     print()
 
+
+def _print_index_owners(connection):
+    """Which relation actually owns each name of interest.
+
+    An index name in PostgreSQL is schema-scoped, so it can only be attributed
+    through the catalog — never inferred from the models, which is how the
+    taste_profile collision stayed invisible.
+    """
     print("-- indexes: which relation actually owns the name? " + "-" * 19)
     for index in INDEXES_OF_INTEREST:
         rows = _query(
@@ -136,63 +139,57 @@ def report(connection):
             print("  %s" % indexname)
             print("      owned by table : %s" % tablename)
             print("      definition    : %s" % indexdef)
-            # An index that exists with no owning table would mean the catalog
-            # is inconsistent; assert the relationship explicitly so a wrong
-            # attribution cannot pass as fact.
             owner = _one(connection,
                          """
-                         SELECT c.relname
+                         SELECT t.relname
                            FROM pg_class c
                            JOIN pg_index i ON i.indexrelid = c.oid
                            JOIN pg_class t ON t.oid = i.indrelid
                           WHERE c.relname = %s
                          """, (index,))
-            print("      catalog owner : %s" % (owner or "(none - inconsistent)"))
-    print()
+            print("      catalog owner : %s"
+                  % (owner or "(none - inconsistent)"))
 
-    print("-- taste_profile columns (if the table exists) " + "-" * 30)
+
+def _print_columns(connection, table):
+    print("-- %s columns " % table + "-" * max(1, 50 - len(table)))
     rows = _query(
         connection,
         """
         SELECT column_name, data_type, is_nullable
           FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = 'taste_profile'
+         WHERE table_schema = 'public' AND table_name = %s
          ORDER BY ordinal_position
-        """)
-    if rows:
-        for name, dtype, nullable in rows:
-            print("  %-26s %-14s nullable=%s" % (name, dtype, nullable))
-    else:
+        """, (table,))
+    if not rows:
         print("  (table absent — nothing to list)")
-    print()
+        return
+    for name, dtype, nullable in rows:
+        print("  %-26s %-14s nullable=%s" % (name, dtype, nullable))
 
-    print("-- import_source_mapping columns (if the table exists) " + "-" * 21)
-    rows = _query(
-        connection,
-        """
-        SELECT column_name, data_type, is_nullable
-          FROM information_schema.columns
-         WHERE table_schema = 'public'
-           AND table_name = 'import_source_mapping'
-         ORDER BY ordinal_position
-        """)
-    if rows:
-        for name, dtype, nullable in rows:
-            print("  %-26s %-14s nullable=%s" % (name, dtype, nullable))
-    else:
-        print("  (table absent — nothing to list)")
-    print()
 
+def _print_counts(connection):
     print("-- row counts (SELECT only; proves the table is live) " + "-" * 25)
     for table in ('taste_profile', 'user_taste_profile',
                   'import_source_mapping'):
-        regclass = _one(connection,
-                        "SELECT to_regclass(%s)", ("public." + table,))
-        if not regclass:
+        if not _one(connection, "SELECT to_regclass(%s)",
+                    ("public." + table,)):
             continue
-        count = _one(connection, 'SELECT COUNT(*) FROM public.%s' % table)
-        print("  %-26s %s row(s)" % (table, count))
+        print("  %-26s %s row(s)"
+              % (table, _one(connection,
+                             'SELECT COUNT(*) FROM public.%s' % table)))
 
+
+def report(connection):
+    _print_identity(connection)
+    _print_tables(connection)
+    _print_index_owners(connection)
+    print()
+    _print_columns(connection, 'taste_profile')
+    print()
+    _print_columns(connection, 'import_source_mapping')
+    print()
+    _print_counts(connection)
     print()
     print("No writes were attempted; the session was read-only throughout.")
 

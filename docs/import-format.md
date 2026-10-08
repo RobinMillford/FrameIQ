@@ -443,4 +443,3 @@ produces no diary entry (`unsupported`) and still imports the body.
 
 `apply` now reports `records_detected` as a denominator. F6 set `details` only
 in `preview`, so every apply summary read "imported N" with no "of M".
-
