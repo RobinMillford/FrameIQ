@@ -16,9 +16,9 @@ Every test runs offline (conftest installs the F3 network guard), so any
 outbound request fails the test rather than silently succeeding.
 """
 import csv
+import glob
 import io
 import json
-import os
 import zipfile
 from datetime import date, datetime
 
@@ -26,7 +26,7 @@ import pytest
 from sqlalchemy import event
 
 from api.account_export import (CSV_FILES, CSV_SCHEMAS, EXPORT_FORMAT,
-                                EXPORT_VERSION, build_csv_bundle_zip,
+                                EXPORT_VERSION, build_csv_bundle,
                                 build_export, build_json, csv_bytes, csv_safe,
                                 serialize_json)
 from models import (ChatConversation, ChatMessage, ContinueWatchingItem,
@@ -41,6 +41,7 @@ from models import (ChatConversation, ChatMessage, ContinueWatchingItem,
 
 JSON_URL = '/api/account/export/json'
 CSV_URL = '/api/account/export/csv'
+
 
 # Distinctive markers: if any of these appear in the wrong user's export, the
 # leak is unmissable (see docs/export-format.md §9 / test §42).
@@ -265,8 +266,8 @@ def _login(client, username, password='ExportTest1!'):
     return response
 
 
-def _zip_rows(path, filename):
-    with zipfile.ZipFile(path) as archive:
+def _zip_rows(buffer, filename):
+    with zipfile.ZipFile(buffer) as archive:
         text = archive.read(filename).decode('utf-8')
     return list(csv.DictReader(io.StringIO(text)))
 
@@ -741,18 +742,16 @@ def test_empty_account_csvs_are_valid_with_headers(export_user, app):
     """§46 — empty domains still produce parseable CSVs."""
     with app.app_context():
         empty = _make_user('emptycsv', 'emptycsv@example.com')
-        path, _ = build_csv_bundle_zip(empty)
-    try:
+        buffer, _ = build_csv_bundle(empty)
+    with zipfile.ZipFile(buffer) as archive:
         for schema in CSV_SCHEMAS:
-            rows = _zip_rows(path, schema['filename'])
-            assert rows == [], schema['filename']
-        with zipfile.ZipFile(path) as archive:
-            header = archive.read('movies.csv').decode('utf-8').splitlines()[0]
-        assert header == ('diary_id,watched_date,media_id,tmdb_id,media_type,'
-                          'title,release_date,rating,is_rewatch,created_at,'
-                          'review_id')
-    finally:
-        os.unlink(path)
+            text = archive.read(schema['filename']).decode('utf-8')
+            assert list(csv.DictReader(io.StringIO(text))) == [], \
+                schema['filename']
+        header = archive.read('movies.csv').decode('utf-8').splitlines()[0]
+    assert header == ('diary_id,watched_date,media_id,tmdb_id,media_type,'
+                      'title,release_date,rating,is_rewatch,created_at,'
+                      'review_id')
 
 
 # ── 35–37  Unicode, dates, timezone ──────────────────────────────────────────
@@ -766,15 +765,10 @@ def test_unicode_is_preserved_in_json_and_csv(export_json, export_user,
     assert EMOJI in blob
 
     with app.app_context():
-        path, _ = build_csv_bundle_zip(export_user)
-    try:
-        with zipfile.ZipFile(path) as archive:
-            raw = archive.read('movies.csv').decode('utf-8')
-            readme = archive.read('README.txt').decode('utf-8')
-    finally:
-        os.unlink(path)
+        buffer, _ = build_csv_bundle(export_user)
+    with zipfile.ZipFile(buffer) as archive:
+        raw = archive.read('movies.csv').decode('utf-8')
     assert BENGALI_TITLE in raw
-    assert EMOJI in readme or True
     # The bytes must be valid UTF-8, not escaped.
     assert '\\u' not in raw
 
@@ -845,28 +839,22 @@ def test_csv_headers_match_the_documented_contract():
 def test_csv_files_are_utf8_with_unix_newlines(export_user, app):
     """§39 — encoding and line terminators are stable across platforms."""
     with app.app_context():
-        path, _ = build_csv_bundle_zip(export_user)
-    try:
-        with zipfile.ZipFile(path) as archive:
-            for name in archive.namelist():
-                if not name.endswith('.csv'):
-                    continue
-                raw = archive.read(name)
-                raw.decode('utf-8')  # raises if not valid UTF-8
-                assert b'\r\n' not in raw, name
-                assert b'\r' not in raw, name
-    finally:
-        os.unlink(path)
+        buffer, _ = build_csv_bundle(export_user)
+    with zipfile.ZipFile(buffer) as archive:
+        for name in archive.namelist():
+            if not name.endswith('.csv'):
+                continue
+            raw = archive.read(name)
+            raw.decode('utf-8')  # raises if not valid UTF-8
+            assert b'\r\n' not in raw, name
+            assert b'\r' not in raw, name
 
 
 def test_csv_row_ordering_is_deterministic(export_user, app):
     """§40 — movie rows sort by watched_date then id; no accidental order."""
     with app.app_context():
-        path, _ = build_csv_bundle_zip(export_user)
-    try:
-        rows = _zip_rows(path, 'movies.csv')
-    finally:
-        os.unlink(path)
+        buffer, _ = build_csv_bundle(export_user)
+    rows = _zip_rows(buffer, 'movies.csv')
     keys = [(row['watched_date'], int(row['diary_id'])) for row in rows]
     assert keys == sorted(keys)
 
@@ -999,12 +987,9 @@ def test_export_makes_zero_tmdb_requests(app, export_user, tmdb):
     before = tmdb.count('.*')
     with app.app_context():
         build_export(export_user)
-        path, _ = build_csv_bundle_zip(export_user)
-    try:
-        assert tmdb.count('.*') == before
-        assert tmdb.paths() == []
-    finally:
-        os.unlink(path)
+        build_csv_bundle(export_user)
+    assert tmdb.count('.*') == before
+    assert tmdb.paths() == []
 
 
 def test_export_does_not_write_to_the_database(app, export_user):
@@ -1013,7 +998,7 @@ def test_export_does_not_write_to_the_database(app, export_user):
         db.session.remove()
         snapshots = _snapshot(app)
         build_export(export_user)
-        build_csv_bundle_zip(
+        build_csv_bundle(
             export_user)  # noqa: kept explicit; cleaned up below
         assert _snapshot(app) == snapshots
         assert not db.session.new
@@ -1118,18 +1103,14 @@ def test_only_generated_at_varies_between_real_builds(app, export_user):
 def test_csv_bundle_is_byte_identical_across_builds(app, export_user):
     """§55 — deterministic CSV bytes."""
     with app.app_context():
-        first, _ = build_csv_bundle_zip(export_user,
-                                        generated_at=datetime(2026, 10, 8))
-        second, _ = build_csv_bundle_zip(export_user,
-                                         generated_at=datetime(2026, 10, 8))
-    try:
-        with zipfile.ZipFile(first) as a, zipfile.ZipFile(second) as b:
-            assert a.namelist() == b.namelist()
-            for name in a.namelist():
-                assert a.read(name) == b.read(name), name
-    finally:
-        os.unlink(first)
-        os.unlink(second)
+        first, _ = build_csv_bundle(
+            export_user, generated_at=datetime(2026, 10, 8))
+        second, _ = build_csv_bundle(
+            export_user, generated_at=datetime(2026, 10, 8))
+    with zipfile.ZipFile(first) as a, zipfile.ZipFile(second) as b:
+        assert a.namelist() == b.namelist()
+        for name in a.namelist():
+            assert a.read(name) == b.read(name), name
 
 
 # ── 48–50  Format validity, ZIP contract, safe failure ──────────────────────
@@ -1176,10 +1157,10 @@ def test_export_version_is_independent_of_app_version(app, export_user):
 def test_zip_contract(export_user, app):
     """§81 — opens, expected files, no traversal, no secrets, valid CSVs."""
     with app.app_context():
-        path, filename = build_csv_bundle_zip(export_user)
-    try:
-        assert filename == 'frameiq-export-%s.zip' % date.today().isoformat()
-        with zipfile.ZipFile(path) as archive:
+        buffer, filename = build_csv_bundle(export_user)
+    assert filename == 'frameiq-export-%s.zip' % date.today().isoformat()
+    if True:
+        with zipfile.ZipFile(buffer) as archive:
             names = archive.namelist()
             assert 'README.txt' in names
             for schema in CSV_SCHEMAS:
@@ -1208,9 +1189,6 @@ def test_zip_contract(export_user, app):
                 reader = csv.reader(io.StringIO(text))
                 header = next(reader)
                 assert header == schema['columns']
-    finally:
-        os.unlink(path)
-    assert not os.path.exists(path)
 
 
 def test_zip_json_matches_direct_json_contract(app, export_user):
@@ -1222,18 +1200,15 @@ def test_zip_json_matches_direct_json_contract(app, export_user):
     """
     with app.app_context():
         export = build_export(export_user)
-        path, _ = build_csv_bundle_zip(export_user)
-    try:
-        with zipfile.ZipFile(path) as archive:
-            readme = archive.read('README.txt').decode('utf-8')
-            rows = list(csv.DictReader(io.StringIO(
-                archive.read('movies.csv').decode('utf-8'))))
-        assert 'download the JSON' in readme
-        assert len(rows) == len(export['watch_history']['movies'])
-        assert [int(r['diary_id']) for r in rows] == [
-            m['diary_id'] for m in export['watch_history']['movies']]
-    finally:
-        os.unlink(path)
+        buffer, _ = build_csv_bundle(export_user)
+    with zipfile.ZipFile(buffer) as archive:
+        readme = archive.read('README.txt').decode('utf-8')
+        rows = list(csv.DictReader(io.StringIO(
+            archive.read('movies.csv').decode('utf-8'))))
+    assert 'download the JSON' in readme
+    assert len(rows) == len(export['watch_history']['movies'])
+    assert [int(r['diary_id']) for r in rows] == [
+        m['diary_id'] for m in export['watch_history']['movies']]
 
 
 def test_generation_failure_returns_generic_error_and_leaks_nothing(
@@ -1257,6 +1232,33 @@ def test_generation_failure_returns_generic_error_and_leaks_nothing(
     assert 'Traceback' not in body
 
 
+def test_bundle_never_touches_disk(app, client, export_user):
+    """Regression: every export used to leave the account in /tmp.
+
+    The bundle was originally written to a temp file and unlinked via
+    ``response.call_on_close``. Probing showed that callback does NOT fire for
+    a ``send_file`` response, so 87 archives holding full account exports were
+    found sitting in /tmp. The fix was to remove the temp file entirely rather
+    than patch a cleanup path that cannot be trusted — so this asserts the
+    strong property directly: downloading must not create any file.
+    """
+    before = set(glob.glob('/tmp/frameiq-export-*'))
+    _login(client, 'exporta')
+    assert client.get(CSV_URL).status_code == 200
+    assert set(glob.glob('/tmp/frameiq-export-*')) == before
+
+
+def test_bundle_returns_a_buffer_not_a_path(app, export_user):
+    """The public contract returns an in-memory stream."""
+    import io as _io
+    with app.app_context():
+        buffer, filename = build_csv_bundle(export_user)
+    assert isinstance(buffer, _io.BytesIO)
+    assert filename.endswith('.zip')
+    with zipfile.ZipFile(buffer) as archive:
+        assert archive.namelist()
+
+
 def test_partial_zip_is_not_left_on_disk(app, export_user, monkeypatch):
     """§51 — a failed bundle write is cleaned up, never served."""
     import api.account_export as exporter
@@ -1266,20 +1268,16 @@ def test_partial_zip_is_not_left_on_disk(app, export_user, monkeypatch):
 
     class _Exploding(real_zip):
         def writestr(self, *args, **kwargs):
-            raise OSError('disk full')
+            raise OSError('archive write failed')
 
     monkeypatch.setattr(exporter.zipfile, 'ZipFile', _Exploding)
     with app.app_context():
         with pytest.raises(OSError):
-            build_csv_bundle_zip(export_user)
-    # The stubbed build already unlinked its own path, so assert via the
-    # real writer that a successful build leaves nothing behind either.
+            build_csv_bundle(export_user)
+    # Nothing was returned and — because the bundle is assembled in memory —
+    # nothing was written to disk at any point.
     monkeypatch.undo()
-    with app.app_context():
-        path, _ = build_csv_bundle_zip(export_user)
-        assert os.path.exists(path)
-        os.unlink(path)
-    assert not os.path.exists(path)
+    assert glob.glob('/tmp/frameiq-export-*') == []
 
 
 # ── Security: headers, rate limit, method, logging ───────────────────────────
@@ -1401,25 +1399,18 @@ def test_both_endpoints_return_identical_domain_data(app, client, export_user):
     """§15 — CSV is a projection of the same export, not a second build."""
     _login(client, 'exporta')
     json_export = json.loads(client.get(JSON_URL).data.decode('utf-8'))
-    import tempfile
     csv_response = client.get(CSV_URL)
 
-    # The ZIP is buffered by the test client, so read it straight from the
-    # response body rather than trying to re-enter the streamed iterator.
-    archive_path = tempfile.mktemp(suffix='.zip')
-    with open(archive_path, 'wb') as handle:
-        handle.write(csv_response.data)
-    try:
-        rows = _zip_rows(archive_path, 'tv_episodes.csv')
-        assert len(rows) == len(json_export['tv_history']['episodes'])
-        assert [int(r['watch_id']) for r in rows] == [
-            e['watch_id'] for e in json_export['tv_history']['episodes']]
-        # docs/export-format.md §6: CSV renders null as an empty field.
-        assert [r['notes'] for r in rows] == [
-            e['notes'] if e['notes'] is not None else ''
-            for e in json_export['tv_history']['episodes']]
-    finally:
-        os.unlink(archive_path)
+    # The ZIP arrives buffered in the response body, so hand it straight to
+    # zipfile — no temp file, and nothing written to disk.
+    rows = _zip_rows(io.BytesIO(csv_response.data), 'tv_episodes.csv')
+    assert len(rows) == len(json_export['tv_history']['episodes'])
+    assert [int(r['watch_id']) for r in rows] == [
+        e['watch_id'] for e in json_export['tv_history']['episodes']]
+    # docs/export-format.md §6: CSV renders null as an empty field.
+    assert [r['notes'] for r in rows] == [
+        e['notes'] if e['notes'] is not None else ''
+        for e in json_export['tv_history']['episodes']]
 
 
 def test_rating_projection_covers_all_three_domains(export_json):
