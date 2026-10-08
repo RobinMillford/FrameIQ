@@ -34,7 +34,8 @@ import pytest
 from sqlalchemy import event
 
 from models import (db, DiaryEntry, MediaItem, TVShowProgress,
-                    UpcomingEpisode, User, user_viewed)
+                    UpcomingEpisode, User, UserList, UserListItem,
+                    user_viewed)
 from models.tv import TVEpisodeWatch
 import api.user_view_state as uvs
 import api.continue_watching as cw
@@ -230,6 +231,21 @@ def factory(db):
         ).delete(synchronize_session=False)
         db.session.execute(user_viewed.delete().where(
             user_viewed.c.user_id.in_(user_ids)))
+        # Custom lists owned by these users must go too (case 30 creates
+        # one). `user_list.user_id` is NOT NULL and `UserList.user` carries no
+        # ORM cascade, so a list left behind keeps a resident, orphaned ORM
+        # object that the *next* test's commit tries to flush as
+        # `user_id = NULL` — a cross-file IntegrityError in a module that
+        # never touched lists. Children first, then the lists, then the users.
+        owned_list_ids = [row[0] for row in db.session.query(
+            UserList.id).filter(UserList.user_id.in_(user_ids)).all()]
+        if owned_list_ids:
+            UserListItem.query.filter(
+                UserListItem.list_id.in_(owned_list_ids)
+            ).delete(synchronize_session=False)
+            UserList.query.filter(
+                UserList.id.in_(owned_list_ids)).delete(
+                synchronize_session=False)
         User.query.filter(User.id.in_(user_ids)).delete(
             synchronize_session=False)
     if media_ids:

@@ -1,3 +1,19 @@
+[tool.pytest.ini_options]
+# The ordinary suite is OFFLINE (Task F3): no TMDb key, no DNS, no internet.
+# TMDb payloads come from deterministic fixtures (tests/tmdb_offline.py) and
+# any other outbound connection fails loudly. Genuine external integration
+# tests are opt-in and deselected here:
+#
+#     pytest tests/            # offline suite (default)
+#     pytest tests/ -m tmdb    # explicit, needs a real TMDB_API_KEY
+#
+markers = [
+    "tmdb: opt-in integration test that may talk to the real TMDb API",
+]
+addopts = [
+    "-m", "not tmdb",
+]
+
 [project]
 name = "frameiq"
 version = "0.1.0"
