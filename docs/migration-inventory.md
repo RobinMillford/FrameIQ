@@ -56,6 +56,7 @@ backup evidence.
 |---|---|---|
 | `status` | no | Seeing applied/pending history and the guard verdict |
 | `validate` | no | CI: registry soundness and every recorded checksum |
+| `init-ledger` | yes (one table) | Creating ONLY `schema_migrations`, if absent |
 | `upgrade` | yes | Applying every pending **non-destructive** migration |
 | `upgrade --only <id>` + approval | yes | Applying one named destructive migration |
 | `adopt-legacy-baseline` | yes | Once, to record the verified pre-existing state |
@@ -472,16 +473,65 @@ Design properties:
 
 ---
 
+## 6b. The ledger bootstrap (`init-ledger`)
+
+### Why it exists
+
+The first production deploy after the F8 rollout failed, and the reason was an
+ordering bug that every individual step was correct about.
+
+`schema_migrations` is declared by the model, so bounded convergence saw it as a
+**missing table**. But it is new infrastructure, not one of the eleven
+historical gaps, so convergence did exactly what it was designed to do: refused
+before any DDL, reporting `schema_migrations` as unexpected drift. Because it
+refused, it created nothing at all — so `import_source_mapping` stayed missing
+too, and the nightly release-data sync then failed during `import app`.
+
+The tempting fix is to add `schema_migrations` to `EXPECTED_REPAIR_SET`. That is
+wrong: that set is the reviewed list of **historical** table gaps, and widening
+it would let unreviewed tables be created by a historical repair script. It is
+also unnecessary — the ledger is not a data repair at all, it is the
+precondition for recording repairs.
+
+### What it guarantees
+
+* Creates **exactly one** table, `schema_migrations`, with the declared schema.
+* Never calls `db.create_all()` / `metadata.create_all()`.
+* Writes **no rows**: no baseline, and no migration recorded as applied.
+* Idempotent: absent -> created; present with the declared schema -> no mutation.
+* Present with an incompatible schema -> **fails closed**. A drifted ledger
+  would make every later version and checksum comparison meaningless, and
+  repairing it could destroy the only record of what has been applied, so this
+  is never done speculatively.
+* Requires `--allow-production` for a remote target, exactly like the other
+  write commands, and refuses a remote target without it.
+
+Type comparison is by **type family**, not by rendered name: the same logical
+type is `DATETIME` to SQLAlchemy, `TIMESTAMP` to PostgreSQL and
+`TIMESTAMP WITHOUT TIME ZONE` in PostgreSQL's catalog. Comparing names reported
+a spurious mismatch on a ledger the bootstrap had just created. String *length*
+is still compared, because `VARCHAR(64)` and `VARCHAR(128)` are genuinely
+different schemas.
+
+It is a runner command, not a registered migration: the ledger must exist before
+anything can be recorded in it, so it cannot be recorded in it.
+
+---
+
 ## 7. Deploy sequence
 
 `.github/workflows/deploy.yml` runs, in order, failing before web is recreated
 at any step:
 
+0. `scripts/migrate.py init-ledger --allow-production` — create ONLY the
+   ledger table if absent. **Must precede convergence**, which otherwise
+   refuses on `schema_migrations` as unexpected drift. See §6b.
 1. `migrate_schema_convergence.py` — one-time additive creation of the 11
    declared-but-missing tables.
 2. `utils.schema_guard` — prove the schema matches the models.
 3. `scripts/migrate.py adopt-legacy-baseline --allow-production` — once; a no-op
-   afterwards.
+   afterwards. Never before the guard passes: the baseline asserts the schema
+   was verified.
 4. `scripts/migrate.py upgrade --allow-production` — every pending
    **non-destructive** migration. Any destructive migration is reported as
    `DEFERRED` and left pending.
@@ -493,6 +543,37 @@ The destructive migration is a **separate, separately-approved deployment**
 
 The ordering of 3 before 4 matters: the baseline requires a passing guard, and
 the guard cannot pass until convergence has created the missing tables.
+
+---
+
+## 7a. The release-data sync and schema readiness
+
+`sync-watchlist-release-data.yml` runs `scripts/sync_watchlist_release_data.py`,
+which imports `app`; that runs the startup schema guard. So when the schema was
+not ready the sync refused — correctly, but with an opaque traceback and no
+statement of what an operator should do.
+
+The workflow now runs a **readiness preflight first**, from the same one-off
+image the sync will use:
+
+1. `python -m utils.schema_guard` — read-only, and exempts itself from the
+   startup guard, so it neither writes nor bypasses anything;
+2. on failure: four `::error::` lines saying the schema is not ready, that the
+   sync did **not** run, and that a deployment carrying the required migration
+   must complete first — then `exit 1`.
+
+Deliberately **not** done: no `SKIP_SCHEMA_GUARD` anywhere in the sync workflow,
+no `create_all`, no manual creation of `import_source_mapping`. The sync command
+itself is unchanged and still starts with the normal guard enabled, so a missing
+required table still prevents the synchronization code from running.
+
+The job also joins the `production-deploy` concurrency group (shared with the
+deploy workflow, `cancel-in-progress: false`) so a scheduled sync cannot race the
+schema transition, and it keeps its daily 02:30 UTC schedule and manual trigger.
+Failure visibility is unchanged: the workflow still opens an issue on failure.
+
+The sync is **blocked** until a deployment carrying the required migration has
+completed successfully. It will not self-heal.
 
 ---
 

@@ -1348,3 +1348,274 @@ def test_deploy_workflow_uses_the_authoritative_runner():
     workflow = open(path, encoding='utf-8').read()
     assert 'scripts/migrate.py' in workflow, \
         'deploy.yml must apply migrations through the runner, not by guessing'
+
+
+# ── init-ledger: the migration ledger bootstrap ─────────────────────────────
+#
+# Production failure this exists for
+# ---------------------------------
+# `schema_migrations` is declared by the model, so bounded convergence saw it as
+# a missing table -- but it is new infrastructure, not one of the eleven
+# historical gaps, so convergence correctly refused and created nothing. That
+# left `import_source_mapping` absent too, and the nightly release-data sync
+# then failed during `import app`.
+#
+# The fix is an explicit bootstrap command, NOT widening the allow-list.
+
+HISTORICAL_REPAIR_SET = {
+    'continue_watching_item', 'director', 'import_source_mapping',
+    'media_director', 'movie_release_date', 'notification',
+    'recommendation_feedback', 'smart_list', 'taste_profile',
+    'user_streaming_services', 'year_in_review_share',
+}
+
+
+def _sqlite_path(path):
+    return 'sqlite:///%s' % path
+
+
+def _make_gap_db(path, drop_historical=True):
+    """A declared-schema database with the ledger (and optionally the eleven
+    historical gaps) removed, reproducing the production state."""
+    from models.base import db
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(_sqlite_path(path))
+    db.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE schema_migrations'))
+        if drop_historical:
+            for name in HISTORICAL_REPAIR_SET:
+                connection.execute(text('DROP TABLE IF EXISTS "%s"' % name))
+    engine.dispose()
+    return _sqlite_path(path)
+
+
+def _table_names(path):
+    import sqlite3
+
+    connection = sqlite3.connect(path)
+    try:
+        return {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        connection.close()
+
+
+def _run_convergence(url):
+    """The convergence script is standalone (app.app_context + global engine),
+    so it is exercised as a subprocess the way the deploy runs it."""
+    import os
+    import subprocess
+    import sys
+    env = dict(os.environ)
+    env['DATABASE_URL'] = url
+    env['SKIP_SCHEMA_GUARD'] = '1'
+    env['TMDB_API_KEY'] = 'test-tmdb-key'
+    env['SECRET_KEY'] = 'test-secret-key-for-tests-only'
+    return subprocess.run(
+        [sys.executable,
+         os.path.join(REPO, 'migrates', 'migrate_schema_convergence.py')],
+        capture_output=True, text=True, env=env, cwd=REPO, timeout=300)
+
+
+@pytest.fixture
+def gap_engine(tmp_path):
+    engine_path = tmp_path / 'gap.db'
+    _make_gap_db(str(engine_path))
+    from sqlalchemy import create_engine
+    engine = create_engine(_sqlite_path(engine_path))
+    yield engine
+    engine.dispose()
+
+
+# --- B: creates only the ledger ---------------------------------------------
+
+def test_ledger_bootstrap_creates_only_the_ledger_table(gap_engine):
+    before = set(runner.inspect(gap_engine).get_table_names())
+    assert 'schema_migrations' not in before
+    result = runner.init_ledger(gap_engine)
+    after = set(runner.inspect(gap_engine).get_table_names())
+
+    assert result['ledger'] == 'created'
+    assert after - before == {'schema_migrations'}, (
+        'ledger bootstrap created more than the ledger: %s'
+        % sorted(after - before))
+    for name in HISTORICAL_REPAIR_SET:
+        assert name not in after, \
+            'ledger bootstrap created a historical table: %s' % name
+
+
+# --- C: creates no rows ------------------------------------------------------
+
+def test_ledger_bootstrap_creates_no_baseline_and_no_migration(gap_engine):
+    runner.init_ledger(gap_engine)
+    with gap_engine.connect() as connection:
+        rows = connection.execute(text(
+            'SELECT version, kind FROM schema_migrations')).fetchall()
+    assert rows == [], 'ledger bootstrap wrote rows: %r' % rows
+
+
+# --- idempotency / already-correct -------------------------------------------
+
+def test_ledger_bootstrap_is_idempotent(gap_engine):
+    assert runner.init_ledger(gap_engine)['ledger'] == 'created'
+    assert runner.init_ledger(gap_engine)['ledger'] == 'present'
+    assert runner.init_ledger(gap_engine)['ledger'] == 'present'
+    with gap_engine.connect() as connection:
+        assert connection.execute(text(
+            'SELECT COUNT(*) FROM schema_migrations')).scalar() == 0
+
+
+def test_ledger_bootstrap_leaves_a_correct_existing_table_untouched(engine):
+    """A correct ledger is a no-op, not a rewrite."""
+    before = runner._declared_ledger_shape()
+    result = runner.init_ledger(engine)
+    assert result['ledger'] == 'present'
+    assert result['tables_created'] == []
+    with engine.connect() as connection:
+        assert runner._actual_ledger_shape(connection) == before
+
+
+# --- fail closed on drift ----------------------------------------------------
+
+def test_ledger_bootstrap_fails_closed_on_a_drifted_ledger(engine):
+    """A ledger with the wrong shape must never be silently accepted, and must
+    never be 'repaired' -- repairing it could destroy the only record of what
+    has already been applied."""
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE schema_migrations'))
+        connection.execute(text(
+            'CREATE TABLE schema_migrations ('
+            'id INTEGER PRIMARY KEY, version TEXT)'))
+    with pytest.raises(runner.MigrationError) as excinfo:
+        runner.init_ledger(engine)
+    message = str(excinfo.value)
+    assert 'does not match the declared ledger schema' in message
+    assert 'missing column(s)' in message
+    assert 'NOT repaired automatically' in message
+    # The drifted table is left exactly as found, and nothing else was touched.
+    with engine.connect() as connection:
+        columns = [c['name'] for c in
+                   runner.inspect(connection).get_columns('schema_migrations')]
+    assert columns == ['id', 'version']
+
+
+def test_shape_difference_detection():
+    declared = {'a': ('VARCHAR(10)', False), 'b': ('INTEGER', True)}
+    assert runner._describe_shape_difference(declared, declared) is None
+    assert 'missing column(s): b' in runner._describe_shape_difference(
+        declared, {'a': ('VARCHAR(10)', False)})
+    assert 'unexpected column(s): c' in runner._describe_shape_difference(
+        declared, {'a': ('VARCHAR(10)', False), 'b': ('INTEGER', True),
+                   'c': ('INTEGER', True)})
+    assert 'nullable' in runner._describe_shape_difference(
+        declared, {'a': ('VARCHAR(10)', False), 'b': ('INTEGER', False)})
+    assert 'type' in runner._describe_shape_difference(
+        declared, {'a': ('TEXT', False), 'b': ('INTEGER', True)})
+
+
+# --- D/E: the convergence contract is unchanged ------------------------------
+
+def test_ledger_is_not_in_the_historical_repair_allow_list():
+    """The allow-list stays at 11 tables. Widening it is the wrong fix."""
+    from migrates import migrate_schema_convergence as convergence
+    assert convergence.EXPECTED_REPAIR_SET == frozenset(HISTORICAL_REPAIR_SET)
+    assert len(convergence.EXPECTED_REPAIR_SET) == 11
+    assert 'schema_migrations' not in convergence.EXPECTED_REPAIR_SET
+
+
+def test_convergence_refuses_when_the_ledger_is_missing(tmp_path):
+    """Failure A, pinned: convergence refuses and creates nothing."""
+    path = str(tmp_path / 'noledger.db')
+    url = _make_gap_db(path)
+    result = _run_convergence(url)
+    assert result.returncode != 0
+    assert 'schema_migrations' in result.stdout
+    assert 'Nothing was created' in result.stdout
+    names = _table_names(path)
+    assert 'schema_migrations' not in names
+    assert not (HISTORICAL_REPAIR_SET & names), \
+        'the refusal must happen before any DDL'
+
+
+def test_bootstrap_then_convergence_creates_the_historical_tables(tmp_path):
+    """Production's recovery path, end to end."""
+    path = str(tmp_path / 'recover.db')
+    url = _make_gap_db(path)
+    assert _run_cli(path, 'init-ledger').returncode == 0
+    assert 'schema_migrations' in _table_names(path)
+
+    result = _run_convergence(url)
+    assert result.returncode == 0, result.stdout[-500:]
+    names = _table_names(path)
+    assert HISTORICAL_REPAIR_SET <= names, (
+        'convergence did not create the historical gaps: %s'
+        % sorted(HISTORICAL_REPAIR_SET - names))
+    # Still only the ledger was created by the bootstrap, not convergence.
+    assert 'schema_migrations' in names
+
+
+def test_convergence_still_refuses_on_an_unexpected_missing_table(tmp_path):
+    """An unrelated application table missing must still refuse before DDL."""
+    path = str(tmp_path / 'unexpected.db')
+    url = _make_gap_db(path)
+    assert _run_cli(path, 'init-ledger').returncode == 0
+    # Drop a table that is NOT part of the historical repair set.
+    from sqlalchemy import create_engine, text
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE review'))
+    engine.dispose()
+
+    result = _run_convergence(url)
+    assert result.returncode != 0
+    assert 'review' in result.stdout
+    names = _table_names(path)
+    assert 'review' not in names, 'refusal happened after DDL'
+    assert not (HISTORICAL_REPAIR_SET & names), \
+        'nothing may be created once an unexpected gap is seen'
+
+
+# --- init-ledger CLI ---------------------------------------------------------
+
+def test_cli_init_ledger_creates_only_the_ledger(tmp_path):
+    path = str(tmp_path / 'cli.db')
+    _make_gap_db(path)
+    result = _run_cli(path, 'init-ledger')
+    assert result.returncode == 0, result.stderr
+    assert 'Migration ledger created: schema_migrations' in result.stdout
+    assert 'created       : schema_migrations' in result.stdout
+    names = _table_names(path)
+    assert 'schema_migrations' in names
+    assert not (HISTORICAL_REPAIR_SET & names), \
+        'the CLI created historical tables'
+
+
+def test_cli_init_ledger_is_a_noop_on_the_second_run(tmp_path):
+    path = str(tmp_path / 'cli2.db')
+    _make_gap_db(path)
+    assert _run_cli(path, 'init-ledger').returncode == 0
+    result = _run_cli(path, 'init-ledger')
+    assert result.returncode == 0
+    assert 'already present' in result.stdout
+    assert 'No baseline and no migration has been recorded' in result.stdout
+
+
+def test_cli_init_ledger_requires_production_authorization():
+    """It mutates, so it must take the same authorization path as the other
+    write commands. Refused before any connection is opened."""
+    import os
+    import subprocess
+    import sys
+    env = dict(os.environ)
+    env['DATABASE_URL'] = 'postgresql://user:pw@db.example.invalid:5432/prod'
+    env['SKIP_SCHEMA_GUARD'] = '1'
+    env['SECRET_KEY'] = 'test-secret-key-for-tests-only'
+    env['TMDB_API_KEY'] = 'test-tmdb-key'
+    result = subprocess.run(
+        [sys.executable, os.path.join(REPO, 'scripts', 'migrate.py'),
+         'init-ledger'],
+        capture_output=True, text=True, env=env, cwd=REPO, timeout=120)
+    assert result.returncode == 97
+    assert 'Refusing to run' in result.stderr

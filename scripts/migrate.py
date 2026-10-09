@@ -4,6 +4,7 @@ One command, one execution path:
 
     python scripts/migrate.py status                 read-only
     python scripts/migrate.py validate               read-only
+    python scripts/migrate.py init-ledger            WRITES (one table)
     python scripts/migrate.py upgrade                WRITES
     python scripts/migrate.py adopt-legacy-baseline  WRITES (once)
 
@@ -14,6 +15,13 @@ There is deliberately no other way to apply a migration. In particular:
   :func:`apply_pending`, and it is reached only through ``__main__``.
 * the web process never invokes it. Nothing in ``app.py``, ``gunicorn.conf.py``
   or a container entrypoint calls this file.
+
+``init-ledger`` exists because the ledger must exist before anything can be
+recorded in it, and because bounded convergence treats any unexpected missing
+table as a reason to refuse. ``schema_migrations`` is new infrastructure, not
+one of the eleven historical gaps, so the fix is an explicit bootstrap command
+rather than widening that allow-list. It creates exactly one table and writes
+no rows.
 
 Fail-closed rules
 -----------------
@@ -309,11 +317,16 @@ def load_applied(connection):
     return {row[0]: (row[1], row[2]) for row in rows}
 
 
-def ensure_ledger_table(connection):
-    """Create the ledger table if absent.
+LEDGER_TABLE = 'schema_migrations'
 
-    Not a registered migration: the ledger must exist *before* any versioned
-    migration can be recorded. Idempotent.
+
+def _ledger_table():
+    """The single declared ledger table object.
+
+    Deliberately ONE table, never ``db.metadata.create_all()``. The ledger is
+    infrastructure that must exist before the versioned runner can record
+    anything, and creating it must not become a back door to creating the
+    application schema.
     """
     import models  # noqa: F401  (populates metadata; see below)
     from models.base import db
@@ -323,8 +336,125 @@ def ensure_ledger_table(connection):
     # registered -- but relying on that means a future refactor of
     # models/__init__.py could silently turn this into a KeyError on the
     # deploy path only, where no test would see it.
-    table = db.metadata.tables['schema_migrations']
-    table.create(bind=connection, checkfirst=True)
+    return db.metadata.tables[LEDGER_TABLE]
+
+
+def _type_family(type_):
+    """A dialect-independent label for a column type.
+
+    Comparing rendered type NAMES is not reliable: the same logical type is
+    called DATETIME by SQLAlchemy, TIMESTAMP by PostgreSQL and TIMESTAMP
+    WITHOUT TIME ZONE by PostgreSQL's catalog via the inspector. Comparing
+    names reported a spurious mismatch on a ledger this function had just
+    created. Comparing the Python type object is stable across dialects.
+
+    String length IS compared, because VARCHAR(64) and VARCHAR(128) are
+    genuinely different schemas and a truncated checksum column would be a real
+    incompatibility.
+    """
+    from sqlalchemy import types as sqltypes
+
+    # Text must precede String: SQLAlchemy's Text is a String subclass.
+    if isinstance(type_, sqltypes.DateTime):
+        return 'DATETIME'
+    if isinstance(type_, sqltypes.Text):
+        return 'TEXT'
+    if isinstance(type_, sqltypes.String):
+        return 'STRING(%s)' % (getattr(type_, 'length', None) or '')
+    if isinstance(type_, sqltypes.Integer):
+        return 'INTEGER'
+    return str(type_).strip().upper()
+
+
+def _declared_ledger_shape():
+    """``{column: (type family, nullable)}`` as declared by the model."""
+    return {column.name: (_type_family(column.type), bool(column.nullable))
+            for column in _ledger_table().columns}
+
+
+def _actual_ledger_shape(connection):
+    """``{column: (type family, nullable)}`` as the live database reports it."""
+    return {column['name']: (_type_family(column['type']),
+                             bool(column['nullable']))
+            for column in inspect(connection).get_columns(LEDGER_TABLE)}
+
+
+def _describe_shape_difference(declared, actual):
+    """Human-readable differences, or ``None`` when the shapes agree."""
+    problems = []
+    missing = sorted(set(declared) - set(actual))
+    extra = sorted(set(actual) - set(declared))
+    if missing:
+        problems.append('missing column(s): %s' % ', '.join(missing))
+    if extra:
+        problems.append('unexpected column(s): %s' % ', '.join(extra))
+    for name in sorted(set(declared) & set(actual)):
+        want_type, want_nullable = declared[name]
+        got_type, got_nullable = actual[name]
+        if want_nullable != got_nullable:
+            problems.append('%s: nullable %s, expected %s'
+                            % (name, got_nullable, want_nullable))
+        if want_type.lower() != got_type.lower():
+            problems.append('%s: type %s, expected %s'
+                            % (name, got_type, want_type))
+    return '; '.join(problems) if problems else None
+
+
+def ensure_ledger_table(connection):
+    """Create the ledger table if absent, or verify it if present.
+
+    This is the bootstrap primitive behind ``init-ledger``. It is NOT a
+    registered migration: the ledger must exist *before* any versioned
+    migration can be recorded, so it cannot be recorded in the ledger.
+
+    Creates exactly one table. Never calls ``create_all()``. Never writes a
+    baseline row or any other row.
+    """
+    if not inspect(connection).has_table(LEDGER_TABLE):
+        _ledger_table().create(bind=connection, checkfirst=True)
+        return 'created'
+
+    # Present: it must be the declared schema. A drifted ledger would make
+    # every later checksum/version comparison meaningless, so this fails closed
+    # rather than repairing speculatively -- a repair here could overwrite the
+    # only record of what has been applied.
+    difference = _describe_shape_difference(_declared_ledger_shape(),
+                                            _actual_ledger_shape(connection))
+    if difference:
+        raise MigrationError(
+            'Refusing to continue: %s exists but does not match the declared '
+            'ledger schema (%s).\n'
+            '  A drifted ledger would make version and checksum comparisons '
+            'meaningless, so this is NOT repaired automatically: repairing it '
+            'could destroy the only record of what has been applied.\n'
+            '  Inspect the table and either restore the declared schema or '
+            'drop it deliberately before re-running.'
+            % (LEDGER_TABLE, difference))
+    return 'present'
+
+
+def init_ledger(engine):
+    """Explicitly initialise the migration ledger. Idempotent.
+
+    Returns a dict describing what happened, for the caller to report.
+    """
+    connection = engine.connect()
+    try:
+        with connection.begin():
+            before = inspect(connection).get_table_names()
+            outcome = ensure_ledger_table(connection)
+            after = inspect(connection).get_table_names()
+            created = sorted(set(after) - set(before))
+            unexpected = [name for name in created if name != LEDGER_TABLE]
+            if unexpected:
+                # Defensive: ensure_ledger_table must never widen its blast
+                # radius. If it ever did, fail loudly rather than continue.
+                raise MigrationError(
+                    'Ledger bootstrap created unexpected table(s): %s'
+                    % ', '.join(unexpected))
+    finally:
+        connection.close()
+    return {'ledger': outcome, 'tables_created': created}
 
 
 # ── planning ─────────────────────────────────────────────────────────────────
@@ -773,6 +903,29 @@ def cmd_validate(engine):
     return 0
 
 
+def cmd_init_ledger(engine):
+    """Create ONLY the migration ledger table, if it is absent.
+
+    Runs before convergence because convergence treats an unexpected missing
+    table as a reason to refuse: `schema_migrations` is new infrastructure, not
+    one of the eleven historical gaps, so it must not be added to that allow
+    list to make the refusal go away.
+    """
+    print()
+    before = len(inspect(engine).get_table_names())
+    result = init_ledger(engine)
+    if result['ledger'] == 'created':
+        print('Migration ledger created: %s' % LEDGER_TABLE)
+        print('  tables before : %d' % before)
+        print('  tables after  : %d' % len(inspect(engine).get_table_names()))
+        print('  created       : %s' % ', '.join(result['tables_created']))
+    else:
+        print('Migration ledger already present with the declared schema: %s'
+              % LEDGER_TABLE)
+        print('  No change made. No baseline and no migration has been recorded.')
+    return 0
+
+
 def cmd_upgrade(engine, only, approval=None):
     print()
     applied = apply_pending(engine, only=only, approval=approval)
@@ -803,6 +956,7 @@ def _dispatch(args, engine):
     handlers = {
         'status': lambda: cmd_status(engine),
         'validate': lambda: cmd_validate(engine),
+        'init-ledger': lambda: cmd_init_ledger(engine),
         'upgrade': lambda: cmd_upgrade(engine, set(args.only or ()),
                                        approval=_approval_from(args)),
         'adopt-legacy-baseline': lambda: cmd_adopt_baseline(engine),
@@ -816,7 +970,8 @@ def main(argv=None):
         description='FrameIQ versioned migration runner. The authoritative '
                     'path for applying schema changes.')
     parser.add_argument('command', choices=(
-        'status', 'validate', 'upgrade', 'adopt-legacy-baseline'))
+        'status', 'validate', 'init-ledger', 'upgrade',
+        'adopt-legacy-baseline'))
     parser.add_argument('--allow-production', action='store_true',
                         help='permit a remote target. There is no environment '
                              'variable that does this: it must be chosen.')
@@ -837,7 +992,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     os.environ.setdefault('SKIP_SCHEMA_GUARD', '1')
-    writing = args.command in ('upgrade', 'adopt-legacy-baseline')
+    writing = args.command in ('init-ledger', 'upgrade',
+                               'adopt-legacy-baseline')
     try:
         if writing:
             engine, _target = _engine_for(args.allow_production)
