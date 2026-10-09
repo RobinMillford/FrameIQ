@@ -214,24 +214,38 @@ make logs      # tail web logs (logs-db for Postgres)
 make restart   # restart web container
 make backup    # pg_dump snapshot via scripts/backup.sh
 make db-shell  # psql into the production DB
-make migrate   # create_all() for new tables
+make migrate   # status of the versioned migration ledger (READ-ONLY)
 ```
 
-#### Schema-changing migrations (column/index changes)
+#### Schema changes (new tables AND new columns)
 
 The startup schema guard REQUIRES schema parity with the declared models
 and will fail Gunicorn workers if the database is behind — that guard is
-intentional and must not be weakened. New TABLES are created automatically
-at startup (`db.create_all()`); COLUMN/index changes are not, so run the
-matching `migrates/` script BEFORE starting the new web image:
+intentional and must not be weakened.
+
+**Application startup never creates schema.** There is no `db.create_all()` at
+runtime: not for new tables, not for new columns. Every schema change — new
+table *or* new column — is applied by the versioned migration runner, before
+the new web image starts:
 
 ```bash
 git pull origin main
 docker compose build web
-docker compose run --rm --no-deps web python migrates/<migration>.py
+docker compose run --rm --no-deps web \
+  python scripts/migrate.py init-ledger
+docker compose run --rm --no-deps web \
+  python migrates/migrate_schema_convergence.py
+docker compose run --rm --no-deps web \
+  python scripts/migrate.py upgrade --allow-production
 docker compose up -d
 docker compose exec web python -m utils.schema_guard
 ```
+
+Run the migrations in that order — they are the same steps the deploy workflow
+runs. Do **not** run individual `migrates/migrate_*.py` scripts: they are
+historical, unregistered, and several drop tables. `scripts/migrate.py` is the
+only supported path, and it records what it applied in the `schema_migrations`
+ledger so it can be verified afterwards.
 
 `docker compose run --rm --no-deps` executes the migration against the
 shared database in a one-off container (removed on exit, no port bindings,

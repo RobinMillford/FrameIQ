@@ -43,6 +43,95 @@ models/schema_migration.py        the ledger table (schema_migrations)
 scripts/migrate.py                the runner: status | validate | upgrade | adopt-legacy-baseline
 ```
 
+Three migrations are registered:
+
+| Version | Module | Destructive | Depends on |
+|---------|--------|-------------|------------|
+| `0001_canonical_watched_reconcile` | `migrations_0001_canonical_watched` | no | — |
+| `0002_remove_legacy_wishlist` | `migrations_0002_remove_legacy_wishlist` | **yes** | `0001` |
+| `0003_cast_persistence` | `migrations_0003_cast_persistence` | no | `0001` |
+
+**`0003` deliberately does not depend on `0002`.** `0002` is destructive and
+stays deferred until an operator records a verified restorable snapshot (§6a).
+A forward dependency is refused by the runner, so depending on `0002` would
+hold every purely additive schema change hostage to one unrelated blocked
+`DROP`. Because `0003` depends only on `0001`, an ordinary `upgrade` applies it
+while `0002` remains pending — which is the intended production sequence.
+
+### `0003_cast_persistence` (Feature F9)
+
+Purely additive: two new tables, two new columns, no `DROP`, no data
+rewrite, no touch to canonical watch history (`diary_entry`, `user_viewed`).
+
+    person        tmdb_person_id UNIQUE, name, profile_url, source, timestamps
+    media_cast    media_item_id -> media_item.id CASCADE
+                  person_id     -> person.id      CASCADE
+                  character, credit_order, timestamps
+                  UNIQUE (media_item_id, person_id)
+    media_item    + cast_enriched_at TIMESTAMP  NULL
+    taste_profile + actor_affinity_json TEXT NOT NULL DEFAULT '{}'
+
+`cast_enriched_at` is a **separate** marker from `directors_enriched_at`
+because cast is captured for movies *and* tv while directors are movie-only
+(`models/director.py` explains why TV crew is episode-aggregated and therefore
+untrustworthy as a series-level credit).
+
+Rows are written **only** by the offline batch `scripts/enrich_cast.py`, never
+by a migration and never at application startup. `taste_profile.actor_affinity_json`
+ships in the same migration because `api/taste_profile.py` writes that column
+on every `compute_profile()` — additive schema and the code that depends on it
+must arrive together, or the schema guard is right to refuse to boot.
+
+### Why `actor_affinity_json` is NOT NULL *with a server default*
+
+`NOT NULL` is the right invariant — it matches every other JSON document column
+on `TasteProfile` and it means the `actor_affinity` property never has to
+defend against NULL. But the column is added with `ALTER TABLE ... ADD COLUMN`
+to an **already-populated** table, and a `NOT NULL` column with no
+database-side default is rejected outright:
+
+    PostgreSQL  ERROR: column "actor_affinity_json" ... contains null values
+    SQLite      Cannot add a NOT NULL column with default value NULL
+
+So the model declares **both** defaults:
+
+    actor_affinity_json = db.Column(db.Text, nullable=False,
+                                   default='{}', server_default='{}')
+
+`server_default` is what the database uses to backfill existing rows; `default`
+is what the ORM uses for future inserts. The Python-side default alone cannot
+help — it never runs against rows that already exist. This is the same
+client + server default pair `models/lists.py` uses for `ListItem.position`.
+
+With the server default, `0003` backfills every existing profile to `'{}'`,
+preserving it exactly, and `verify()` still refuses if the column is absent.
+
+Before any DDL, the migration reads the **live catalog** for every index and
+constraint name its new tables declare and aborts if one is already owned by a
+different table. PostgreSQL scopes those names to the schema and fails
+mid-transaction, which is how the documented `idx_taste_profile_updated`
+incident rolled back unrelated tables (§ Ownership above). SQLite tolerates
+duplicate index names, so only the PostgreSQL suite proves this guard fires.
+
+**Ownership declarations.** `0003` declares `CREATES_TABLES` /
+`ADDS_COLUMNS`, and `utils/schema_guard.pending_migration_objects()` is the
+single definition of "who owns this object", consumed by both
+`migrate_schema_convergence.py` and the pre-upgrade guard so they can never
+disagree. Ownership is narrow and fail-closed: only a **registered**,
+**non-destructive**, **not-yet-applied** migration whose module imports
+successfully owns anything. An already-applied migration owns nothing, so a
+missing object it should have created stays genuine drift.
+
+**Convergence interaction.** `migrate_schema_convergence.py` reads those to tell "missing
+and nothing will create it" (refuse — unexpected drift) apart from "missing
+and a registered non-destructive migration will create it" (leave it to the
+runner's `upgrade`, which records it in the ledger). `person` and `media_cast`
+are deliberately **not** added to the historical `EXPECTED_REPAIR_SET`: that
+set is for pre-ledger drift, and widening it would create tables outside the
+ledger — the mistake that produced `schema_migrations` in F8. On an *empty*
+database convergence still creates the full declared schema, because bootstrap
+is not drift.
+
 The runner is the only supported way to change the schema. The web process
 performs no DDL, ever — including no implicit `create_all()`.
 
@@ -527,22 +616,35 @@ at any step:
    ledger table if absent. **Must precede convergence**, which otherwise
    refuses on `schema_migrations` as unexpected drift. See §6b.
 1. `migrate_schema_convergence.py` — one-time additive creation of the 11
-   declared-but-missing tables.
-2. `utils.schema_guard` — prove the schema matches the models.
+   declared-but-missing tables. Since F9 it also **reports but does not
+   create** any table a registered non-destructive migration owns (`person`,
+   `media_cast`), leaving those to step 4 where they are recorded in the
+   ledger. On an empty database it still creates the full declared schema.
+2. `utils.schema_guard --allow-pending-migrations` — prove that the ONLY
+   drift is objects a registered, pending, non-destructive migration declares
+   it owns. A release that adds a model necessarily deploys models that
+   reference schema the runner has not created yet, so a strict check here
+   aborted the deploy before step 4 could run (this is what blocked F9).
+   Anything not owned by a pending migration remains fatal.
 3. `scripts/migrate.py adopt-legacy-baseline --allow-production` — once; a no-op
    afterwards. Never before the guard passes: the baseline asserts the schema
    was verified.
 4. `scripts/migrate.py upgrade --allow-production` — every pending
    **non-destructive** migration. Any destructive migration is reported as
    `DEFERRED` and left pending.
-5. `utils.schema_guard` — prove convergence.
+5. `utils.schema_guard` — **STRICT**: prove convergence, with no tolerance
+   at all. This is the gate that actually prevents serving.
 6. `scripts/migrate.py status --allow-production` — report the history.
 
 The destructive migration is a **separate, separately-approved deployment**
 (`workflow_dispatch` + the `production-destructive` environment). See §6a.
 
 The ordering of 3 before 4 matters: the baseline requires a passing guard, and
-the guard cannot pass until convergence has created the missing tables.
+the guard cannot pass until convergence has created the missing tables. The
+asymmetry between step 2 and step 5 is deliberate and is the whole design:
+step 2 is tolerant ONLY about objects step 4 is about to create, while step 5
+tolerates nothing and gates serving. An application must never start on an
+incomplete schema.
 
 ---
 
@@ -590,6 +692,24 @@ Stated plainly so they are not mistaken for covered ground.
   `FRAMEIQ_TEST_POSTGRES_URL=postgresql://... pytest -m postgres`.
   It is excluded from the default run because it creates and drops tables, and
   because SQLite cannot prove transactional DDL.
+- **Cast enrichment has never been run against production.** `0003` creates
+  empty `person`/`media_cast` tables; `scripts/enrich_cast.py` is what populates
+  them, and it is a separate operator action, never part of a deployment. Until
+  it runs, `api/statistics.py`'s `actors` series and
+  `TasteProfile.actor_affinity_json` are legitimately empty — that is the
+  "enriched-and-empty" contract working, not a defect.
+- **`actor_affinity` is stored and exported but not yet displayed.** It is
+  persisted, returned by `TasteProfile.to_dict()`, exported in the account
+  export, and exposed as `describe_profile()['actor_affinity']`. It is
+  deliberately NOT in `taste_match_inputs`/`TASTE_MATCH_WEIGHTS` (that would
+  re-rank users) and the Taste DNA section still does not render it. Consuming
+  it in the UI is a separate change.
+- **`0003` upserts cast and never prunes it.** The credits payload is a
+  truncated top-N billing list, so a transient short response must not be able
+  to delete rows that are still correct. Re-enrichment therefore only adds and
+  updates; a credit TMDb later removes stays until it falls out of the billing
+  list or the derived row is deleted deliberately. This is safe because cast is
+  derived cache state, recomputable from the source at any time.
 - **`0002`'s destructive merge has never been run against production.** It is
   tested on SQLite against a faithful reproduction of the production shape, and
   the production row has been inspected read-only — but no verified, restorable

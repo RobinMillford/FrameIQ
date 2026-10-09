@@ -551,11 +551,18 @@ def test_describe_profile_structure_and_determinism(app, db, user, media_factory
     assert d1['signal_count'] == profile.signal_count
     assert d1['distinct_title_count'] == profile.distinct_title_count
     assert d1['is_personalized'] is True
+    # Pinned key set. F9 added `actor_affinity` alongside `director_affinity`:
+    # a purely additive key on the explanation-layer summary. Every consumer
+    # reads named keys (api/for_you.py, src/api/agent_service.py), so adding
+    # it cannot change ranking, explanations or agent context.
     assert set(d1) == {
         'top_positive_genres', 'top_negative_genres', 'top_decades',
         'media_type_pref', 'runtime_pref', 'director_affinity',
+        'actor_affinity',
         'confidence', 'signal_count', 'distinct_title_count',
         'profile_version', 'is_personalized'}
+    # No cast rows exist here, so the new dimension is empty, not missing.
+    assert d1['actor_affinity'] == {}
 
 
 def test_describe_profile_cold_start_shape(app, db, user):

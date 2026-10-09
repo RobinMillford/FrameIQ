@@ -152,8 +152,12 @@
                     <p id="yir-directors-empty" class="font-slate text-[10px] text-[var(--text-low)] hidden">No director data available.</p>
                 </section>
 
-                <!-- Actors intentionally omitted (§23): no persisted actor
-                     data exists, so there is no useful actor area to show. -->
+                <!-- Actors: `people.actors` IS returned by the API (F9 cast
+                     persistence), but still intentionally omitted here. The
+                     section is not rendered yet; adding it is a separate UI
+                     change, deliberately not bundled with the persistence
+                     milestone. Unlike directors it must never be claimed as
+                     "unavailable" — the data is there once enrichment runs. -->
 
                 <!-- Season ratings (canonical aggregate only) -->
                 <section aria-labelledby="yir-seasons-heading" id="yir-seasons-block" class="hidden mb-8">

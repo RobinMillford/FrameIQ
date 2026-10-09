@@ -22,11 +22,23 @@ class MediaItem(db.Model):
     # scripts/enrich_directors.py is the only writer.
     directors_enriched_at = db.Column(db.DateTime)
 
+    # Cast-capture status (Feature F9). Same contract as the director marker
+    # above, deliberately kept SEPARATE: cast is enriched for movies AND tv,
+    # directors only for movies (models/director.py explains why TV crew is
+    # episode-aggregated), so one shared marker could not express "TV has cast
+    # but will never have a director". Batch scripts/enrich_cast.py is the
+    # only writer.
+    cast_enriched_at = db.Column(db.DateTime)
+
     def __init__(self, **kwargs):
         super(MediaItem, self).__init__(**kwargs)
 
     directors = db.relationship(
         'MediaDirector', back_populates='media_item', cascade='all, delete-orphan')
+
+    cast_members = db.relationship(
+        'MediaCast', back_populates='media_item', cascade='all, delete-orphan',
+        order_by='MediaCast.credit_order')
 
     def __repr__(self):
         return f'<MediaItem {self.title}>'

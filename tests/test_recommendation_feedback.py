@@ -350,7 +350,8 @@ _LEGACY_SCHEMA = """
     CREATE TABLE taste_profile (
         id INTEGER PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL,
         genre_weights_json TEXT, decade_weights_json TEXT,
-        director_affinity_json TEXT, runtime_pref_json TEXT,
+        director_affinity_json TEXT, actor_affinity_json TEXT,
+        runtime_pref_json TEXT,
         media_type_pref_json TEXT, mood_tags_json TEXT,
         confidence REAL NOT NULL, signal_count INTEGER NOT NULL,
         distinct_title_count INTEGER NOT NULL,

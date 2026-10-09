@@ -44,6 +44,23 @@ class TasteProfile(db.Model):
     decade_weights_json = db.Column(db.Text, nullable=False, default='{}')
     # {"Denis Villeneuve": 3.0, ...} — top-N explainable directors.
     director_affinity_json = db.Column(db.Text, nullable=False, default='{}')
+    # {"Greta Gerwig": 2.4, ...} — top-N explainable cast members (Feature F9).
+    # A SEPARATE dimension from director_affinity on purpose: the two carry
+    # different evidence (crew credits vs billed cast) and are captured by
+    # different batches with different completeness (movies only vs movies and
+    # tv). Merging them would silently change every existing director weight.
+    #
+    # `server_default` is REQUIRED, not decorative. Migration 0003 adds this
+    # column to an already-populated table with ALTER TABLE ... ADD COLUMN, and
+    # a NOT NULL column with no database-side default is rejected outright
+    # ("column contains null values" on PostgreSQL, "Cannot add a NOT NULL
+    # column with default value NULL" on SQLite). The Python-side `default`
+    # alone cannot help: it only runs on ORM inserts, never on existing rows.
+    # The client + server default pair is the same convention models/lists.py
+    # uses for ListItem.position, and it keeps NOT NULL honest: a row can never
+    # hold NULL, so the actor_affinity property never has to defend against it.
+    actor_affinity_json = db.Column(db.Text, nullable=False, default='{}',
+                                    server_default='{}')
     # {"p25": 95, "p75": 140, "sample_count": 17} — null/empty until enough
     # runtime samples exist.
     runtime_pref_json = db.Column(db.Text, nullable=False, default='{}')
@@ -151,6 +168,14 @@ class TasteProfile(db.Model):
         self.director_affinity_json = self._dumps(value)
 
     @property
+    def actor_affinity(self):
+        return self._loads(self.actor_affinity_json)
+
+    @actor_affinity.setter
+    def actor_affinity(self, value):
+        self.actor_affinity_json = self._dumps(value)
+
+    @property
     def runtime_pref(self):
         return self._loads(self.runtime_pref_json)
 
@@ -180,6 +205,7 @@ class TasteProfile(db.Model):
             'genre_weights': self.genre_weights,
             'decade_weights': self.decade_weights,
             'director_affinity': self.director_affinity,
+            'actor_affinity': self.actor_affinity,
             'runtime_pref': self.runtime_pref,
             'media_type_pref': self.media_type_pref,
             'mood_tags': self.mood_tags,

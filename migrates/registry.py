@@ -46,9 +46,10 @@ class MigrationSpec:
             raise ValueError('a migration must have a module')
 
 
-# The two outstanding production data transformations found during the F8 audit.
-# Both are registered as ordinary forward migrations so they are executed by the
-# runner, recorded in the ledger, and verifiable afterwards.
+# The two outstanding production data transformations found during the F8 audit,
+# plus F9's additive cast schema. All are registered as ordinary forward
+# migrations so they are executed by the runner, recorded in the ledger, and
+# verifiable afterwards.
 MIGRATIONS: Tuple['MigrationSpec', ...] = (
     MigrationSpec(
         version='0001_canonical_watched_reconcile',
@@ -63,6 +64,19 @@ MIGRATIONS: Tuple['MigrationSpec', ...] = (
         depends_on=('0001_canonical_watched_reconcile',),
         summary='Merge the legacy user_wishlist into user_watchlist, then '
                 'drop it. DESTRUCTIVE — see docs/migration-inventory.md.',
+    ),
+    # F9 cast persistence. depends_on 0001 and DELIBERATELY NOT 0002: 0002 is
+    # destructive and stays deferred until an operator records a verified
+    # restorable snapshot, so depending on it would hold this purely additive
+    # schema hostage to an unrelated blocked DROP. See
+    # migrates/migrations_0003_cast_persistence.py.
+    MigrationSpec(
+        version='0003_cast_persistence',
+        module='migrations_0003_cast_persistence',
+        depends_on=('0001_canonical_watched_reconcile',),
+        summary='Add person/media_cast tables, MediaItem.cast_enriched_at '
+                'and TasteProfile.actor_affinity_json for offline cast '
+                'capture. Additive.',
     ),
 )
 

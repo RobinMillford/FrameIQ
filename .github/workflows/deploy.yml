@@ -165,16 +165,22 @@ jobs:
             #
             #   1. convergence  — one-time, additive creation of the 11 tables
             #      that were declared but missing. Historical, not versioned.
-            #   2. guard        — prove the schema matches the models.
+            #   2. guard        — prove that the ONLY drift is objects a registered,
+            #      pending, non-destructive migration owns. Strict about
+            #      everything else. Needed because a release adding a model
+            #      necessarily deploys models ahead of their migration.
             #   3. baseline     — record ONCE that the verified pre-existing
             #      state was adopted. Idempotent: a no-op afterwards. This is
             #      what separates "history known from here on" from "history
             #      unknown", and it must never run automatically.
             #   4. upgrade      — apply every registered pending migration.
-            #   5. guard        — prove it converged, before web is recreated.
+            #   5. guard        — STRICT: prove it converged, before web is
+            #      recreated. No tolerance at all on this one.
             #
             # A non-zero exit at any step fails the deploy BEFORE web is
-            # recreated. An unprepared schema must not be served.
+            # recreated. An unprepared schema must not be served. The tolerant
+            # check at step 2 exists only to let step 4 run; step 5 is what
+            # actually gates serving.
             #
             # `--allow-production` is the runner's deliberate operator opt-in
             # for a remote target. There is no environment variable that
@@ -204,9 +210,32 @@ jobs:
             #    explicit 11-table allow-list, fail-closed on anything else.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
 
-            # 3. The schema must match the models before anything is recorded
-            #    about it.
-            docker compose run --rm --no-deps web python -m utils.schema_guard
+            # 3. Prove that the ONLY schema drift is objects a registered,
+            #    pending, non-destructive migration declares it owns.
+            #
+            #    This step must be tolerant and the next-but-one strict. A
+            #    release that adds a model (F9 added person, media_cast,
+            #    media_item.cast_enriched_at, taste_profile.actor_affinity_json)
+            #    necessarily deploys models that reference schema the database
+            #    does not have yet — the runner creates it at step 5. A strict
+            #    guard here therefore aborted the deploy before the migration
+            #    could run, which is exactly the failure `init-ledger` was
+            #    introduced to prevent for the ledger itself.
+            #
+            #    `--allow-pending-migrations` narrows this to objects a
+            #    migration OWNS, which is declared by the migration
+            #    (CREATES_TABLES / ADDS_COLUMNS) and proven by
+            #    utils.schema_guard.pending_migration_objects(). It stays fatal
+            #    for: anything not registered, anything owned by a DESTRUCTIVE
+            #    migration (so 0002 never excuses a missing table), and
+            #    anything whose migration is ALREADY APPLIED — there, a missing
+            #    object is genuine drift, not a pending one.
+            #
+            #    This is a read-only CLI check. The application startup guard is
+            #    never tolerant, and step 6 re-runs the STRICT form below, so
+            #    the app cannot start on an incomplete schema.
+            docker compose run --rm --no-deps web \
+              python -m utils.schema_guard --allow-pending-migrations
 
             # 4. Adopt the verified legacy state exactly once. Exits 0 and does
             #    nothing on every subsequent deploy. It records that the schema

@@ -40,7 +40,13 @@ db-shell:
 	$(COMPOSE) exec db psql -U postgres frameiq
 
 migrate:
-	$(COMPOSE) exec web python -c "from app import app; from models import db; app.app_context().push(); db.create_all(); print('Tables created')"
+	$(COMPOSE) exec web python scripts/migrate.py status
+
+# Apply schema changes. NEVER calls db.create_all(): application startup and
+# this target alike must not create tables outside the migration ledger, which
+# would make `migrate.py status` unable to say which migration produced what.
+migrate-upgrade:
+	$(COMPOSE) exec web python scripts/migrate.py upgrade
 
 # ── SSL (one-time setup) ──────────────────────────────────────────────────────
 ssl:

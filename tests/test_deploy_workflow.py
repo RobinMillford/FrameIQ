@@ -478,6 +478,67 @@ def test_deploy_adopts_the_baseline_before_upgrading(deploy_scripts):
     assert script.index(baseline) < script.index("scripts/migrate.py upgrade")
 
 
+def test_pre_upgrade_guard_tolerates_only_pending_migration_objects(
+        deploy_scripts):
+    """Feature F9: the release-that-adds-a-model case.
+
+    A release that adds a model necessarily deploys models referencing schema
+    the runner has not created yet, so a STRICT guard at this point aborts the
+    deploy before `upgrade` runs. The pre-upgrade check must therefore be
+    migration-aware — and it must run BEFORE the runner.
+    """
+    script = _code_of_script(_main_script(deploy_scripts))
+    tolerant = "-m utils.schema_guard --allow-pending-migrations"
+    assert tolerant in script, (
+        "the pre-upgrade guard must use --allow-pending-migrations")
+    assert script.index(tolerant) < script.index("scripts/migrate.py upgrade"), (
+        "the tolerant check must precede the runner")
+
+
+def test_post_upgrade_guard_is_strict_and_gates_serving(deploy_scripts):
+    """Tolerance is a pre-upgrade tool, never a permanent relaxation.
+
+    The final check that decides whether web may start must be the STRICT form:
+    no flag, after the runner, before the web recreate.
+    """
+    script = _code_of_script(_main_script(deploy_scripts))
+    upgrade = script.index("scripts/migrate.py upgrade")
+    web = script.index("docker compose up -d")
+
+    tail = script[upgrade:web]
+    strict = "-m utils.schema_guard"
+    assert strict in tail, "a STRICT guard must run after upgrade, before web"
+    assert "--allow-pending-migrations" not in tail, (
+        "the post-upgrade guard must not tolerate pending objects")
+    assert tail.index(strict) > 0
+
+
+def test_startup_guard_is_never_tolerant(deploy_raw):
+    """The application must never boot on an incomplete schema.
+
+    The tolerance is a single explicit flag on ONE operator CLI step. This
+    asserts that as a countable property of the workflow rather than trusting a
+    comment: exactly one executed command may carry the flag, and no command
+    that starts the web service may.
+    """
+    commands = [line for line in deploy_raw.splitlines()
+                if line.strip() and not line.strip().startswith('#')]
+
+    tolerant = [line for line in commands
+                if '--allow-pending-migrations' in line]
+    assert len(tolerant) == 1, (
+        'exactly one command may use the migration-aware guard, found %d: %r'
+        % (len(tolerant), tolerant))
+
+    starts_web = [line for line in commands
+                  if 'docker compose up' in line and 'web' in line]
+    assert starts_web, 'expected the web recreate step'
+    for line in starts_web:
+        assert '--allow-pending-migrations' not in line
+        assert 'SKIP_SCHEMA_GUARD' not in line, (
+            'web must never start with the guard skipped: %r' % line)
+
+
 def test_deploy_produces_migration_history_before_serving(deploy_scripts):
     """The whole reason the ledger exists: `status` must report applied work."""
     script = _code_of_script(_main_script(deploy_scripts))

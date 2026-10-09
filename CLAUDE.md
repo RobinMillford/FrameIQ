@@ -64,15 +64,19 @@ python -m utils.schema_guard
 - `src/agents/` — LangGraph multi-agent AI system
 - `src/api/` — Agent service + Flask integration blueprint (`agent_chat`)
 - `api/` — TMDb client (`tmdb/` package) + streaming providers
-- `migrates/` — Manual migration scripts (no Alembic; `db.create_all()` handles new tables)
+- `migrates/` — Historical (unregistered) migration scripts. NEVER run these
+  directly. The authoritative, versioned runner is `scripts/migrate.py`.
 - `scripts/` — Data collection, embedding generation, episode sync (not in Docker)
 - `utils/` — Shared helpers (currently `email.py`)
 - `extensions.py` — Flask extensions singleton (limiter, mail, db)
 
 ### Database
 - All models in `models.py` (39 KB, single file)
-- `db.create_all()` runs on every startup — new tables auto-created
-- **Schema parity guard** (`utils/schema_guard.py`, read-only): after `create_all()`, startup compares live schema vs model metadata and **fails startup** on missing tables/columns (e.g. forgotten `ALTER TABLE` for a new model column). Deploy sequence: deploy code → run required migration(s) → app starts → guard verifies → healthy. `SKIP_SCHEMA_GUARD=1` is the explicit escape hatch for migration runs; the operator CLI (`python -m utils.schema_guard`) prints drift without mutating anything.
+- **Application startup never creates schema.** No `db.create_all()` at runtime,
+  for new tables or new columns. `scripts/bootstrap_dev_schema.py` is the only
+  `create_all()` and is for a disposable local/test database only — it refuses
+  a production target. Every schema change goes through `scripts/migrate.py`.
+- **Schema parity guard** (`utils/schema_guard.py`, read-only): startup compares live schema vs model metadata and **fails startup** on ANY missing table or column (e.g. a deployed model whose migration has not run yet). Deploy sequence: deploy code → convergence → migration-aware guard → `scripts/migrate.py upgrade` → **strict** guard → app starts. The pre-upgrade guard tolerates ONLY objects a registered, pending, non-destructive migration declares it owns (`CREATES_TABLES`/`ADDS_COLUMNS`); the post-upgrade guard and the in-app startup guard tolerate nothing. `SKIP_SCHEMA_GUARD=1` is the explicit escape hatch for migration runs; the operator CLI (`python -m utils.schema_guard`) prints drift without mutating anything, and `--allow-pending-migrations` is for that one pre-upgrade step only.
 
 ### Rate limiting (shared Valkey storage)
 - **Why:** with Gunicorn's 2 workers and the default `memory://` storage, every worker counted independently — documented limits were effectively N× weaker. Valkey (`valkey/valkey:8-alpine`, compose service) gives one shared counter set.

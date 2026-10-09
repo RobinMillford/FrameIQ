@@ -182,10 +182,11 @@ def test_historical_scripts_are_not_registered():
 # ── planning: pending vs satisfied vs tampered ───────────────────────────────
 
 
-def test_fresh_database_plans_both_migrations_pending():
+def test_fresh_database_plans_every_registered_migration_pending():
     report = runner.plan({})
     assert [s.version for s in report['pending']] == [
-        '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist']
+        '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist',
+        '0003_cast_persistence']
     assert report['mismatched'] == []
 
 
@@ -194,7 +195,7 @@ def test_applied_migration_is_not_pending_again():
     report = runner.plan({'0001_canonical_watched_reconcile': (checksum,
                                                                'migration')})
     assert [s.version for s in report['pending']] == [
-        '0002_remove_legacy_wishlist']
+        '0002_remove_legacy_wishlist', '0003_cast_persistence']
 
 
 def test_edited_applied_migration_is_reported_as_mismatched():
@@ -306,11 +307,16 @@ def test_missing_dependencies_helper():
 
 def test_upgrade_applies_all_and_records_each(engine):
     applied = _run_all(engine)
+    # 0003 is applied by the ORDINARY stage, ahead of the destructive 0002,
+    # which only runs in the approval-gated second stage. F9's additive schema
+    # is therefore reachable without authorising the legacy DROP.
     assert applied == ['0001_canonical_watched_reconcile',
+                       '0003_cast_persistence',
                        '0002_remove_legacy_wishlist']
     rows = _ledger_rows(engine)
     assert set(rows) == {'0001_canonical_watched_reconcile',
-                         '0002_remove_legacy_wishlist'}
+                         '0002_remove_legacy_wishlist',
+                         '0003_cast_persistence'}
     for version, (checksum, kind) in rows.items():
         assert kind == 'migration'
         assert checksum == runner.checksum_for(_spec(version))
@@ -320,7 +326,7 @@ def test_upgrade_is_idempotent(engine):
     _run_all(engine)
     assert runner.apply_pending(engine) == []
     assert _run_0002(engine) == []
-    assert len(_ledger_rows(engine)) == 2
+    assert len(_ledger_rows(engine)) == 3
 
 
 def test_ledger_table_is_created_by_the_runner_not_a_migration(engine):
@@ -502,7 +508,8 @@ def test_baseline_does_not_mark_migrations_as_applied(engine):
     runner.adopt_legacy_baseline(engine)
     report = runner.plan(_ledger_rows(engine))
     assert [s.version for s in report['pending']] == [
-        '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist']
+        '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist',
+        '0003_cast_persistence']
 
 
 # ── locking ──────────────────────────────────────────────────────────────────
@@ -880,7 +887,8 @@ def _run_0002(engine, approval=None):
 
 
 def _run_all(engine, approval=None):
-    """Both stages, as the two-job deployment performs them."""
+    """Both stages, as the two-job deployment performs them: the ordinary
+    upgrade first (0001 + F9's 0003), then the approval-gated 0002."""
     return runner.apply_pending(engine) + _run_0002(engine, approval)
 
 
@@ -1230,9 +1238,14 @@ def test_cli_upgrade_applies_ordinary_migrations_and_defers_the_destructive(
     assert 'DEFERRED' in result.stdout
     assert '0002_remove_legacy_wishlist' in result.stdout
     assert 'applied_user_viewed' not in result.stdout  # 0001 had nothing to do
+    # F9's additive migration rides the ordinary stage, not the gated one.
+    assert '[0003] cast persistence (additive)' in result.stdout
+    assert '+ 0003_cast_persistence' in result.stdout
+    # Cast rows are never written by a migration.
+    assert 'no rows written' in result.stdout
 
     status = _run_cli(db_path, 'status')
-    assert 'Recorded migrations : 1' in status.stdout
+    assert 'Recorded migrations : 2' in status.stdout
     assert 'Baseline            : NOT ADOPTED' in status.stdout
     assert 'Schema guard        : OK' in status.stdout
 
@@ -1285,7 +1298,7 @@ def test_cli_applies_the_destructive_migration_with_valid_evidence(tmp_path):
     assert result.returncode == 0, result.stderr
 
     status = _run_cli(db_path, 'status')
-    assert 'Recorded migrations : 2' in status.stdout
+    assert 'Recorded migrations : 3' in status.stdout
     assert 'Checksum mismatches : none' in status.stdout
     assert 'Schema guard        : OK' in status.stdout
 

@@ -33,12 +33,17 @@ def test_taste_profile_registered_in_metadata():
 
 
 def test_declared_columns_match_expected_schema():
-    """Model declares exactly the audited V1 fields — no speculative extras."""
+    """Model declares exactly the audited V1 fields plus F9's actor_affinity.
+
+    actor_affinity_json is the ONE addition: a separate dimension from
+    director_affinity_json, because the two carry different evidence with
+    different completeness and merging them would reweight director values.
+    """
     table = db.metadata.tables['taste_profile']
     cols = {c.name for c in table.columns}
     assert cols == {
         'id', 'user_id', 'genre_weights_json', 'decade_weights_json',
-        'director_affinity_json', 'runtime_pref_json',
+        'director_affinity_json', 'actor_affinity_json', 'runtime_pref_json',
         'media_type_pref_json', 'mood_tags_json', 'confidence',
         'signal_count', 'distinct_title_count', 'profile_version',
         'created_at', 'updated_at',

@@ -75,7 +75,29 @@ def _convergence():
 
 
 def _guard():
+    """STRICT guard — deploy.yml step 6, and the in-app equivalent."""
     return _run(['-m', 'utils.schema_guard'], _CURRENT['url'], skip_guard=False)
+
+
+def _guard_pending():
+    """deploy.yml step 3: tolerant ONLY of pending migration-owned objects."""
+    return _run(['-m', 'utils.schema_guard', '--allow-pending-migrations'],
+                _CURRENT['url'], skip_guard=False)
+
+
+# Objects that Feature F9 adds. A post-F8/pre-F9 database has none of them.
+F9_TABLES = ('person', 'media_cast')
+F9_COLUMNS = (('media_item', 'cast_enriched_at'),
+              ('taste_profile', 'actor_affinity_json'))
+
+
+def _columns(path, table):
+    connection = sqlite3.connect(path)
+    try:
+        return {row[1] for row in
+                connection.execute('PRAGMA table_info("%s")' % table)}
+    finally:
+        connection.close()
 
 
 def _tables(path):
@@ -119,6 +141,71 @@ def production_like(tmp_path):
 
 
 _CURRENT = {}
+
+
+@pytest.fixture
+def post_f8_pre_f9(tmp_path):
+    """A database that genuinely predates the F9 release.
+
+    This is the only fixture that models the situation a release creates: the
+    MODELS declare schema the DATABASE does not have yet. `production_like`
+    cannot, because it builds the schema from the current models — which is why
+    a strict pre-upgrade guard passed there and then aborted the real F9 deploy.
+
+    Removed here: F9's tables, F9's two columns, and F9's ledger row.
+    """
+    import sqlite3
+
+    from models.base import db
+    from sqlalchemy import create_engine
+
+    path = str(tmp_path / 'post_f8_pre_f9.db')
+    url = 'sqlite:///%s' % path
+    engine = create_engine(url)
+    db.metadata.create_all(bind=engine)
+    engine.dispose()
+
+    connection = sqlite3.connect(path)
+    for table in ('media_cast', 'person'):
+        connection.execute('DROP TABLE IF EXISTS "%s"' % table)
+    connection.execute('ALTER TABLE media_item '
+                       'DROP COLUMN cast_enriched_at')
+    connection.execute('ALTER TABLE taste_profile '
+                       'DROP COLUMN actor_affinity_json')
+    # The pre-F9 ledger: F8 is applied, F9 is not.
+    #
+    # `create_all` already built schema_migrations with its DECLARED shape, so
+    # it is reused rather than hand-written — an approximate DDL here is
+    # correctly refused by init-ledger, which is its whole job.
+    #
+    # 0001 is recorded with its REAL checksum. A fabricated one would make
+    # `upgrade` refuse with ChecksumMismatch, which is correct behaviour and
+    # would mask what these tests are actually about.
+    import hashlib
+
+    if os.path.join(REPO, 'scripts') not in sys.path:
+        sys.path.insert(0, os.path.join(REPO, 'scripts'))
+    import migrate as _runner_mod
+    _checksum = _runner_mod.checksum_for(
+        _runner_mod.registry.by_version()['0001_canonical_watched_reconcile'])
+    connection.execute(
+        'INSERT INTO schema_migrations '
+        '(version, checksum, kind, applied_at, execution_ms, note) VALUES '
+        "(?, ?, 'baseline', CURRENT_TIMESTAMP, 0, 'adopted')",
+        (_runner_mod.BASELINE_VERSION,
+         hashlib.sha256(_runner_mod.BASELINE_NOTE.encode()).hexdigest()))
+    connection.execute(
+        'INSERT INTO schema_migrations '
+        '(version, checksum, kind, applied_at, execution_ms, note) VALUES '
+        "('0001_canonical_watched_reconcile', ?, 'migration', "
+        'CURRENT_TIMESTAMP, 1, NULL)', (_checksum,))
+    connection.commit()
+    connection.close()
+
+    _CURRENT['url'] = url
+    _CURRENT['path'] = path
+    yield url, path
+    _CURRENT.clear()
 
 
 @pytest.fixture
@@ -424,3 +511,150 @@ def test_ledger_is_not_in_the_convergence_allow_list():
     from migrates import migrate_schema_convergence as convergence
     assert 'schema_migrations' not in convergence.EXPECTED_REPAIR_SET
     assert len(convergence.EXPECTED_REPAIR_SET) == 11
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# H: a release that ADDS a model — the post-F8/pre-F9 shape
+#
+# This is the case `production_like` cannot represent. Its schema is built from
+# the CURRENT models, so it already contains everything a new release declares.
+# The deploy sequence therefore always looked green locally while a strict
+# pre-upgrade guard aborted the real F9 deploy: the models referenced tables
+# (`person`, `media_cast`) and columns (`media_item.cast_enriched_at`,
+# `taste_profile.actor_affinity_json`) that the database did not have, and the
+# runner that would have created them had not run yet.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_post_f8_pre_f9_db_really_lacks_every_f9_object(post_f8_pre_f9):
+    url, path = post_f8_pre_f9
+    tables = _tables(path)
+    for name in F9_TABLES:
+        assert name not in tables, name
+    for table, column in F9_COLUMNS:
+        assert column not in _columns(path, table), '%s.%s' % (table, column)
+    # And the ledger reflects the pre-F9 state.
+    assert dict(_ledger(path)) == {
+        '0000_legacy_baseline': 'baseline',
+        '0001_canonical_watched_reconcile': 'migration',
+    }
+
+
+def test_strict_pre_upgrade_guard_aborts_on_the_pre_f9_state(post_f8_pre_f9):
+    """The blocker, reproduced: a strict check cannot pass here."""
+    result = _guard()
+    assert result.returncode == 1, result.stdout + result.stderr
+    for name in F9_TABLES:
+        assert name in result.stderr, name
+    assert 'actor_affinity_json' in result.stderr
+
+
+def test_pending_aware_pre_upgrade_guard_passes(post_f8_pre_f9):
+    result = _guard_pending()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'Schema OK' in result.stdout
+    # It must SAY what it is tolerating, not pass silently.
+    for name in F9_TABLES:
+        assert name in result.stdout, name
+
+
+def test_full_safe_sequence_applies_f9_while_0002_stays_deferred(post_f8_pre_f9):
+    """The whole deploy.yml sequence, on the shape it actually faces."""
+    url, path = post_f8_pre_f9
+
+    assert _runner('init-ledger').returncode == 0
+    convergence = _convergence()
+    assert convergence.returncode == 0, convergence.stdout[-600:]
+    # Convergence must NOT create what the runner owns, and must say so.
+    assert not (set(F9_TABLES) & _tables(path))
+    assert 'DEFERRED' in convergence.stdout
+    assert 'media_cast' in convergence.stdout
+    assert 'person' in convergence.stdout
+
+    pending = _guard_pending()
+    assert pending.returncode == 0, pending.stdout + pending.stderr
+
+    # baseline is a no-op: this database already records one.
+    assert _runner('adopt-legacy-baseline').returncode == 0
+
+    upgrade = _runner('upgrade')
+    assert upgrade.returncode == 0, upgrade.stdout[-600:]
+    assert '+ 0003_cast_persistence' in upgrade.stdout
+
+    # F9's objects now exist...
+    tables = _tables(path)
+    for name in F9_TABLES:
+        assert name in tables, name
+    for table, column in F9_COLUMNS:
+        assert column in _columns(path, table), '%s.%s' % (table, column)
+
+    # ...the ledger records F9, and the destructive migration is untouched.
+    recorded = dict(_ledger(path))
+    assert recorded['0003_cast_persistence'] == 'migration'
+    assert '0002_remove_legacy_wishlist' not in recorded
+
+    # The STRICT post-upgrade guard — the gate that actually prevents serving —
+    # now passes, and would have failed a moment earlier.
+    strict = _guard()
+    assert strict.returncode == 0, strict.stdout + strict.stderr
+
+
+def test_post_upgrade_guard_is_still_strict(post_f8_pre_f9):
+    """`--allow-pending-migrations` is a pre-upgrade tool, not a permanent one.
+
+    Drift introduced AFTER the migration is applied must stop the deploy even
+    though the tolerant flag would forgive migration-owned objects.
+    """
+    import sqlite3
+    url, path = post_f8_pre_f9
+    assert _runner('init-ledger').returncode == 0
+    assert _convergence().returncode == 0
+    assert _guard_pending().returncode == 0
+    assert _runner('upgrade').returncode == 0
+
+    connection = sqlite3.connect(path)
+    connection.execute('DROP TABLE IF EXISTS media_like')
+    connection.commit()
+    connection.close()
+
+    result = _guard_pending()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'media_like' in result.stderr
+
+
+def test_convergence_leaves_migration_owned_tables_to_the_runner(post_f8_pre_f9):
+    """Convergence must never create an object the runner will record.
+
+    If it did, the ledger would be unable to say which migration produced the
+    table — the exact failure `init-ledger` exists to prevent.
+    """
+    url, path = post_f8_pre_f9
+    before = _tables(path)
+    result = _convergence()
+    assert result.returncode == 0, result.stdout[-600:]
+    created = _tables(path) - before
+    assert not (created & set(F9_TABLES)), created
+    # And the honest report: it must not claim everything exists.
+    assert 'every declared table exists' not in result.stdout, result.stdout
+    assert 'DEFERRED' in result.stdout
+    assert 'NOT created here' in result.stdout
+
+
+def test_convergence_reports_success_honestly_when_nothing_is_deferred(
+        production_like):
+    """The complementary case: with nothing pending, the claim is true.
+
+    Reach it honestly — run the sequence so the ledger exists and F9 is applied,
+    then converge again. Asserting it on the un-converged fixture would only
+    prove that convergence refuses on a missing ledger.
+    """
+    url, path = production_like
+    assert _runner('init-ledger').returncode == 0
+    assert _convergence().returncode == 0
+    assert _guard_pending().returncode == 0
+    assert _runner('upgrade').returncode == 0
+
+    result = _convergence()
+    assert result.returncode == 0, result.stdout[-600:]
+    assert 'DEFERRED' not in result.stdout
+    assert 'every declared table exists' in result.stdout
