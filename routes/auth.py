@@ -189,7 +189,8 @@ def profile():
     #                  TV shows with >=1 watched episode (NOT per-episode)
     #   TRACKING     = TVShowProgress rows (tracking state, never watch
     #                  events) — reported separately from watching
-    from models import DiaryEntry, user_watchlist, user_viewed
+    from api.statistics import canonical_movies_watched
+    from models import DiaryEntry, user_watchlist
     from models.tv import TVEpisodeWatch
     from sqlalchemy import func as _func
 
@@ -211,9 +212,15 @@ def profile():
     wl_count = db.session.execute(
         user_watchlist.select().where(user_watchlist.c.user_id == uid)
     ).rowcount
-    viewed_count = db.session.execute(
-        user_viewed.select().where(user_viewed.c.user_id == uid)
-    ).rowcount
+    # Canonical movie watch history, counted from DiaryEntry.
+    #
+    # This previously counted the `user_viewed` mirror with `.rowcount` on a
+    # bare SELECT, which does not return a row count: it rendered as -1 in the
+    # profile stat strip. It was also wrong under the canonical-viewed policy —
+    # `user_viewed` is a compatibility mirror, and unmatched legacy markers in
+    # it would inflate a figure presented beside diary-derived DIARY/WATCH
+    # EVENTS counters.
+    viewed_count = canonical_movies_watched(uid)
 
     # TV progress surface (Phase 6): bounded batch reads over existing
     # TV tracking data — progress rows, titles, and last-watched

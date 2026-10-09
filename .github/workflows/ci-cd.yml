@@ -140,3 +140,73 @@ jobs:
             exit 1
           fi
           echo "Whitespace/conflict-marker gate: clean"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PostgreSQL migration verification (Decision D)
+  # ─────────────────────────────────────────────────────────────────────────
+  #
+  # The SQLite suite cannot prove two things that matter for a destructive
+  # migration on production:
+  #   * transactional DDL — pysqlite commits around DDL, so a failed migration
+  #     can leave its DDL behind on SQLite but not on PostgreSQL;
+  #   * advisory locks — pg_advisory_lock does not exist on SQLite, so the runner
+  #     prints "lock: UNAVAILABLE" and no SQLite test can show that competing
+  #     runners are actually excluded.
+  #
+  # These are executed here against a real server rather than asserted from
+  # SQLite, mocks or reasoning. Pinned to postgres:17 to match production
+  # (17.11) exactly.
+  #
+  # The database is a disposable container with a throwaway credential. The
+  # tests additionally refuse to run at all if the URL is not local, so this
+  # job cannot be pointed at production even by a mistaken variable.
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-scratch-password
+          POSTGRES_DB: frameiq_migration_scratch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PG tests drop and recreate the public schema; a shallow or
+          # wrong-ref checkout would run them against unintended code.
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest flake8
+
+      - name: PostgreSQL version parity with production
+        run: |
+          set -euo pipefail
+          psql "postgresql://postgres:${PGPASSWORD}@localhost:5432/frameiq_migration_scratch" \
+            -c "SHOW server_version;"
+          # Production reports 17.11. Fail if the service silently drifted to a
+          # different major version, because the transactional-DDL and advisory
+          # lock behaviour asserted here is version-sensitive in principle.
+          MAJOR="$(psql "postgresql://postgres:${PGPASSWORD}@localhost:5432/frameiq_migration_scratch" \
+            -tAc "SHOW server_version_num;" | cut -d. -f1)"
+          if [ "${MAJOR}" -lt 17 ]; then
+            echo "::error::PostgreSQL ${MAJOR} is older than production's 17."
+            exit 1
+          fi
+        env:
+          PGPASSWORD: ci-scratch-password
+
+      - name: Migration tests against real PostgreSQL
+        env:
+          FRAMEIQ_TEST_POSTGRES_URL: postgresql://postgres:ci-scratch-password@localhost:5432/frameiq_migration_scratch
+        run: pytest tests/test_migration_postgres.py -v --tb=short -m postgres

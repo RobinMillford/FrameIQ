@@ -20,7 +20,8 @@ from api.smart_lists import (validate_config, evaluate_smart_list,
 
 def make_media(tmdb_id, title='A Movie', media_type='movie', rating=7.0,
                runtime=120, year=2020, genres='Action', priority='medium',
-               add_to_watchlist=True, watched=False, user=None):
+               add_to_watchlist=True, watched=False, user=None,
+               diary=False):
     m = MediaItem(
         tmdb_id=tmdb_id, media_type=media_type, title=title,
         release_date=datetime(year, 6, 15).date(), poster_path=f'/{tmdb_id}.jpg',
@@ -35,6 +36,12 @@ def make_media(tmdb_id, title='A Movie', media_type='movie', rating=7.0,
         if watched:
             db.session.execute(user_viewed.insert().values(
                 user_id=user.id, media_id=m.id, media_type=media_type))
+        if diary:
+            # Canonical watch history. `watched=True` alone is only the
+            # user_viewed compatibility mirror, which is NOT watch history.
+            db.session.add(DiaryEntry(
+                user_id=user.id, media_id=m.id, media_type=media_type,
+                watched_date=datetime(year, 6, 15).date()))
     return m
 
 
@@ -239,13 +246,33 @@ class TestDynamicResults:
             titles = [i['title'] for i in evaluate_smart_list(sl)['items']]
             assert titles == ['Tracked Show']
 
-    def test_diary_scope_uses_viewed_state(self, app, sample_user):
+    def test_diary_scope_uses_canonical_diary_not_the_viewed_mirror(
+            self, app, sample_user):
+        """The 'diary' scope is labelled "Watched History".
+
+        It must therefore read canonical watch history (DiaryEntry), not the
+        user_viewed compatibility mirror. A mirror-only row is an unmatched
+        legacy marker and must not appear as a watched title.
+        """
         with app.app_context():
-            make_media(603, 'Seen It', watched=True, user=sample_user)
+            make_media(603, 'Seen It', watched=True, diary=True,
+                       user=sample_user)
             make_media(27205, 'Not Yet', user=sample_user)
+            make_media(604, 'Marker Only', watched=True, user=sample_user)
             sl = make_list(sample_user, scope='diary', filters={})
             titles = [i['title'] for i in evaluate_smart_list(sl)['items']]
             assert titles == ['Seen It']
+            assert 'Marker Only' not in titles
+
+    def test_diary_scope_excludes_mirror_only_rows_entirely(self, app,
+                                                            sample_user):
+        """Not one unmatched marker, even when it is the only row."""
+        with app.app_context():
+            make_media(700, 'Marker Only', watched=True, user=sample_user)
+            sl = make_list(sample_user, scope='diary', filters={})
+            result = evaluate_smart_list(sl)
+            assert result['items'] == []
+            assert result['total'] == 0
 
 
 class TestSortsAndPagination:

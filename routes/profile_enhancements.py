@@ -3,7 +3,8 @@ Profile Enhancements
 Adds badges, achievements, and enhanced statistics to user profiles
 """
 from flask import Blueprint, jsonify
-from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, user_watchlist, user_viewed
+from api.statistics import canonical_movies_watched
+from models import db, User, Review, MediaLike, MediaComment, UserMediaTag, user_watchlist
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
 
@@ -60,7 +61,11 @@ def calculate_user_badges(user_id):
         badges.append({'id': 'watchlist_100', 'name': 'Mega Collector', 'icon': '🎞️', 'description': '100+ items in watchlist'})
     
     # Watched badges
-    viewed_count = db.session.query(user_viewed).filter(user_viewed.c.user_id == user_id).count()
+    # Canonical movie watch history, counted from DiaryEntry.
+    # `user_viewed` is a compatibility mirror: 15 legacy markers in it have
+    # no DiaryEntry row, and counting the mirror would award watched badges
+    # and inflate these progress bars for watches the user never logged.
+    viewed_count = canonical_movies_watched(user_id)
     if viewed_count >= 50:
         badges.append({'id': 'viewed_50', 'name': 'Binge Watcher', 'icon': '📹', 'description': '50+ items watched'})
     if viewed_count >= 100:
@@ -101,7 +106,11 @@ def get_user_badges(user_id):
     comment_count = MediaComment.query.filter_by(user_id=user_id, is_deleted=False).count()
     tag_count = UserMediaTag.query.filter_by(user_id=user_id).count()
     watchlist_count = db.session.query(user_watchlist).filter(user_watchlist.c.user_id == user_id).count()
-    viewed_count = db.session.query(user_viewed).filter(user_viewed.c.user_id == user_id).count()
+    # Canonical movie watch history, counted from DiaryEntry.
+    # `user_viewed` is a compatibility mirror: 15 legacy markers in it have
+    # no DiaryEntry row, and counting the mirror would award watched badges
+    # and inflate these progress bars for watches the user never logged.
+    viewed_count = canonical_movies_watched(user_id)
     followers_count = user.followers_count or 0
     
     # Define all possible badges with progress
@@ -264,7 +273,11 @@ def get_enhanced_stats(user_id):
     comment_count = MediaComment.query.filter_by(user_id=user_id, is_deleted=False).count()
     tag_count = UserMediaTag.query.filter_by(user_id=user_id).count()
     watchlist_count = db.session.query(user_watchlist).filter(user_watchlist.c.user_id == user_id).count()
-    viewed_count = db.session.query(user_viewed).filter(user_viewed.c.user_id == user_id).count()
+    # Canonical movie watch history, counted from DiaryEntry.
+    # `user_viewed` is a compatibility mirror: 15 legacy markers in it have
+    # no DiaryEntry row, and counting the mirror would award watched badges
+    # and inflate these progress bars for watches the user never logged.
+    viewed_count = canonical_movies_watched(user_id)
     
     # Rating analysis
     reviews_with_ratings = Review.query.filter(
@@ -352,7 +365,11 @@ def get_user_achievements(user_id):
     
     # Calculate progress towards next badges
     review_count = Review.query.filter_by(user_id=user_id, is_deleted=False).count()
-    viewed_count = db.session.query(user_viewed).filter(user_viewed.c.user_id == user_id).count()
+    # Canonical movie watch history, counted from DiaryEntry.
+    # `user_viewed` is a compatibility mirror: 15 legacy markers in it have
+    # no DiaryEntry row, and counting the mirror would award watched badges
+    # and inflate these progress bars for watches the user never logged.
+    viewed_count = canonical_movies_watched(user_id)
     followers_count = user.followers_count or 0
     
     progress = []

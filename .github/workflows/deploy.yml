@@ -15,11 +15,12 @@
 # sync-upcoming-episodes.yml / taste-profile-nightly.yml: script_stop
 # (never swallow a failed command) + explicit command timeouts.
 #
-# Schema-changing deployments (Feature 10E order): build the verified-SHA
-# image FIRST, run the named idempotent migration in a one-off container,
-# and only then recreate web. Each schema-changing release adds its named
-# migration line before the web recreate, in order — never a blind
-# migrates/*.py sweep. Those scripts self-manage SKIP_SCHEMA_GUARD.
+# Schema-changing deployments run through ONE authoritative command,
+# `scripts/migrate.py upgrade`, which applies every registered migration in
+# order inside a transaction per migration and records each in a checksummed
+# ledger. A release no longer adds its own named script line here; it adds an
+# entry to migrates/registry.py and the deploy picks it up automatically.
+# Ordering is no longer something a human maintains by editing this file.
 #
 # Since Task F7 release hardening the web process itself performs NO DDL:
 # app.py no longer calls db.create_all() at startup. The schema is owned by
@@ -29,9 +30,33 @@
 name: Deploy to VPS
 
 on:
+  # Automatic path. Runs the SAFE deploy only: convergence, schema guard,
+  # baseline adoption, non-destructive migrations, and the web recreate.
+  # Destructive migrations are never reached from here.
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  # Operator-initiated path. This is the ONLY way the destructive legacy-wishlist
+  # migration can be reached, and it additionally requires the
+  # `production-destructive` environment, which must be configured with required
+  # reviewers in repository settings. The backup reference is a per-run input,
+  # so it cannot be a stale repository variable carried over from a previous
+  # deployment.
+  workflow_dispatch:
+    inputs:
+      destructive_migration:
+        description: "Exact migration id to authorize. Must match the migration's own id."
+        required: true
+        default: "0002_remove_legacy_wishlist"
+      backup_ref:
+        description: "Reference to the snapshot that was actually created, e.g. neon-snapshot-20260928-ab12cd. Placeholders are rejected."
+        required: true
+      backup_verified_by:
+        description: "Operator who confirmed the snapshot was restored successfully."
+        required: true
+      ref:
+        description: "Commit SHA whose CI run succeeded (must be a full 40-char SHA)."
+        required: true
 
 permissions:
   contents: read
@@ -49,7 +74,13 @@ jobs:
 
     # The gate: every non-success CI conclusion (failure, cancelled,
     # timed_out, ...) and every non-main branch skips deployment entirely.
+    #
+    # `event_name` is checked explicitly, not left to a null comparison. This
+    # workflow also accepts `workflow_dispatch` (that path exists only to
+    # authorise the destructive step), and relying on a missing field to make
+    # the condition false would be an accident rather than a control.
     if: >-
+      github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
 
@@ -120,43 +151,65 @@ jobs:
               exit 1
             fi
 
-            # ── Schema-changing deployments (Feature 10E order): build the
-            # verified-SHA image FIRST (a migration script only exists in
-            # the code being deployed — running it from the previous
-            # deploy's image would fail on the first such deploy), then run
-            # the named idempotent migration in a one-off container, and
-            # only then recreate web. Named script only — never a blind
-            # migrates/*.py sweep; future schema-changing releases add
-            # their named migration line here, before the web recreate, in
-            # order. SKIP_SCHEMA_GUARD=1 is the guard's documented operator
-            # escape hatch for the one-off migration container; it is
-            # NEVER set for the running application below.
+            # ── Schema-changing deployments (Task F8: one authoritative
+            # path) ──────────────────────────────────────────────────────
+            # Build the verified-SHA image FIRST: a migration only exists in
+            # the code being deployed, so running one from the previous
+            # deploy's image would fail on the first such deploy.
+            #
+            # The sequence below replaces the older "add a named script line
+            # per release" habit, which had drifted to three scripts and had
+            # already lost track of at least nine. There is now one command
+            # that applies everything registered, in order, transactionally,
+            # with checksums — `scripts/migrate.py upgrade`.
+            #
+            #   1. convergence  — one-time, additive creation of the 11 tables
+            #      that were declared but missing. Historical, not versioned.
+            #   2. guard        — prove the schema matches the models.
+            #   3. baseline     — record ONCE that the verified pre-existing
+            #      state was adopted. Idempotent: a no-op afterwards. This is
+            #      what separates "history known from here on" from "history
+            #      unknown", and it must never run automatically.
+            #   4. upgrade      — apply every registered pending migration.
+            #   5. guard        — prove it converged, before web is recreated.
+            #
+            # A non-zero exit at any step fails the deploy BEFORE web is
+            # recreated. An unprepared schema must not be served.
+            #
+            # `--allow-production` is the runner's deliberate operator opt-in
+            # for a remote target. There is no environment variable that
+            # enables it: a deploy cannot widen its own authority by accident.
             docker compose build web
-            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_movie_release_dates.py
-            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_remove_wishlist.py
 
-            # ── Schema convergence (Task F7 release hardening) ───────────
-            # The web process no longer creates its own schema at startup.
-            # That removes the mechanism by which the live database had
-            # silently fallen behind: 11 declared tables were missing,
-            # because the implicit table-creation call was failing on an
-            # index-name collision and rolling back every time it ran.
-            #
-            # This converges the live schema onto the declared models. It is
-            # additive only (creates absent tables, never alters or drops),
-            # idempotent, and self-verifying. It runs BEFORE web is recreated,
-            # so the web process never starts against an unprepared schema.
-            #
-            # If it exits non-zero the whole step fails and web is NOT
-            # recreated, which is the intended behaviour: an unprepared schema
-            # must not be served.
+            # 1. Legacy convergence: additive only, idempotent, bounded to an
+            #    explicit 11-table allow-list, fail-closed on anything else.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
 
-            # Prove the schema matches the models BEFORE starting web, so a
-            # migration gap fails the deploy here rather than as a dead worker
-            # later. Read-only: the guard never writes, and this CLI exempts
-            # itself from the startup guard so it can report instead of crash.
+            # 2. The schema must match the models before anything is recorded
+            #    about it.
             docker compose run --rm --no-deps web python -m utils.schema_guard
+
+            # 3. Adopt the verified legacy state exactly once. Exits 0 and does
+            #    nothing on every subsequent deploy. It records that the schema
+            #    was VERIFIED — not that each historical script ran, which
+            #    nobody recorded and which must not be invented.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python scripts/migrate.py adopt-legacy-baseline --allow-production
+
+            # 4. Apply every registered pending migration, in order.
+            #    Refuses to start if an already-applied migration's file has
+            #    changed, or if any migration's verify() does not converge.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python scripts/migrate.py upgrade --allow-production
+
+            # 5. Prove convergence before web is recreated, so a migration gap
+            #    fails here rather than as a dead worker later.
+            docker compose run --rm --no-deps web python -m utils.schema_guard
+
+            # Report the resulting history. Read-only; prints what is applied,
+            # what is pending, and any checksum mismatch.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python scripts/migrate.py status --allow-production
 
             # Recreate only the web service (rebuild is a cache hit).
             # Never 'down -v'; volumes (pgdata, chat_memory) are untouched.
@@ -311,3 +364,157 @@ jobs:
             echo "Log scan clean (rate-limit 429 bot traffic is not a failure)."
 
             echo "DEPLOY SUCCESS: $ACTUAL is live and verified healthy."
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Destructive migration step — separately approved, never automatic.
+  # ─────────────────────────────────────────────────────────────────────────
+  #
+  # This job exists so that reaching the DROP TABLE requires three independent
+  # things, none of which a routine CI-green deploy supplies:
+  #
+  #   1. a deliberate `workflow_dispatch` with a per-run backup reference and a
+  #      named operator (inputs, not repository variables — a stale variable is
+  #      not evidence that today's snapshot exists);
+  #   2. approval of the `production-destructive` environment, which MUST be
+  #      configured with required reviewers in repository settings. If no
+  #      reviewer is configured the environment applies no protection, so the
+  #      preflight below fails closed in that case;
+  #   3. the runner's own per-migration authorization check, which re-verifies
+  #      the backup reference and refuses on placeholders.
+  #
+  # It does NOT depend on the `deploy` job: that job is skipped on a dispatch,
+  # so depending on it would skip this one too.
+  destructive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Serialised against the automatic deploy, so an approval cannot race a
+    # deploy that is already migrating.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    if: github.event_name == 'workflow_dispatch'
+    # Required reviewers MUST be configured here in repository settings.
+    environment:
+      name: production-destructive
+      url: https://frameiq.studio/health
+    steps:
+      - name: Reject unusable dispatch input
+        run: |
+          set -euo pipefail
+          # A full SHA is required so the migration code that runs is pinned to
+          # a specific reviewed commit rather than a moving branch.
+          if [[ ! "${{ inputs.ref }}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::inputs.ref must be a full 40-character commit SHA (got '${REF_LEN:-$(echo -n "${{ inputs.ref }}" | wc -c)}' characters). A branch name is not acceptable for a destructive step."
+            exit 1
+          fi
+          # The authorization must name a migration that actually exists and
+          # actually declares itself destructive. Anything else is refused here
+          # rather than being passed to the runner.
+          case "${{ inputs.destructive_migration }}" in
+            0002_remove_legacy_wishlist) ;;
+            *) echo "::error::inputs.destructive_migration must be 0002_remove_legacy_wishlist, got '${{ inputs.destructive_migration }}'."
+               exit 1 ;;
+          esac
+          # Reject obvious placeholders BEFORE any remote contact.
+          for value in "${{ inputs.backup_ref }}" "${{ inputs.backup_verified_by }}"; do
+            case "$(echo "$value" | tr '[:upper:]' '[:lower:]')" in
+              yes|y|true|1|ok|none|null|"n/a"|na|todo|tbd|changeme|placeholder|dummy|example|sample|backup|snap|snapshot|-)
+                echo "::error::A placeholder was supplied as backup evidence. A real snapshot reference and a real operator are required."
+                exit 1 ;;
+            esac
+            if [ -z "$value" ]; then
+              echo "::error::Empty backup evidence supplied."
+              exit 1
+            fi
+          done
+          if [ "${#{{ inputs.backup_ref }}}" ] -lt 8 ]; then
+            echo "::error::inputs.backup_ref is too short to identify a snapshot."
+            exit 1
+          fi
+
+      - name: Fail closed unless the environment really has required reviewers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A GitHub Environment with NO required reviewers protects nothing:
+          # anyone able to dispatch can then approve it. That would make this
+          # job self-authorising while appearing to be gated, so verify the
+          # protection rule actually exists and lists reviewers.
+          #
+          # This is checked rather than assumed. Declaring `environment:` in the
+          # job is necessary but not sufficient evidence of a human gate.
+          ENV_NAME="production-destructive"
+          PROTECTION="$(gh api "repos/${GITHUB_REPOSITORY}/environments/${ENV_NAME}" \
+            --jq '{reviewers: (.deployment_protection_rule.required_reviewers // [] | length),
+                   wait_timer: (.deployment_protection_rule.wait_timer // 0),
+                   branch_policy: (.deployment_branch_policy // null)}')"
+          echo "Environment protection: ${PROTECTION}"
+
+          REVIEWERS="$(echo "$PROTECTION" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reviewers"])')"
+          if [ "${REVIEWERS}" -lt 1 ]; then
+            echo "::error::Environment '${ENV_NAME}' has no required reviewers, so this step is self-authorising. Add required reviewers in repository settings (Settings > Environments) before running a destructive migration."
+            exit 1
+          fi
+          echo "Required reviewers are configured (${REVIEWERS}). Approval must come from one of them."
+
+      - name: Destructive migration (backup-approved)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 40m
+          script: |
+            set -euo pipefail
+            cd /home/deployer/FrameIQ
+
+            # Re-verify, immediately before the destructive step, that the CI
+            # run for this exact SHA concluded success. Approval must not be
+            # usable to run unreviewed code.
+            VERIFIED_SHA="${{ inputs.ref }}"
+            ACTUAL="$(git rev-parse HEAD)"
+            if [ "$ACTUAL" != "$VERIFIED_SHA" ]; then
+              echo "::error::VPS is at $ACTUAL but $VERIFIED_SHA was approved."
+              exit 1
+            fi
+
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "::error::VPS working tree is dirty; refusing to migrate."
+              exit 1
+            fi
+
+            docker compose build web
+
+            # ── Preconditions re-checked immediately before the DROP ───
+            BACKUP_REF="${{ inputs.backup_ref }}"
+            VERIFIED_BY="${{ inputs.backup_verified_by }}"
+            MIGRATION="${{ inputs.destructive_migration }}"
+
+            if [ -z "$BACKUP_REF" ] || [ -z "$VERIFIED_BY" ]; then
+              echo "::error::Backup reference or verifier is empty; refusing."
+              exit 1
+            fi
+            if [ ${#BACKUP_REF} -lt 8 ]; then
+              echo "::error::Backup reference is too short to identify a snapshot."
+              exit 1
+            fi
+
+            echo "Destructive migration authorised:"
+            echo "  migration    : $MIGRATION"
+            echo "  backup_ref   : $BACKUP_REF"
+            echo "  verified_by  : $VERIFIED_BY"
+            echo "The legacy table is dropped only after every source row is accounted for."
+
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python scripts/migrate.py upgrade --allow-production \
+              --only "$MIGRATION" \
+              --authorize-destructive "$MIGRATION" \
+              --backup-ref "$BACKUP_REF" \
+              --backup-verified-by "$VERIFIED_BY"
+
+            # Prove convergence before anything else touches the app.
+            docker compose run --rm --no-deps web python -m utils.schema_guard
+
+            echo "DESTRUCTIVE MIGRATION COMPLETE AND VERIFIED."

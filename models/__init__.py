@@ -75,6 +75,7 @@ from models.chat import (                                      # noqa: F401
 )
 from models.year_in_review_share import YearInReviewShare      # noqa: F401
 from models.import_mapping import ImportSourceMapping  # noqa: F401
+from models.schema_migration import SchemaMigration  # noqa: F401
 
 __all__ = [
     'db',
@@ -94,4 +95,5 @@ __all__ = [
     'ChatConversation', 'ChatMessage', 'UserChatDailyUsage', 'UserChatMemory',
     'YearInReviewShare',
     'ImportSourceMapping',
+    'SchemaMigration',
 ]

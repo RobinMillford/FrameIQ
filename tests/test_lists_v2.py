@@ -680,8 +680,48 @@ class TestWatchedState:
         states = {i['id']: i['watched'] for i in data['items']}
         assert states == {i1.id: 'watched', i2.id: 'watching',
                           i3.id: 'unwatched'}
-        assert data['watched_count'] == 1
         assert data['total'] == 3
+        # `watched_count` is a watch-history STATISTIC and is diary-derived.
+        # This fixture only inserted a user_viewed MIRROR row, which is an
+        # unmatched legacy marker: it badges the item above but must not be
+        # counted as canonical history.
+        assert data['watched_count'] == 0
+        by_id = {i['id']: i for i in data['items']}
+        assert by_id[i1.id]['watched_canonical'] is False
+
+    def test_movie_watched_count_requires_canonical_diary(
+            self, app, db, auth_client):
+        """Same list, but the watched title now has a DiaryEntry row.
+
+        The badge was already 'watched' from the mirror; only the diary row
+        moves `watched_count` from 0 to 1. That is the whole point of keeping
+        the two signals separate.
+        """
+        from models import DiaryEntry, user_viewed
+        import datetime
+        u = _user(db, 'v2_watch_count')
+        lst = _list(db, u.id, 'CountList', slug=f'v2-{uuid.uuid4().hex[:8]}')
+        # A TMDb id unique to this test (9_650_5xx is used by the TV tests
+        # below); MediaItem.tmdb_id is UNIQUE and the fixture DB is shared.
+        media = _media(db, 'Counted Movie', media_type='movie',
+                       tmdb_id=9_650_777)
+        _item(db, lst, media)
+        db.session.execute(user_viewed.insert().values(
+            user_id=u.id, media_id=media.id, media_type='movie'))
+        db.session.commit()
+
+        _login(auth_client, u.username)
+        first = auth_client.get(f'/api/lists/{lst.id}/watched-state').get_json()
+        assert first['watched_count'] == 0
+
+        db.session.add(DiaryEntry(
+            user_id=u.id, media_id=media.id, media_type='movie',
+            watched_date=datetime.date(2024, 1, 1)))
+        db.session.commit()
+
+        second = auth_client.get(f'/api/lists/{lst.id}/watched-state').get_json()
+        assert second['watched_count'] == 1
+        assert second['items'][0]['watched_canonical'] is True
 
     def test_tv_progress_semantics(self, app, db, auth_client):
         from models import TVShowProgress

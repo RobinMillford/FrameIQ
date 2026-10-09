@@ -18,17 +18,34 @@ idx_diary_user_watched_date(user_id, watched_date) shared by every
 statement here (migrates/migrate_diary_statistics_indexes.py).
 
 ═══════════════════════════════════════════════════════════════════════
-AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — intentionally left
-untouched; this module is the canonical service future surfaces consume:
+AUDIT OF EXISTING STATISTICS LOGIC (Phase 2 §1) — this module is the
+canonical service; surfaces consume it rather than re-deriving:
 
   routes/stats.py        per-route counters (diary counts, this-year
                          count, genre loops over DiaryEntry×MediaItem)
   routes/auth.py:188     diary_count for signup tracking
-  routes/analytics.py    user_viewed / review / watchlist counters
-                         (list state, NOT watch history)
-  routes/profile_enhancements.py  review/like/comment/watchlist counts
+  routes/analytics.py    delegates here (get_statistics) — it no longer
+                         counts user_viewed
+  routes/profile_enhancements.py  watched/review/like/comment counts; the
+                         watched figures now use canonical_movies_watched
   routes/tv_tracking.py  episode-level watch counters (TV subsystem)
   User.total_movies_watched  denormalized counter maintained on log
+
+CANONICAL VIEWED POLICY (movie watch history)
+----------------------------------------------
+`DiaryEntry` is the canonical authority for MOVIE watch history.
+`user_viewed` is a COMPATIBILITY MIRROR — a denormalised copy kept for
+legacy view-state surfaces ("has this been marked viewed?"), not an
+independent source of watch history.
+
+15 unmatched mirror rows exist in production. Anything that counts
+watched titles, totals or badges must read DiaryEntry, never the mirror,
+or a marker inflates a real statistic. `canonical_movies_watched` at the
+bottom of this module is the one shared definition for that count; the
+per-item "watched" badge legitimately stays mirror-backed.
+
+TV is untouched: TV history is `TVEpisodeWatch`, and nothing here folds
+it into the movie surfaces.
 ═══════════════════════════════════════════════════════════════════════
 
 Source-of-truth semantics:
@@ -946,4 +963,40 @@ def _genre_projection(user_id, lower, upper):
             lower, upper,
         )
         .all()
+    )
+
+
+# ── Canonical movie watch count (single shared definition) ───────────────────
+#
+# WHY THIS EXISTS SEPARATELY
+# --------------------------
+# get_statistics() is the full statistics presentation model: 8 bounded
+# aggregates, an optional year/date window, TV folding, genre and director
+# breakdowns. Several surfaces need exactly one number -- "how many movies has
+# this person watched" -- and previously computed it themselves.
+#
+# Three of them computed it by counting the `user_viewed` mirror. That is wrong
+# under the canonical-viewed policy: `user_viewed` is a compatibility mirror,
+# not a source of watch history. 15 legacy markers exist in production --
+# `user_viewed` rows with no canonical `DiaryEntry` -- and counting the mirror
+# awards "N items watched" badges and inflates profile stat cards for watches
+# the user never logged.
+#
+# One definition, used everywhere, so these surfaces cannot drift apart again.
+
+def canonical_movies_watched(user_id):
+    """Distinct movie titles the user has a canonical ``DiaryEntry`` for.
+
+    Distinct titles, not watch events: a re-watch is one title watched twice,
+    and the surfaces that consume this (profile stats, badges, achievements)
+    are denominated in titles.
+
+    An unmatched ``user_viewed`` marker contributes nothing, by construction --
+    it is never read here. Nothing is fabricated and nothing is deleted.
+    """
+    return int(
+        db.session.query(func.count(func.distinct(DiaryEntry.media_id)))
+        .filter(DiaryEntry.user_id == user_id,
+                DiaryEntry.media_type == 'movie')
+        .scalar() or 0
     )
