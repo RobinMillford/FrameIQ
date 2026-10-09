@@ -887,3 +887,226 @@ def test_smoke_skip_note_preserved_without_bare_else():
     assert "documented limitation" in script
     # The skip note is a guarded if, not an else branch.
     assert re.search(r'if \[ -z "\$\{SMOKE_TEST_USERNAME:-\}" \]', script)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# First ordinary deployment must succeed with 0002 left pending
+# ════════════════════════════════════════════════════════════════════════════
+#
+# The gate must not have the side effect of making ordinary deploys
+# impossible. An unapplied destructive migration is a NORMAL, expected state
+# that every deploy has to tolerate.
+
+_SAFE_SCRIPT = "Deploy and verify (exact SHA)"
+
+
+def _safe_code():
+    return _code_of_script(_scripts(_load(_DEPLOY))[_SAFE_SCRIPT])
+
+
+def test_ordinary_deploy_runs_every_step_in_order(deploy):
+    """The exact sequence an ordinary deploy must be able to complete."""
+    code = _safe_code()
+
+    # `index()` would collapse the two identical guard invocations onto the
+    # first one, so positions are found with explicit offsets.
+    def positions_of(token):
+        found, start = [], 0
+        while True:
+            at = code.find(token, start)
+            if at == -1:
+                return found
+            found.append(at)
+            start = at + 1
+
+    build = positions_of("docker compose build web")[0]
+    convergence = positions_of("migrates/migrate_schema_convergence.py")[0]
+    guards = positions_of("python -m utils.schema_guard")
+    baseline = positions_of("scripts/migrate.py adopt-legacy-baseline")[0]
+    upgrade = positions_of("scripts/migrate.py upgrade")[0]
+    recreate = positions_of("docker compose up -d --build web")[0]
+
+    assert len(guards) == 2, "expected a guard before and after migrations"
+    sequence = [build, convergence, guards[0], baseline, upgrade, guards[1],
+                recreate]
+    assert sequence == sorted(sequence), (
+        "ordinary deploy steps are out of order: build=%d convergence=%d "
+        "guard0=%d baseline=%d upgrade=%d guard1=%d recreate=%d" % tuple(
+            sequence))
+
+
+def test_ordinary_deploy_does_not_pass_only_or_authorization(deploy):
+    """The ordinary upgrade must be the bare, non-destructive command.
+
+    Without `--only`, the runner defers any destructive migration — so this job
+    cannot reach 0002 even if someone removed the runner's own gate.
+    """
+    lines = _logical_lines(_scripts(_load(_DEPLOY))[_SAFE_SCRIPT])
+    upgrade = next(ln for ln in lines if "scripts/migrate.py upgrade" in ln)
+    assert upgrade == (
+        "SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web "
+        "python scripts/migrate.py upgrade --allow-production"
+    ), upgrade
+
+
+def test_ordinary_deploy_never_mentions_the_destructive_migration_id(deploy):
+    code = _safe_code()
+    assert "0002_remove_legacy_wishlist" not in code
+    for flag in ("--only", "--authorize-destructive", "--backup-ref",
+                 "--backup-verified-by"):
+        assert flag not in code, flag
+
+
+def test_migration_failure_prevents_web_startup(deploy):
+    """A non-zero migration step aborts before the web container is recreated.
+
+    `script_stop: true` propagates the failure, and every migration step is
+    ordered before `docker compose up -d`, so a failed migration can never be
+    followed by a serving web process.
+    """
+    script = _scripts(_load(_DEPLOY))[_SAFE_SCRIPT]
+    with_obj = next(s for s in load_deploy_steps()
+                    if s.get("name") == _SAFE_SCRIPT)["with"]
+    assert with_obj["script_stop"] is True
+    code = _code_of_script(script)
+    upgrade_at = code.index("scripts/migrate.py upgrade")
+    recreate_at = code.index("docker compose up -d --build web")
+    assert upgrade_at < recreate_at, (
+        "web is recreated before migrations finish")
+
+
+def test_schema_guard_failure_prevents_web_startup(deploy):
+    """The post-migration guard runs after `upgrade` and before the recreate."""
+    code = _safe_code()
+    guard_positions = [i for i in range(len(code))
+                       if code.startswith("python -m utils.schema_guard", i)]
+    assert len(guard_positions) == 2, "expected a guard before and after"
+    before_baseline, after_upgrade = guard_positions
+    assert before_baseline < code.index("scripts/migrate.py upgrade")
+    assert after_upgrade > code.index("scripts/migrate.py upgrade")
+    assert after_upgrade < code.index("docker compose up -d --build web")
+
+
+def test_dependency_health_gate_precedes_every_migration(deploy):
+    code = _safe_code()
+    gate = code.index("both must be healthy")
+    assert gate < code.index("migrates/migrate_schema_convergence.py")
+    assert gate < code.index("scripts/migrate.py upgrade")
+    assert gate < code.index("docker compose up -d --build web")
+
+
+def test_smoke_and_health_checks_run_after_web_startup(deploy):
+    """The deploy is not "successful" until it has been verified live."""
+    code = _safe_code()
+    recreate = code.index("docker compose up -d --build web")
+    assert code.index("frameiq-web-1") > recreate
+    assert code.index("https://frameiq.studio/health") > recreate
+    assert "for i in 1 2 3 4 5" in code, "health check must retry"
+
+
+def load_deploy_steps():
+    return _load(_DEPLOY)["jobs"]["deploy"]["steps"]
+
+
+# ── the runner keeps the destructive step out of an ordinary run ────────────
+
+def test_runner_defers_the_destructive_migration_by_default(tmp_path):
+    """An ordinary `upgrade` on a fresh database.
+
+    This is the runtime half of "ordinary deployment cannot execute 0002": the
+    deploy job passes no `--only`, so the runner must defer 0002, exit 0, and
+    leave it pending.
+    """
+    import os
+    import subprocess
+    import sys
+
+    from models.base import db
+    from sqlalchemy import create_engine
+
+    repo = Path(_DEPLOY).resolve().parents[2]
+    path = tmp_path / "ordinary.db"
+    engine = create_engine("sqlite:///%s" % path)
+    db.metadata.create_all(bind=engine)
+    engine.dispose()
+
+    env = dict(os.environ)
+    env["DATABASE_URL"] = "sqlite:///%s" % path
+    env["SKIP_SCHEMA_GUARD"] = "1"
+    env["TMDB_API_KEY"] = "test-tmdb-key"
+    env["SECRET_KEY"] = "test-secret-key-for-tests-only"
+    result = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "migrate.py"), "upgrade"],
+        capture_output=True, text=True, cwd=str(repo), env=env, timeout=300)
+
+    assert result.returncode == 0, (
+        "an ordinary upgrade failed because a destructive migration was "
+        "pending: %s" % result.stderr[-400:])
+    assert "DEFERRED" in result.stdout
+    assert "0002_remove_legacy_wishlist" in result.stdout
+
+    status = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "migrate.py"), "status"],
+        capture_output=True, text=True, cwd=str(repo), env=env, timeout=300)
+    assert status.returncode == 0
+    assert "Pending             : 1" in status.stdout
+
+
+def test_missing_authorization_prevents_the_destructive_migration(tmp_path):
+    """Naming 0002 without the three pieces of evidence must refuse."""
+    import os
+    import subprocess
+    import sys
+
+    from models.base import db
+    from sqlalchemy import create_engine
+
+    repo = Path(_DEPLOY).resolve().parents[2]
+    path = tmp_path / "blocked.db"
+    engine = create_engine("sqlite:///%s" % path)
+    db.metadata.create_all(bind=engine)
+    engine.dispose()
+
+    env = dict(os.environ)
+    env["DATABASE_URL"] = "sqlite:///%s" % path
+    env["SKIP_SCHEMA_GUARD"] = "1"
+    env["TMDB_API_KEY"] = "test-tmdb-key"
+    env["SECRET_KEY"] = "test-secret-key-for-tests-only"
+    base = [sys.executable, str(repo / "scripts" / "migrate.py")]
+
+    assert subprocess.run(base + ["upgrade"], capture_output=True, text=True,
+                          cwd=str(repo), env=env, timeout=300).returncode == 0
+
+    attempts = {
+        "no flags at all": [],
+        "authorize only": ["--authorize-destructive",
+                           "0002_remove_legacy_wishlist"],
+        "placeholder backup": ["--authorize-destructive",
+                               "0002_remove_legacy_wishlist",
+                               "--backup-ref", "yes",
+                               "--backup-verified-by", "alice"],
+        "wrong migration authorized": ["--authorize-destructive",
+                                       "0009_something_else",
+                                       "--backup-ref",
+                                       "neon-snapshot-20260928-ab12cd",
+                                       "--backup-verified-by", "alice"],
+        "no verifier": ["--authorize-destructive",
+                        "0002_remove_legacy_wishlist",
+                        "--backup-ref", "neon-snapshot-20260928-ab12cd"],
+    }
+    for label, extra in attempts.items():
+        result = subprocess.run(
+            base + ["upgrade", "--only", "0002_remove_legacy_wishlist"] + extra,
+            capture_output=True, text=True, cwd=str(repo), env=env, timeout=300)
+        assert result.returncode != 0, "%s was allowed" % label
+        assert "Refusing to run destructive migration" in result.stderr, label
+
+    # A refusal must leave no record behind, so nothing later believes 0002 ran.
+    import sqlite3
+    connection = sqlite3.connect(str(path))
+    try:
+        versions = [row[0] for row in connection.execute(
+            "SELECT version FROM schema_migrations")]
+    finally:
+        connection.close()
+    assert "0002_remove_legacy_wishlist" not in versions

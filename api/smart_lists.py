@@ -31,7 +31,7 @@ import random
 from datetime import datetime, timedelta
 
 from models import (
-    db, MediaItem, user_watchlist, user_viewed, TVShowProgress,
+    db, MediaItem, user_watchlist, user_viewed, TVShowProgress, DiaryEntry,
 )
 from models.smart_lists import SmartList
 
@@ -198,11 +198,19 @@ def _scope_query(smart_list):
                 .filter(user_watchlist.c.user_id == user_id))
 
     if smart_list.scope == 'diary':
+        # "Watched History" is a canonical-history surface, so it reads
+        # DiaryEntry, not the user_viewed compatibility mirror. Counting the
+        # mirror here listed unmatched legacy markers as watched titles and
+        # inflated the returned `total`.
+        #
+        # Restricted to media_type='movie': TV history is tracked in
+        # TVEpisodeWatch and must not be folded into this movie scope.
         return (db.session.query(MediaAlias)
-                .join(user_viewed, db.and_(
-                    user_viewed.c.media_id == MediaAlias.id,
-                    user_viewed.c.media_type == MediaAlias.media_type))
-                .filter(user_viewed.c.user_id == user_id)
+                .join(DiaryEntry, db.and_(
+                    DiaryEntry.media_id == MediaAlias.id,
+                    DiaryEntry.media_type == MediaAlias.media_type))
+                .filter(DiaryEntry.user_id == user_id,
+                        DiaryEntry.media_type == 'movie')
                 .distinct())
 
     if smart_list.scope == 'tracked_tv':

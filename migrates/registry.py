@@ -62,7 +62,7 @@ MIGRATIONS: Tuple['MigrationSpec', ...] = (
         module='migrations_0002_remove_legacy_wishlist',
         depends_on=('0001_canonical_watched_reconcile',),
         summary='Merge the legacy user_wishlist into user_watchlist, then '
-                'drop it. DESTRUCTIVE — see docs/migrations.md.',
+                'drop it. DESTRUCTIVE — see docs/migration-inventory.md.',
     ),
 )
 

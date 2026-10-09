@@ -153,7 +153,10 @@
                         <div class="space-y-4">
                             <div class="flex justify-between items-center text-sm">
                                 <span class="text-[var(--text-mid)]">Movies Watched</span>
-                                <span class="font-bold text-[var(--accent-hi)]">{{ user.viewed_media|length }}</span>
+                                {# Canonical diary history, not the user_viewed
+                                   mirror: `user.viewed_media|length` counted
+                                   unmatched legacy markers and TV-typed rows. #}
+                                <span class="font-bold text-[var(--accent-hi)]">{{ movies_watched }}</span>
                             </div>
                             <div class="flex justify-between items-center text-sm">
                                 <span class="text-[var(--text-mid)]">Reviews Written</span>

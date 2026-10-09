@@ -230,6 +230,30 @@ populations disagree:
   **preserves these rows exactly as they are** and reports them as
   `unresolved_legacy_markers`.
 
+#### The canonical-viewed policy
+
+**`DiaryEntry` is the canonical authority for MOVIE watch history.
+`user_viewed` is a compatibility mirror, not an independent source of canonical
+movie-watch history.**
+
+The mirror exists so that legacy view-state surfaces can answer "has this been
+marked viewed?" cheaply. It is not a second, parallel record of watching. The
+distinction is not academic: production holds 15 `user_viewed` rows with no
+`DiaryEntry`, and because several surfaces counted the mirror directly, each
+marker inflated a real statistic — a "N items watched" badge, a profile stat
+card, an achievement bar, a smart-list total.
+
+Rules that follow from the policy:
+
+| Rule | Consequence |
+|---|---|
+| Never fabricate a `DiaryEntry` or a watched date from a marker | `0001` creates diary rows in one direction only: diary → viewed |
+| Never silently delete a marker | the 15 rows stay, unchanged |
+| Markers are not canonical watch history | they contribute nothing to watched counts, totals or statistics |
+| Never report markers as reconciled | `0001` returns `reconciled_viewed_only: 0` and `unresolved_legacy_markers: 15` |
+| `verify()` must stay meaningful | it asserts the *derived* direction converged; it deliberately does **not** require the marker count to reach zero |
+| TV is never folded in | TV history is `TVEpisodeWatch`; the `diary` smart-list scope now restricts to `media_type='movie'` |
+
 #### Why the 15 are not reconciled, and what "unresolved" means
 
 A `user_viewed` row with no diary entry is a **legacy marker**, not watch
@@ -248,9 +272,7 @@ history. Converting one would:
 
 So `0001` does not delete them, does not rewrite them, and does not count them
 as reconciled. Its return value sets `reconciled_viewed_only: 0` and
-`unresolved_legacy_markers: 15`, and `verify()` requires only that the *derived*
-direction converged — requiring the marker count to be zero would make the
-migration fail precisely because it declined to fabricate history.
+`unresolved_legacy_markers: 15`.
 
 **These 15 rows remain a real discrepancy and are still there after the
 migration.** Resolving them needs an explicit product/data policy, for example:
@@ -258,12 +280,38 @@ migration.** Resolving them needs an explicit product/data policy, for example:
 - ask the affected user to confirm the watch, creating a dated `DiaryEntry`
   with recorded provenance; or
 - accept the mark as canonical and record *why* the date is trustworthy; or
-- leave them as markers indefinitely and exclude them from diary-derived
-  statistics, so they do not silently inflate or deflate any number.
+- leave them as markers indefinitely.
 
-Until one of those is chosen, any statistic that joins diary to viewed will
-disagree with one that reads either table alone. That is a known, documented
-condition — not an accident.
+Until one of those is chosen, **statistics that read the diary are correct and
+statistics that read the mirror are not comparable to them.** That is now
+enforced in code rather than left to each surface's judgement: see below.
+
+#### Surfaces corrected to follow the policy
+
+Every watched-count / watched-total surface was audited. `api/statistics.py` is
+the canonical service and already derived everything from `DiaryEntry`; these
+surfaces bypassed it and counted the mirror:
+
+| Surface | Was | Now |
+|---|---|---|
+| `routes/profile_enhancements.py` (badges, enhanced stats, achievements — 4 sites) | `count(user_viewed)` | `canonical_movies_watched(user_id)` |
+| `routes/auth.py` profile `VIEWED` card | `.rowcount` on a bare `SELECT` — **rendered as `-1`** | `canonical_movies_watched(uid)` |
+| `routes/main.py` + `templates/user_profile.html` "Movies Watched" | `len(user.viewed_media)` — also counted TV-typed rows | `canonical_movies_watched(user.id)` |
+| `api/smart_lists.py` `diary` scope, labelled "Watched History" | joined `user_viewed`, no media-type restriction | joins `DiaryEntry`, `media_type='movie'` |
+| `routes/lists.py` `watched_count` | summed the mirror-derived badge | counts a new `watched_canonical` flag from `DiaryEntry` |
+
+`api/statistics.canonical_movies_watched(user_id)` is now the single shared
+definition, so these surfaces cannot drift apart again.
+
+**Deliberately unchanged.** The per-item "watched" *badge* still reads the
+mirror: "has this been marked viewed" is exactly what the mirror records, and it
+is the mirror's proper use. `routes/lists.py` now keeps both signals side by
+side (`watched` from the mirror, `watched_canonical` from the diary) so the
+badge and the statistic cannot be confused for one another. Raw account export
+(`api/account_export.py`) still emits the mirror rows, already labelled
+`viewed_mirror` / `derived`. `engaging_friends_count` and the
+"Shared N movies with you" suggestion count remain mirror-derived: they count
+social interactions, not watch history, and rewiring them is a product change.
 
 ### `user_wishlist` — 1 row still present
 

@@ -10,6 +10,7 @@ from models import db, User, UserList, UserListItem
 from models.lists import (prefetch_list_data, ListLike, ListComment,
                           ListAnalytics, ListView)
 from models.associations import user_viewed, user_watchlist
+from models.social import DiaryEntry
 from models.tv import TVShowProgress
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
@@ -776,10 +777,15 @@ def _enrich_items_with_watched_state(items):
 
     Mutates the serialized item dicts in place (additive keys only):
         watched: 'watched' | 'watching' | 'unwatched' | None (anonymous)
+        watched_canonical: True only for a movie with a DiaryEntry row
         watch_progress: {"watched": int, "total": int, "percent": int}
                        (TV only, when progress data exists)
 
-    Movie watched := (user_id, media_id) present in user_viewed.
+    Movie watched := (user_id, media_id) present in user_viewed. That is a
+    per-item BADGE from the compatibility mirror, which is the mirror's proper
+    use. It is deliberately NOT the basis of the `watched_count` statistic:
+    watched_canonical carries the diary-derived truth for that, so an unmatched
+    legacy marker badges an item without inflating a watch-history count.
     TV: 'watched' when TVShowProgress.status == 'completed', 'watching'
     otherwise; progress percentages from watched/total_episodes.
     """
@@ -795,18 +801,39 @@ def _enrich_items_with_watched_state(items):
 
     for item in items:
         item['watched'] = 'unwatched'
+        item['watched_canonical'] = False
 
     movie_ids = {mid for (mid, mtype) in internal_by_item.values()
                  if mtype == 'movie'}
     tmdb_show_ids = {key[0] for key in _load_tmdb_keys(items).values()}
 
-    # Batch 1: viewed movies (one join of the junction table).
+    # Batch 1: viewed movies.
+    #
+    # Two related sets, deliberately kept apart:
+    #
+    #   viewed_movies      -- from the user_viewed MIRROR. Drives the per-item
+    #                         "watched" badge only. The mirror is a legitimate
+    #                         source for "has this been marked viewed".
+    #   canonical_watched  -- from DiaryEntry. Drives the `watched_count`
+    #                         aggregate, which is a watch-history statistic and
+    #                         must not count unmatched legacy markers.
     viewed_movies = set()
+    canonical_watched = set()
     if movie_ids:
         viewed_rows = db.session.query(user_viewed.c.media_id).filter(
             user_viewed.c.user_id == viewer_id,
             user_viewed.c.media_id.in_(movie_ids)).all()
         viewed_movies = {row[0] for row in viewed_rows}
+
+        diary_rows = db.session.query(DiaryEntry.media_id).filter(
+            DiaryEntry.user_id == viewer_id,
+            DiaryEntry.media_type == 'movie',
+            DiaryEntry.media_id.in_(movie_ids)).all()
+        canonical_watched = {row[0] for row in diary_rows}
+        for item in items:
+            key = internal_by_item.get(item.get('id'))
+            item['watched_canonical'] = bool(
+                key and key[1] == 'movie' and key[0] in canonical_watched)
 
     # Batch 2: watchlisted movies = 'watching' intent signal.
     watchlisted = set()
@@ -1203,7 +1230,10 @@ def get_watched_state(list_id):
     serialized = [item.to_dict() for item in items]
     _enrich_items_with_watched_state(serialized)
 
-    watched_count = sum(1 for i in serialized if i.get('watched') == 'watched')
+    # Counted from canonical diary history, not from the per-item badge: an
+    # unmatched user_viewed marker badges an item as watched and would
+    # otherwise inflate this statistic.
+    watched_count = sum(1 for i in serialized if i.get('watched_canonical'))
     return jsonify({
         'items': serialized,
         'watched_count': watched_count,

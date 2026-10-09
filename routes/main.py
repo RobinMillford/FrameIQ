@@ -24,6 +24,7 @@ from flask_login import login_required, current_user
 from extensions import limiter
 import api.year_in_review as year_in_review_service
 import api.year_in_review_share as year_in_review_share_service
+from api.statistics import canonical_movies_watched
 from models import db, User, UserFollow, Review, YearInReviewShare
 from routes._main_bp import main  # noqa: F401 — re-exported for app.py
 from routes import browse  # noqa: F401 — registers discovery routes
@@ -53,10 +54,17 @@ def user_profile(user_id):
     # Get user reviews
     recent_reviews = user.user_reviews.order_by(db.desc(Review.created_at)).limit(5).all()
 
+    # "Movies Watched" must come from the canonical watch history, not from
+    # `user.viewed_media` (the user_viewed compatibility mirror). The mirror can
+    # hold unmatched legacy markers, and it also carries TV-typed rows, so
+    # len() of it was neither a movie count nor a diary-derived one.
+    movies_watched = canonical_movies_watched(user.id)
+
     return render_template('user_profile.html',
                            user=user,
                            is_following=is_following,
-                           reviews=recent_reviews)
+                           reviews=recent_reviews,
+                           movies_watched=movies_watched)
 
 
 @main.route('/stats')
