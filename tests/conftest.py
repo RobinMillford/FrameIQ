@@ -57,6 +57,11 @@ def pytest_configure(config):
         "tmdb: opt-in integration test that may talk to the real TMDb API "
         "(excluded from the offline suite via -m 'not tmdb')",
     )
+    config.addinivalue_line(
+        "markers",
+        "postgres: opt-in integration test requiring a throwaway PostgreSQL "
+        "server (excluded from the offline suite via -m 'not postgres')",
+    )
 
 
 def _is_opt_in_integration(request):

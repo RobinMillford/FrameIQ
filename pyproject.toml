@@ -6,12 +6,18 @@
 #
 #     pytest tests/            # offline suite (default)
 #     pytest tests/ -m tmdb    # explicit, needs a real TMDB_API_KEY
+#     pytest tests/ -m postgres  # explicit, needs a throwaway PostgreSQL server
 #
+# Both opt-in layers are deselected by the default addopts so the ordinary suite
+# never depends on a credential or a running server. PostgreSQL tests are
+# deselected too: they CREATE and DROP tables, and asserting PostgreSQL
+# transactional-DDL behaviour on SQLite would prove nothing.
 markers = [
     "tmdb: opt-in integration test that may talk to the real TMDb API",
+    "postgres: opt-in integration test requiring a throwaway PostgreSQL server via FRAMEIQ_TEST_POSTGRES_URL (excluded from the offline suite)",
 ]
 addopts = [
-    "-m", "not tmdb",
+    "-m", "not tmdb and not postgres",
 ]
 
 [project]
