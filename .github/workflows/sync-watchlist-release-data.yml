@@ -18,7 +18,46 @@ permissions:
 jobs:
   sync-releases:
     runs-on: ubuntu-latest
+    # Serialize with production deployment. The sync reads a schema that a
+    # deploy may be transitioning, so the two must not overlap. `cancel` is
+    # false: an interrupted sync is finished, not abandoned half-applied.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     steps:
+      - name: Preflight - confirm the deployed schema is ready
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /home/deployer/FrameIQ
+
+            # Read-only readiness check, run from the SAME one-off image the
+            # sync will use, so it validates the schema that image's models
+            # require rather than some other build's expectations.
+            #
+            # `utils.schema_guard` is read-only and exempts itself from the
+            # startup guard, so this neither writes nor bypasses anything. If
+            # the schema is not ready the sync must NOT run: the sync script
+            # imports `app`, whose startup guard would refuse anyway — this
+            # step exists to turn that refusal into an actionable message
+            # instead of an opaque traceback.
+            echo "Checking schema readiness against the deployed image..."
+            if ! docker compose run --rm --no-deps web \
+                 python -m utils.schema_guard; then
+              echo "::error::SCHEMA NOT READY - the watchlist release sync did NOT run."
+              echo "::error::The deployed image requires schema that the database does not have."
+              echo "::error::A deployment carrying the required migration has not completed successfully."
+              echo "::error::Run the Deploy to VPS workflow and wait for it to succeed, then re-run this sync."
+              exit 1
+            fi
+            echo "Schema is ready."
+
       - name: Run sync
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -28,6 +67,7 @@ jobs:
           command_timeout: 30m
           script_stop: true
           script: |
+            set -euo pipefail
             cd /home/deployer/FrameIQ
             # One-off container from the built web image — NOT 'exec' into
             # the running web service, which may predate the deploy that

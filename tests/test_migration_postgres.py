@@ -137,6 +137,25 @@ def _seed_wishlist(connection, rows=((1, 100, 'movie', '2026-01-27 08:15:51',
              'a': added, 'p': priority})
 
 
+HISTORICAL_REPAIR_SET = [
+    'continue_watching_item', 'director', 'import_source_mapping',
+    'media_director', 'movie_release_date', 'notification',
+    'recommendation_feedback', 'smart_list', 'taste_profile',
+    'user_streaming_services', 'year_in_review_share',
+]
+
+
+def _drop_historical(connection, names=None):
+    """Drop the historical-gap tables to reproduce production's gap.
+
+    CASCADE is required and correct here: these tables have foreign keys
+    between them (``media_director`` -> ``director``), and PostgreSQL refuses
+    to drop a referenced table otherwise. These are throwaway container tables.
+    """
+    for name in (names or HISTORICAL_REPAIR_SET):
+        connection.execute(text('DROP TABLE IF EXISTS "%s" CASCADE' % name))
+
+
 def _approval(version=DESTRUCTIVE_VERSION):
     """Valid, obviously-synthetic approval so the gate can be exercised."""
     return runner.DestructiveApproval(
@@ -511,3 +530,131 @@ def test_conflict_stops_before_drop_on_postgres(pg_engine):
         priority = connection.execute(text(
             'SELECT priority FROM user_watchlist WHERE media_id = 100')).scalar()
     assert priority == 'high', 'the existing target row was overwritten'
+
+
+# ── init-ledger on real PostgreSQL ──────────────────────────────────────────
+#
+# The bootstrap that unblocked the production deploy. DDL is transactional on
+# PostgreSQL, so the ledger creation is atomic here in a way it is not on
+# SQLite (pysqlite commits around DDL).
+
+def test_init_ledger_creates_only_the_ledger_on_postgres(pg_engine):
+    """Production's exact gap: no ledger, and the historical tables absent."""
+    with pg_engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS schema_migrations'))
+        _drop_historical(connection)
+
+    result = runner.init_ledger(pg_engine)
+    assert result['ledger'] == 'created'
+
+    with pg_engine.connect() as connection:
+        names = set(inspect(connection).get_table_names())
+        assert 'schema_migrations' in names
+        for name in HISTORICAL_REPAIR_SET:
+            assert name not in names, (
+                'init-ledger created a historical table: %s' % name)
+        rows = connection.execute(text(
+            'SELECT version, kind FROM schema_migrations')).fetchall()
+    assert rows == [], 'init-ledger wrote rows'
+
+
+def test_init_ledger_is_idempotent_on_postgres(pg_engine):
+    assert runner.init_ledger(pg_engine)['ledger'] == 'present'
+    assert runner.init_ledger(pg_engine)['ledger'] == 'present'
+    with pg_engine.connect() as connection:
+        assert connection.execute(text(
+            'SELECT COUNT(*) FROM schema_migrations')).scalar() == 0
+
+
+def test_init_ledger_fails_closed_on_a_drifted_ledger_on_postgres(pg_engine):
+    with pg_engine.begin() as connection:
+        connection.execute(text('DROP TABLE schema_migrations'))
+        connection.execute(text(
+            'CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY)'))
+    with pytest.raises(runner.MigrationError) as excinfo:
+        runner.init_ledger(pg_engine)
+    assert 'does not match the declared ledger schema' in str(excinfo.value)
+    # The drifted table is left exactly as found — never repaired.
+    with pg_engine.connect() as connection:
+        columns = [c['name'] for c in
+                   inspect(connection).get_columns('schema_migrations')]
+    assert columns == ['id']
+
+
+def test_ledger_bootstrap_rolls_back_as_one_transaction(pg_engine):
+    """A failure after the ledger DDL must not leave the table behind.
+
+    Only observable on PostgreSQL: SQLite commits around DDL, so it cannot
+    demonstrate this at all.
+
+    The table is dropped first -- the fixture's create_all would otherwise
+    leave it present, in which case there is no DDL to roll back and the test
+    would pass for the wrong reason.
+    """
+    from sqlalchemy.exc import ProgrammingError
+
+    with pg_engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS schema_migrations'))
+
+    real = runner._ledger_table
+
+    def explode(connection):
+        real(connection)
+        raise ProgrammingError('SELECT 1', {}, Exception('deliberate'))
+
+    runner._ledger_table = explode
+    try:
+        with pytest.raises(Exception):
+            runner.init_ledger(pg_engine)
+    finally:
+        runner._ledger_table = real
+
+    with pg_engine.connect() as connection:
+        assert not inspect(connection).has_table('schema_migrations'), \
+            'the ledger DDL was committed despite the failure'
+
+
+def test_convergence_then_runs_after_the_bootstrap_on_postgres(pg_engine):
+    """The production recovery path, on the real target engine.
+
+    Convergence is a standalone script, so it is invoked exactly as the deploy
+    does. Run via the runner's own imports to avoid touching production: this
+    URL is a throwaway container.
+    """
+    import os
+    import subprocess
+    import sys
+
+    with pg_engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS schema_migrations'))
+        _drop_historical(connection)
+
+    assert runner.init_ledger(pg_engine)['ledger'] == 'created'
+
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ)
+    # sslmode is set explicitly because the convergence script imports `app`,
+    # which appends sslmode=require on a Render/Cloud Run host (`.env` here sets
+    # RENDER=true). A throwaway local container has no TLS, and app.py trusts an
+    # sslmode that is already present rather than overriding it.
+    env['DATABASE_URL'] = PG_URL + ('&' if '?' in PG_URL else '?') \
+        + 'sslmode=disable'
+    env['SKIP_SCHEMA_GUARD'] = '1'
+    result = subprocess.run(
+        [sys.executable,
+         os.path.join(repo, 'migrates', 'migrate_schema_convergence.py')],
+        capture_output=True, text=True, env=env, cwd=repo, timeout=600)
+    assert result.returncode == 0, result.stdout[-500:] + result.stderr[-300:]
+
+    with pg_engine.connect() as connection:
+        names = set(inspect(connection).get_table_names())
+    for name in HISTORICAL_REPAIR_SET:
+        assert name in names, 'convergence did not create %s' % name
+
+    from utils.schema_guard import check_schema
+    assert check_schema(pg_engine)['ok']
+
+    # The ledger itself is untouched by convergence.
+    with pg_engine.connect() as connection:
+        assert connection.execute(text(
+            'SELECT COUNT(*) FROM schema_migrations')).scalar() == 0

@@ -550,8 +550,10 @@ def test_migration_uses_documented_skip_schema_guard_only(deploy_scripts):
     # workflow passes no environment variable to it.
     lines = _logical_lines(_main_script(deploy_scripts))
     guard_lines = [ln for ln in lines if "SKIP_SCHEMA_GUARD" in ln]
-    # convergence + baseline + upgrade + status: four one-off containers.
-    assert len(guard_lines) == 4, guard_lines
+    # init-ledger + convergence + baseline + upgrade + status: five one-off
+    # containers. Each needs the escape hatch because the startup guard would
+    # otherwise refuse the very container that is here to repair the schema.
+    assert len(guard_lines) == 5, guard_lines
     # Each must be a one-off migration container, never the running app.
     for line in guard_lines:
         assert "docker compose run --rm --no-deps web" in line, line
@@ -1110,3 +1112,231 @@ def test_missing_authorization_prevents_the_destructive_migration(tmp_path):
     finally:
         connection.close()
     assert "0002_remove_legacy_wishlist" not in versions
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Production deploy fix: ledger bootstrap order + release-sync readiness
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Two production failures followed the F8 rollout:
+#   A. convergence ran before the ledger existed, saw `schema_migrations` as an
+#      unexpected missing table, and refused -- creating nothing, so
+#      `import_source_mapping` stayed absent too;
+#   B. the nightly release-data sync imports `app`, whose startup schema guard
+#      then refused, so the sync never ran.
+
+def _deploy_code():
+    return _code_of_script(_scripts(_load(_DEPLOY))[_SAFE_SCRIPT])
+
+
+def _sync_steps():
+    return _load(_SYNC)["jobs"]["sync-releases"]["steps"]
+
+
+def _sync_script(name):
+    return next(s for s in _sync_steps() if s.get("name") == name)["with"]["script"]
+
+
+def test_ledger_bootstrap_runs_before_convergence(deploy):
+    """Failure A's fix.
+
+    Convergence refuses on any missing table outside its historical allow-list,
+    and `schema_migrations` is infrastructure rather than one of those eleven,
+    so the ledger must exist first.
+    """
+    code = _deploy_code()
+    ledger = code.index("scripts/migrate.py init-ledger")
+    convergence = code.index("migrates/migrate_schema_convergence.py")
+    assert ledger < convergence, (
+        "convergence runs before the ledger exists, which is exactly the "
+        "failure that was observed in production")
+
+
+def test_ledger_bootstrap_is_a_single_explicit_step(deploy):
+    """One explicit command, not a create_all and not an allow-list widening."""
+    code = _deploy_code()
+    assert code.count("scripts/migrate.py init-ledger") == 1
+    assert "--allow-production" in code
+    # The forbidden shortcuts must be absent from the deploy script.
+    assert "create_all" not in code
+    assert "metadata.create_all" not in code
+
+
+def test_baseline_adoption_still_follows_schema_validation(deploy):
+    """F: the baseline asserts the schema was verified, so it must come after."""
+    code = _deploy_code()
+    guard = code.index("python -m utils.schema_guard")
+    baseline = code.index("scripts/migrate.py adopt-legacy-baseline")
+    assert guard < baseline, (
+        "the legacy baseline must not be adopted before the schema is "
+        "validated")
+
+
+def test_full_deploy_step_order(deploy):
+    """The corrected logical order, asserted position by position."""
+    code = _deploy_code()
+
+    def at(token, occurrence=0):
+        start, found = 0, []
+        while True:
+            index = code.find(token, start)
+            if index == -1:
+                break
+            found.append(index)
+            start = index + 1
+        return found[occurrence]
+
+    build = at("docker compose build web")
+    ledger = at("scripts/migrate.py init-ledger")
+    convergence = at("migrates/migrate_schema_convergence.py")
+    guards = []
+    cursor = 0
+    while True:
+        index = code.find("python -m utils.schema_guard", cursor)
+        if index == -1:
+            break
+        guards.append(index)
+        cursor = index + 1
+    assert len(guards) == 2, "expected a guard before and after migrations"
+    baseline = at("scripts/migrate.py adopt-legacy-baseline")
+    upgrade = at("scripts/migrate.py upgrade")
+    status = at("scripts/migrate.py status")
+    recreate = at("docker compose up -d --build web")
+
+    sequence = [build, ledger, convergence, guards[0], baseline, upgrade,
+                guards[1], status, recreate]
+    assert sequence == sorted(sequence), (
+        "deploy order is wrong: build=%d ledger=%d convergence=%d guard=%d "
+        "baseline=%d upgrade=%d guard=%d status=%d recreate=%d"
+        % tuple(sequence))
+
+
+def test_web_is_recreated_after_migrations_and_the_final_guard(deploy):
+    """H: a schema mismatch must prevent web startup."""
+    code = _deploy_code()
+    upgrade = code.index("scripts/migrate.py upgrade")
+    guards = []
+    cursor = 0
+    while True:
+        index = code.find("python -m utils.schema_guard", cursor)
+        if index == -1:
+            break
+        guards.append(index)
+        cursor = index + 1
+    recreate = code.index("docker compose up -d --build web")
+    assert upgrade < guards[-1] < recreate, (
+        "web must not start before the migration and the closing guard pass")
+
+
+def test_pre_web_migration_steps_keep_the_documented_guard_escape(deploy):
+    """The escape hatch stays confined to explicitly controlled pre-web steps."""
+    lines = _logical_lines(_scripts(_load(_DEPLOY))[_SAFE_SCRIPT])
+    guarded = [ln for ln in lines if "SKIP_SCHEMA_GUARD=1" in ln]
+    assert guarded, "the pre-web migration steps must keep the escape hatch"
+    for line in guarded:
+        assert "docker compose run --rm --no-deps web" in line
+        assert "docker compose up" not in line
+    # The running application must never carry it.
+    recreate = [ln for ln in lines if "docker compose up -d" in ln]
+    assert recreate and all("SKIP_SCHEMA_GUARD" not in ln for ln in recreate)
+
+
+def test_convergence_allow_list_is_not_widened_for_the_ledger():
+    """The ledger must be bootstrapped explicitly, never smuggled into the
+    historical repair set."""
+    from migrates import migrate_schema_convergence as convergence
+    assert len(convergence.EXPECTED_REPAIR_SET) == 11
+    assert "schema_migrations" not in convergence.EXPECTED_REPAIR_SET
+
+
+def test_destructive_authorization_is_absent_from_the_normal_deploy(deploy):
+    """F8's destructive protection is unchanged by this fix."""
+    code = _deploy_code()
+    for flag in ("--only", "--authorize-destructive", "--backup-ref",
+                 "--backup_verified_by", "--backup-verified-by"):
+        assert flag not in code, flag
+    assert "0002_remove_legacy_wishlist" not in code
+
+
+# ── release-sync readiness ──────────────────────────────────────────────────
+
+def test_sync_keeps_its_schedule_and_manual_trigger():
+    workflow = _load(_SYNC)
+    on = workflow[True] if True in workflow else workflow["on"]
+    assert on["schedule"][0]["cron"] == "30 2 * * *"
+    assert "workflow_dispatch" in on
+
+
+def test_sync_does_not_bypass_the_schema_guard():
+    """J: no SKIP_SCHEMA_GUARD, no create_all, no manual table creation."""
+    for step in _sync_steps():
+        script = (step.get("with") or {}).get("script") or step.get("run") or ""
+        assert "SKIP_SCHEMA_GUARD" not in script, step.get("name")
+        assert "create_all" not in script, step.get("name")
+        assert "import_source_mapping" not in script, step.get("name")
+        assert "DROP TABLE" not in script.upper(), step.get("name")
+
+
+def test_sync_runs_a_readiness_preflight_before_the_sync():
+    """I: the sync must not execute before the schema is ready."""
+    names = [s.get("name") for s in _sync_steps()]
+    assert names[0] == "Preflight - confirm the deployed schema is ready"
+    assert names[1] == "Run sync"
+    assert names[-1] == "Open issue on failure"
+
+
+def test_sync_preflight_uses_the_read_only_guard():
+    preflight = _code_of_script(_sync_script(
+        "Preflight - confirm the deployed schema is ready"))
+    assert "python -m utils.schema_guard" in preflight
+    assert "docker compose run --rm --no-deps web" in preflight
+
+
+def test_sync_preflight_fails_loudly_with_an_actionable_message():
+    """A not-ready schema must produce guidance, never a silent success."""
+    preflight = _script_for(_sync_script(
+        "Preflight - confirm the deployed schema is ready"))
+    assert "exit 1" in preflight
+    assert "::error::" in preflight
+    lowered = preflight.lower()
+    assert "did not run" in lowered
+    assert "deploy" in lowered
+    # The failure must not be swallowed.
+    assert "|| true" not in preflight
+
+
+def test_sync_preflight_checks_readiness_before_running_the_script():
+    """Ordering within the workflow, not just the presence of both steps."""
+    preflight = _script_for(_sync_script(
+        "Preflight - confirm the deployed schema is ready"))
+    assert "utils.schema_guard" in preflight
+    assert "sync_watchlist_release_data.py" not in preflight, (
+        "the preflight must not run the sync itself")
+
+
+def test_sync_command_is_unchanged_and_unguarded():
+    """The sync script still starts with the normal guard enabled."""
+    code = _code_of_script(_sync_script("Run sync"))
+    assert "python scripts/sync_watchlist_release_data.py" in code
+    assert "SKIP_SCHEMA_GUARD" not in code
+
+
+def test_sync_is_serialised_with_production_deployment():
+    """The sync must not race the schema transition."""
+    workflow = _load(_SYNC)
+    concurrency = workflow["jobs"]["sync-releases"]["concurrency"]
+    assert concurrency["group"] == "production-deploy"
+    assert concurrency["cancel-in-progress"] is False
+    # And the deploy uses the same group.
+    assert _load(_DEPLOY)["concurrency"]["group"] == "production-deploy"
+
+
+def test_sync_failure_still_opens_an_issue():
+    """Failure visibility is preserved."""
+    step = next(s for s in _sync_steps() if s.get("name") == "Open issue on failure")
+    assert step["if"] == "failure()"
+
+
+def _script_for(script):
+    return "\n".join(line for line in script.splitlines()
+                     if not line.strip().startswith("#"))
