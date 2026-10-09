@@ -76,7 +76,26 @@ class TasteProfile(db.Model):
                            cascade='all, delete-orphan'))
 
     __table_args__ = (
-        db.Index('idx_taste_profile_updated', 'updated_at'),
+        # The index name is suffixed `_at` on purpose.
+        #
+        # PostgreSQL index names are scoped to the SCHEMA, not to a table, so
+        # two different tables cannot declare the same index name. This model
+        # originally declared `idx_taste_profile_updated`, which collides with
+        # the index that migrates/migrate_week4_discovery.py creates on the
+        # LEGACY `user_taste_profile` table (`updated_at DESC`).
+        #
+        # The collision was invisible until production tried to converge: the
+        # legacy index already owned the name, so creating this table's index
+        # raised DuplicateTable, the create_all transaction rolled back, and
+        # `taste_profile` itself never came into existence. The older
+        # description — "an index exists without its table" — pointed at the
+        # wrong relation; the index belonged to `user_taste_profile` all along.
+        #
+        # Suffixing the name keeps both indexes: the legacy table and its index
+        # stay exactly as they are, which the recommendation/director
+        # migrations explicitly require, and this table gets a name no one
+        # else can claim. See docs/conventions.md.
+        db.Index('idx_taste_profile_updated_at', 'updated_at'),
     )
 
     def __init__(self, **kwargs):

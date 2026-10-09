@@ -304,11 +304,18 @@ def test_migration_is_a_named_one_off_container(deploy_scripts):
 
 def test_migration_uses_documented_skip_schema_guard_only(deploy_scripts):
     # SKIP_SCHEMA_GUARD is allowed ONLY on the one-off migration lines —
-    # never for the running application (comments excluded).
+    # never for the running application (comments excluded). Since the web
+    # process no longer creates its own schema, a migration really does need
+    # the escape hatch: the startup guard would otherwise refuse to boot
+    # against the very database the migration is here to repair.
+    #
+    # The read-only pre-boot guard check is deliberately NOT in this list —
+    # `python -m utils.schema_guard` exempts itself internally, so the
+    # workflow passes no environment variable to it.
     script = _main_script(deploy_scripts)
     guard_lines = [ln for ln in _code_of_script(script).splitlines()
                    if "SKIP_SCHEMA_GUARD" in ln]
-    assert len(guard_lines) == 2
+    assert len(guard_lines) == 3
     assert all("migrates/migrate_" in ln for ln in guard_lines)
 
 
@@ -319,6 +326,18 @@ def test_wishlist_migration_runs_after_10b_before_web(deploy_scripts):
     wishlist_migration = "migrates/migrate_remove_wishlist.py"
     assert script.index(_MIGRATION) < script.index(wishlist_migration)
     assert script.index(wishlist_migration) < script.index("docker compose up -d")
+
+
+def test_schema_convergence_runs_before_web_recreate(deploy_scripts):
+    # The web process owns no schema, so the live schema must be converged
+    # BEFORE the new web image starts — otherwise the first boot of the new
+    # code hits the parity guard and the workers die.
+    script = _main_script(deploy_scripts)
+    convergence = "migrates/migrate_schema_convergence.py"
+    guard_check = "python -m utils.schema_guard"
+    assert convergence in script
+    assert script.index(convergence) < script.index("docker compose up -d")
+    assert script.index(guard_check) < script.index("docker compose up -d")
 
 
 def test_no_blind_migration_sweep(deploy_scripts):

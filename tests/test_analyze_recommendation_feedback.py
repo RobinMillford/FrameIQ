@@ -12,6 +12,7 @@ Covers scripts/analyze_recommendation_feedback.py:
 import io
 import importlib
 import logging
+import os
 import re
 import socket
 import subprocess
@@ -338,15 +339,65 @@ def test_cli_rejects_invalid_days(app):
     assert proc.returncode == 2
 
 
-def test_cli_accepts_bounded_days(app):
+def test_cli_accepts_bounded_days(app, tmp_path):
+    db = str(tmp_path / 'cli30.db')
+    _prepare_scratch_db(db)
     proc = subprocess.run(
         [sys.executable, 'scripts/analyze_recommendation_feedback.py',
          '--days', '30'],
         capture_output=True, text=True, timeout=120,
-        env={'SECRET_KEY': 't',
-             'DATABASE_URL': 'sqlite:////tmp/p15_cli30.db',
-             'TMDB_API_KEY': 'x', 'PATH': '/usr/bin:/bin'})
-    assert proc.returncode == 0
+        env=_cli_env('sqlite:///%s' % db))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert 'SchemaMismatchError' not in proc.stdout + proc.stderr
+
+
+# ── Scratch-database preparation for CLI subprocesses ────────────────────────
+#
+# The application no longer creates its own schema at startup, so a CLI
+# subprocess pointed at an empty database is *correctly* refused by the parity
+# guard. That behaviour is intentional and must stay: an unprepared database
+# must not boot. What changes is who prepares the database — the test harness,
+# not the application under test.
+#
+# These two tests previously pointed at FIXED /tmp paths and relied on a schema
+# left behind by an earlier run, when startup still called create_all(). That
+# made them pass only while /tmp happened to hold the residue, and fail on any
+# clean machine.
+
+def _prepare_scratch_db(path):
+    """Create the declared schema in a disposable SQLite file, explicitly.
+
+    Uses scripts/bootstrap_dev_schema.py — the repository's documented
+    development/test bootstrap path. That script targets exactly the
+    DATABASE_URL it is given, is idempotent, and refuses a production-looking
+    target, so it cannot reach anything but this disposable file.
+    """
+    env = {
+        'SECRET_KEY': 't',
+        'DATABASE_URL': 'sqlite:///%s' % path,
+        'TMDB_API_KEY': 'x',
+        'PATH': '/usr/bin:/bin',
+    }
+    proc = subprocess.run(
+        [sys.executable, 'scripts/bootstrap_dev_schema.py'],
+        capture_output=True, text=True, timeout=180, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return env
+
+
+def _cli_env(database_url):
+    """Minimal subprocess environment for the analytics CLI.
+
+    Deliberately built from scratch rather than inherited from os.environ, so
+    no ambient SKIP_SCHEMA_GUARD can disable the guard. The CLI has to prove it
+    runs against a genuinely prepared schema, with the guard still enforcing.
+    """
+    return {
+        'SECRET_KEY': 't',
+        'DATABASE_URL': database_url,
+        'TMDB_API_KEY': 'x',
+        'PATH': '/usr/bin:/bin',
+    }
 
 
 # ── Data quality → exit codes ─────────────────────────────────────────────────
@@ -741,21 +792,87 @@ def test_quality_entities_are_pure_expressions(script):
 
 # ── OpenAI independence (production fix: CLI must not initialize OpenAI) ─────
 
-def test_cli_runs_without_openai_api_key(app):
+def test_cli_runs_without_openai_api_key(app, tmp_path):
     """Subprocess with OPENAI_API_KEY explicitly ABSENT (and no dotenv
     leakage): the analytics CLI is OpenAI-free and must exit 0 on a
     healthy disposable DB."""
-    env = {'SECRET_KEY': 't',
-           'DATABASE_URL': 'sqlite:////tmp/p15_no_openai.db',
-           'TMDB_API_KEY': 'x', 'PATH': '/usr/bin:/bin'}
-    env = {k: v for k, v in env.items() if k != 'OPENAI_API_KEY'}
+    db = str(tmp_path / 'no_openai.db')
+    _prepare_scratch_db(db)
+    env = _cli_env('sqlite:///%s' % db)
+    # Explicitly absent, not merely unset by accident: _cli_env() is built from
+    # scratch, so this proves the CLI needs no OpenAI credential.
+    env.pop('OPENAI_API_KEY', None)
     assert 'OPENAI_API_KEY' not in env
     proc = subprocess.run(
         [sys.executable, 'scripts/analyze_recommendation_feedback.py',
          '--days', '30'],
         capture_output=True, text=True, timeout=120, env=env)
-    assert proc.returncode == 0, proc.stderr[-500:]
+    # A schema-initialisation failure would also be a non-zero exit, so assert
+    # the failure mode explicitly before trusting the exit code as proof of
+    # OpenAI independence.
+    assert 'SchemaMismatchError' not in proc.stdout + proc.stderr, (
+        'the CLI failed on schema, not on a missing OpenAI key')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
     assert 'OpenAI' not in (proc.stdout + proc.stderr)
+
+
+def test_cli_scratch_db_is_prepared_explicitly(tmp_path):
+    """The harness creates the schema; the application must not.
+
+    Guards the fix against regression in both directions: if the bootstrap stops
+    creating the declared tables, or startup silently starts creating them
+    again, this fails.
+    """
+    import sqlite3
+    db = str(tmp_path / 'prepared.db')
+    assert not os.path.exists(db)
+    _prepare_scratch_db(db)
+    assert os.path.exists(db)
+
+    conn = sqlite3.connect(db)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+    assert 'recommendation_feedback' in tables
+    assert 'user' in tables
+    assert len(tables) > 30, tables
+
+    # Repeatable: preparing an already-prepared database is a no-op.
+    _prepare_scratch_db(db)
+    conn = sqlite3.connect(db)
+    again = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+    assert again == tables
+
+
+def test_cli_env_keeps_the_schema_guard_enabled():
+    """The CLI must be exercised with the guard ON.
+
+    If SKIP_SCHEMA_GUARD ever leaked into this env, the CLI tests would keep
+    passing while proving nothing about schema readiness.
+    """
+    env = _cli_env('sqlite:///whatever.db')
+    assert 'SKIP_SCHEMA_GUARD' not in env
+    assert set(env) == {'SECRET_KEY', 'DATABASE_URL', 'TMDB_API_KEY', 'PATH'}
+
+
+def test_cli_still_refuses_an_unprepared_database(tmp_path):
+    """Strictness is preserved: an empty database must still be rejected.
+
+    The fix prepares the scratch database rather than making the CLI tolerant,
+    so this must keep failing with the guard enabled.
+    """
+    db = str(tmp_path / 'never_prepared.db')
+    proc = subprocess.run(
+        [sys.executable, 'scripts/analyze_recommendation_feedback.py',
+         '--days', '30'],
+        capture_output=True, text=True, timeout=120,
+        env=_cli_env('sqlite:///%s' % db))
+    assert proc.returncode != 0, 'an unprepared database was accepted'
+    combined = proc.stdout + proc.stderr
+    assert 'SchemaMismatchError' in combined, combined[-400:]
+    assert 'Missing tables' in combined, combined[-400:]
 
 
 def test_analytics_import_does_not_initialize_openai(app, monkeypatch):

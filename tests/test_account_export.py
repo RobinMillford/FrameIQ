@@ -234,14 +234,25 @@ def export_user(db):
 def other_user(db):
     """User B, with a distinctive marker that must never appear in A's export."""
     user = _make_user('exportb', 'exportb@example.com', bio=USER_B_SECRET)
-    movie = MediaItem(tmdb_id=7701, media_type='movie', title='B Movie')
-    show = MediaItem(tmdb_id=7702, media_type='tv', title='B Show')
+    # TMDb ids are deliberately long and far outside any autoincrement range
+    # this suite reaches. Asserting a SHORT bare string as "must be absent" is
+    # UNSAFE, and this test was intermittently red because of it:
+    #   * a 4-digit probe like '7701' also matches user A's own autoincrement
+    #     ids (diary_id / item_id / list_id), and
+    #   * worse, it matches the MICROSECOND fraction of an ISO timestamp
+    #     ("...T14:02:15.770128Z"), which differs on every single run.
+    # Either way the assertion reported a phantom leak with nothing leaked.
+    # Long distinctive markers are the only safe absence probes.
+    movie = MediaItem(tmdb_id=770_000_001, media_type='movie',
+                      title='B Movie')
+    show = MediaItem(tmdb_id=770_000_002, media_type='tv', title='B Show')
     db.session.add_all([movie, show])
     db.session.commit()
     db.session.add_all([
         DiaryEntry(user_id=user.id, media_id=movie.id, media_type='movie',
                    watched_date=date(2026, 5, 5), rating=1.0),
-        TVEpisodeWatch(user_id=user.id, show_id=7702, season_number=9,
+        TVEpisodeWatch(user_id=user.id, show_id=770_000_002,
+                       season_number=9,
                        episode_number=9, watched_date=date(2026, 5, 5),
                        notes=USER_B_SECRET),
         Review(user_id=user.id, media_id=movie.id, media_type='movie',
@@ -706,7 +717,10 @@ def test_other_user_private_data_excluded(app, export_user, other_user):
     blob = json.dumps(export, ensure_ascii=False)
     assert USER_B_SECRET not in blob
     assert 'exportb' not in blob
-    assert '7701' not in blob
+    # Distinctive markers only — see the other_user fixture for why a bare
+    # small integer is not a safe absence probe here.
+    assert '770000001' not in blob
+    assert '770000002' not in blob
     assert 'B Movie' not in blob
     assert 'B Show' not in blob
     assert 'B list' not in blob
@@ -1439,3 +1453,44 @@ def test_continue_watching_and_chat_state_export(export_json):
     resume = state['continue_watching']
     assert any(row['current_time'] == 42.0 for row in resume)
     assert any(row['kind'] == 'continue_watching' for row in resume)
+
+# ── Convention guard: generated exports must not write to disk ───────────────
+
+
+def test_generated_exports_never_rely_on_call_on_close(app):
+    """docs/conventions.md — `call_on_close` is not a cleanup guarantee here.
+
+    The F5 bundle originally scheduled its temp-file deletion with
+    `response.call_on_close`. That callback never fired for a `send_file`
+    response, and 87 complete account exports were left in /tmp with no test
+    and no log line to indicate it.
+
+    This is a source-level guard rather than a behavioural one, because the
+    failure is invisible from the outside: the endpoint returned 200 and the
+    download was correct. If someone reintroduces disk-backed export plus a
+    close-hook, this fails even if a behavioural test would pass.
+    """
+    import inspect
+
+    import api.account_export as exporter
+    import routes.account_export as export_routes
+
+    for module in (exporter, export_routes):
+        source = inspect.getsource(module)
+        offenders = [
+            line.strip() for line in source.splitlines()
+            if 'call_on_close' in line
+            # The docstrings that EXPLAIN the convention are fine; only real
+            # usage is a violation.
+            and not line.strip().startswith('#')
+            and '``' not in line
+            and not line.strip().startswith('*')
+            and not line.strip().startswith('it via')
+        ]
+        assert not offenders, (
+            '%s relies on call_on_close for cleanup: %s'
+            % (module.__name__, offenders))
+
+    # The bundle must hand back an in-memory stream.
+    assert 'tempfile' not in inspect.getsource(exporter).replace(
+        '``tempfile.mkstemp``', '')

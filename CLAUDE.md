@@ -33,7 +33,16 @@ make deploy / make logs / make restart / make clean
 # SKIP_SCHEMA_GUARD=1 lets a migration run against the drifted DB it repairs
 # (importing `app` triggers create_app(), whose startup guard otherwise
 # refuses to boot on schema drift). Fresh/complete DBs don't need it.
+#
+# NEW TABLES: migrate_schema_convergence.py brings any database up to the
+# declared model schema (additive only, idempotent). Prefer it over guessing
+# which individual script is needed.
+SKIP_SCHEMA_GUARD=1 python migrates/migrate_schema_convergence.py
 SKIP_SCHEMA_GUARD=1 python migrates/migrate_<name>.py
+
+# Local/test schema setup (NOT for production; refuses a production target).
+# The app itself never creates tables — see docs/conventions.md.
+python scripts/bootstrap_dev_schema.py
 
 # Read-only schema parity check (also runs automatically at startup)
 python -m utils.schema_guard
@@ -76,7 +85,7 @@ python -m utils.schema_guard
   `user_chat_memory`) are imported through `models/__init__.py`, so Docker/VPS
   startup creates them automatically.
 - Column alterations need a manual migration script in `migrates/`
-- Key models: `User`, `MediaItem`, `Review`, `DiaryEntry`, `TVShowProgress`, `TVSeasonProgress`, `TVEpisodeWatch`, `UpcomingEpisode`, `UserFollow`, `ActivityFeed`, `CustomList`, `Tag`, `Like`
+- Key models: `User`, `MediaItem`, `Review`, `DiaryEntry`, `TVShowProgress`, `TVSeasonProgress`, `TVEpisodeWatch`, `UpcomingEpisode`, `UserFollow`, `ActivityFeed`, `CustomList`, `Tag`, `Like`, `ImportSourceMapping` (F7 durable source→FrameIQ title mapping; deliberately its own table, never extra columns on the canonical history models — see `docs/conventions.md`)
 
 ### AI / Chat System
 LangGraph workflow: `START → supervisor_node → [retriever_node | chat_node] → enricher_node → END`
@@ -122,5 +131,7 @@ Copy `.env.example` to `.env` for the full list.
 | `test_feed.py` | Friends activity feed |
 | `test_cache.py` | Cache-layer behaviour |
 | `test_watch.py` | TV episode tracking |
+| `test_import_mappings.py` | Persistent source mappings, explicit resolution, Letterboxd review import + conflicts |
+| `test_startup_schema_safety.py` | Startup performs no DDL; migrations converge the schema; drift fails the boot |
 
 `tests/conftest.py` sets up SQLite in-memory DB for tests. Note: `connect_timeout` is skipped for SQLite (Postgres-only feature).

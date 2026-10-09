@@ -35,6 +35,7 @@ from routes.lists_advanced import lists_advanced
 from routes.diary import diary
 import routes.view_state as _view_state_routes  # noqa: F401 — attaches to main
 import routes.account_export as _account_export_routes  # noqa: F401 — attaches to main
+import routes.account_import as _account_import_routes  # noqa: F401 — attaches to main
 from routes.tags import tags_bp
 from routes.likes import likes_bp
 from routes.media_comments import media_comments_bp
@@ -227,21 +228,64 @@ def create_app() -> Flask:
         return {"status": "ok"}, 200
 
     # ── Database init ─────────────────────────────────────────────────────────
+    #
+    # THE INVARIANT: starting the application never changes the schema.
+    #
+    # This used to call db.create_all() unconditionally, which made every app
+    # import a DDL statement against whatever DATABASE_URL pointed at. Two
+    # things were wrong with that:
+    #
+    #   1. A production web worker silently owned the schema. A forgotten
+    #      migration would "fix itself" on boot, so the deploy workflow's
+    #      migration step was not actually load-bearing — and a rollout could
+    #      half-apply DDL before failing on the next statement.
+    #   2. Any diagnostic that imported `app` inherited that authority. During
+    #      Task F7 a read-only schema investigation ran `python -c "from app
+    #      import app ..."` with DATABASE_URL pointing at production Neon. The
+    #      import attempted DDL. It rolled back, but reaching a live database
+    #      through a module import is a hazard that has to be designed out
+    #      rather than remembered.
+    #
+    # So schema creation is now OFF by default and must be asked for explicitly:
+    #
+    #   production   migrations only. The web process never issues DDL.
+    #   tests        tests/conftest.py calls db.create_all() in a fixture.
+    #   dev          scripts/bootstrap_dev_schema.py (or `make dev-schema`),
+    #                 which says out loud that it is creating tables.
+    #
+    # The schema guard below is what enforces the result: if a migration has
+    # not been applied, startup FAILS LOUDLY instead of quietly repairing
+    # itself. Failing to boot on an unprepared schema is the correct outcome —
+    # it is the same posture the guard already took for missing columns.
     with app.app_context():
         _log.info("Database engine: %s",
                   db.engine.url.render_as_string(hide_password=True))
-        try:
-            db.create_all()
-            _log.info("Database tables created successfully")
-        except Exception as exc:
-            _log.error("Error creating database tables: %s", exc)
-            raise
+
+        if os.getenv("FRAMEIQ_AUTO_CREATE_SCHEMA") == "1":
+            # Explicit, opt-in, and deliberately loud. Intended for a local
+            # database and for tests that set it deliberately; never for a
+            # production web process.
+            _log.warning(
+                "FRAMEIQ_AUTO_CREATE_SCHEMA=1 — creating tables. This must "
+                "not be set for a production web process.")
+            try:
+                db.create_all()
+                _log.info("Database tables created successfully")
+            except Exception as exc:
+                _log.error("Error creating database tables: %s", exc)
+                raise
+        else:
+            _log.info(
+                "Schema creation disabled (default). The schema is owned by "
+                "migrates/; the parity guard below will refuse to boot if a "
+                "migration has not been applied.")
 
         # ── Schema parity guard (read-only) ───────────────────────────────────
-        # db.create_all() creates NEW tables but never ALTERs existing ones.
-        # If a model column is missing from the live database (forgotten
-        # migration), the app used to boot and then serve broken pages. Now
-        # startup fails loudly instead. Read-only; runs once per worker boot.
+        # The guard exists because migrations were forgotten, and it compares
+        # declared models against the live schema read-only. With implicit
+        # creation gone it is the only thing standing between a half-migrated
+        # database and a worker that boots "successfully" and then serves
+        # broken pages. It runs once per worker boot.
         from utils.schema_guard import ensure_schema_compatible
         ensure_schema_compatible(app)
 

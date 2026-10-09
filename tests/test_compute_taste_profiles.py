@@ -86,20 +86,25 @@ _USER_DDL = """
 
 
 def _sqlite_file(db_file, users, with_media_and_review=True):
-    """Create a legacy-shaped SQLite DB whose fixture tables (user,
-    media_item, review, taste_profile) are generated from the REAL SQLAlchemy
-    metadata — no hand-copied DDL to drift out of sync. The taste_profile
-    table here mirrors the Phase-1 migration; startup's db.create_all() is
-    NOT the mechanism that fills anything (the job provides the data)."""
+    """Create a SQLite DB with the FULL declared schema, from real metadata.
+
+    Every declared table is created from the SQLAlchemy metadata, so there is no
+    hand-copied DDL to drift out of sync and the fixture matches what a properly
+    migrated production database actually looks like.
+
+    This used to create only four tables and let application startup fill in the
+    rest. Startup no longer creates schema, so the harness owns it — which is
+    the documented test/dev path (docs/conventions.md). Note the fixture rows
+    are still what makes the DB interesting; table creation is not a substitute
+    for the data the job computes.
+    """
     conn = sqlite3.connect(db_file)
     from models.base import db as _db
     from sqlalchemy.dialects import sqlite as sqlite_dialect
     from sqlalchemy.schema import CreateTable
     dialect = sqlite_dialect.dialect()
-    for table in (_db.metadata.tables['user'],
-                  _db.metadata.tables['media_item'],
-                  _db.metadata.tables['review'],
-                  _db.metadata.tables['taste_profile']):
+    # sorted_tables is FK-dependency ordered, so referenced tables exist first.
+    for table in _db.metadata.sorted_tables:
         conn.execute(str(CreateTable(table).compile(dialect=dialect)) + ';')
     for i in range(users):
         conn.execute(
