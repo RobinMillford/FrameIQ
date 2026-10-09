@@ -1,7 +1,7 @@
 """Canonical movie watch history: the `user_viewed` mirror is not history.
 
 THE POLICY BEING PINNED
-=======================
+───────────────────────
 ``DiaryEntry`` is the canonical authority for MOVIE watch history.
 ``user_viewed`` is a COMPATIBILITY MIRROR — a denormalised copy maintained for
 legacy view-state surfaces, not an independent source of watch history.
