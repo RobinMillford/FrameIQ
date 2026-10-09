@@ -181,32 +181,51 @@ jobs:
             # enables it: a deploy cannot widen its own authority by accident.
             docker compose build web
 
-            # 1. Legacy convergence: additive only, idempotent, bounded to an
+            # 1. Ledger bootstrap: create ONLY the `schema_migrations` table if
+            #    it is absent. Idempotent: if it already exists with the
+            #    declared schema this is a no-op, and if it exists with an
+            #    incompatible schema it refuses rather than repairing.
+            #
+            #    This MUST come before convergence. Convergence refuses on any
+            #    missing table outside its historical allow-list, and
+            #    `schema_migrations` is new infrastructure rather than one of
+            #    the eleven legacy gaps — so without this step the first deploy
+            #    after the F8 rollout refused and created nothing, leaving the
+            #    declared-but-missing application tables (including
+            #    `import_source_mapping`) absent as well.
+            #
+            #    The allow-list was deliberately NOT widened to include the
+            #    ledger: that would let unreviewed tables be created by a
+            #    historical repair script.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python scripts/migrate.py init-ledger --allow-production
+
+            # 2. Legacy convergence: additive only, idempotent, bounded to an
             #    explicit 11-table allow-list, fail-closed on anything else.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
 
-            # 2. The schema must match the models before anything is recorded
+            # 3. The schema must match the models before anything is recorded
             #    about it.
             docker compose run --rm --no-deps web python -m utils.schema_guard
 
-            # 3. Adopt the verified legacy state exactly once. Exits 0 and does
+            # 4. Adopt the verified legacy state exactly once. Exits 0 and does
             #    nothing on every subsequent deploy. It records that the schema
             #    was VERIFIED — not that each historical script ran, which
             #    nobody recorded and which must not be invented.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
               python scripts/migrate.py adopt-legacy-baseline --allow-production
 
-            # 4. Apply every registered pending migration, in order.
+            # 5. Apply every registered pending migration, in order.
             #    Refuses to start if an already-applied migration's file has
             #    changed, or if any migration's verify() does not converge.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
               python scripts/migrate.py upgrade --allow-production
 
-            # 5. Prove convergence before web is recreated, so a migration gap
+            # 6. Prove convergence before web is recreated, so a migration gap
             #    fails here rather than as a dead worker later.
             docker compose run --rm --no-deps web python -m utils.schema_guard
 
-            # Report the resulting history. Read-only; prints what is applied,
+            # 7. Report the resulting history. Read-only; prints what is applied,
             # what is pending, and any checksum mismatch.
             SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
               python scripts/migrate.py status --allow-production
