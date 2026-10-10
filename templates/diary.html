@@ -37,18 +37,24 @@
 
     <div class="container mx-auto px-4">
         <div class="diary-container">
-            <div class="mb-8">
-                <h1 class="text-4xl font-bold text-[var(--text-hi)]" style="font-family: var(--font-display);">My Diary</h1>
-                <p class="text-[var(--text-mid)]">Your chronological movie + TV watch events</p>
-            </div>
+            <header class="mb-5">
+                <h1 class="text-2xl font-bold text-[var(--text-hi)]" style="font-family: var(--font-display);">My Diary</h1>
+                <p class="mt-0.5 text-sm text-[var(--text-mid)]">Your chronological movie + TV watch history</p>
+            </header>
 
-            <!-- Filter Options -->
-            <div class="glass-effect rounded-lg p-4 mb-6 flex flex-wrap gap-4">
-                <select id="year-filter" class="bg-[var(--bg-elevated)] text-white px-4 py-2 rounded-lg border border-[var(--line-hi)]" aria-label="Filter by year">
-                    <option value="">All Years</option>
+            <!-- Compact filters. #year-filter is populated from the years
+                 actually present in the loaded pages (it previously shipped
+                 with only "All Years" and was dead UI). -->
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+                <label class="sr-only" for="year-filter">Filter by year</label>
+                <select id="year-filter"
+                        class="rounded border border-[var(--line-hi)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                    <option value="">All years</option>
                 </select>
-                <select id="month-filter" class="bg-[var(--bg-elevated)] text-white px-4 py-2 rounded-lg border border-[var(--line-hi)]" aria-label="Filter by month">
-                    <option value="">All Months</option>
+                <label class="sr-only" for="month-filter">Filter by month</label>
+                <select id="month-filter"
+                        class="rounded border border-[var(--line-hi)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                    <option value="">All months</option>
                     <option value="1">January</option>
                     <option value="2">February</option>
                     <option value="3">March</option>
@@ -62,159 +68,312 @@
                     <option value="11">November</option>
                     <option value="12">December</option>
                 </select>
+                <p id="diary-summary" class="text-xs text-[var(--text-mid)]" role="status" aria-live="polite"></p>
             </div>
 
-            <!-- Diary Entries -->
-            <div id="diary-entries" class="space-y-4">
-                <!-- Entries will be loaded here via JavaScript -->
-                <div class="flex justify-center py-20">
-                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[var(--accent)]"></div>
+            <!-- Entries are grouped by watched_date, then TV episodes for the
+                 same show on that date collapse into one <details> group.
+                 Every individual record stays in the DOM and reachable. -->
+            <div id="diary-entries" class="flex flex-col">
+                <div class="flex justify-center py-16">
+                    <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--accent)]"></div>
                 </div>
             </div>
 
-            <!-- Load More -->
-            <div class="text-center mt-8">
-                <button id="load-more" class="bg-transparent border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-black px-8 py-3 rounded-xl transition-all duration-300 hidden">
-                    Load More
+            <div class="mt-6 text-center">
+                <button id="load-more"
+                        class="rounded border border-[var(--accent)] px-6 py-2 text-sm text-[var(--accent)] transition-all duration-300 hover:bg-[var(--accent)] hover:text-black focus:outline-none focus:ring-2 focus:ring-[var(--accent)] hidden">
+                    Load more
                 </button>
             </div>
         </div>
     </div>
 
     <script>
-        let currentPage = 1;
-        let hasMore = true;
+        (function () {
+            'use strict';
 
-        async function loadDiaryEntries(page = 1, year = null, month = null) {
-            try {
-                let url = `/api/diary?page=${page}&per_page=20`;
-                if (year) url += `&year=${year}`;
-                if (month) url += `&month=${month}`;
+            var PAGE_SIZE = 20;
+            var entriesEl = document.getElementById('diary-entries');
+            var loadMoreBtn = document.getElementById('load-more');
+            var yearEl = document.getElementById('year-filter');
+            var monthEl = document.getElementById('month-filter');
+            var summaryEl = document.getElementById('diary-summary');
 
-                const response = await fetch(url);
-                const data = await response.json();
+            var currentPage = 1;
+            var loading = false;
+            var seenYears = {};
+            var seenTotal = 0;
 
-                if (page === 1) {
-                    document.getElementById('diary-entries').replaceChildren();
-                }
-
-                if (data.entries.length === 0 && page === 1) {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'text-center py-20';
-                    const icon = document.createElement('i');
-                    icon.className = 'fas fa-book-open text-6xl text-[var(--text-mid)] mb-4';
-                    const msg = document.createElement('p');
-                    msg.className = 'text-[var(--text-mid)] text-lg';
-                    msg.textContent = 'Your diary is empty. Start logging your watches!';
-                    wrap.appendChild(icon);
-                    wrap.appendChild(msg);
-                    document.getElementById('diary-entries').appendChild(wrap);
-                    return;
-                }
-
-                data.entries.forEach(entry => {
-                    // Unified movie + TV stream (server merges DiaryEntry
-                    // + TVEpisodeWatch). All dynamic values are untrusted
-                    // — built with createElement/textContent, never HTML
-                    // string interpolation.
-                    const card = document.createElement('div');
-                    card.className = 'glass-effect rounded-lg p-4 flex gap-4 hover:bg-white/10 transition-all';
-
-                    const img = document.createElement('img');
-                    if (entry.media.poster_path) {
-                        img.src = 'https://image.tmdb.org/t/p/w200' + entry.media.poster_path;
-                    }
-                    img.alt = entry.media.title || 'Poster';
-                    img.className = 'w-20 h-32 object-cover rounded';
-
-                    const body = document.createElement('div');
-                    body.className = 'flex-1';
-
-                    const head = document.createElement('div');
-                    head.className = 'flex justify-between items-start';
-
-                    const left = document.createElement('div');
-
-                    const title = document.createElement('h3');
-                    title.className = 'text-lg font-semibold';
-                    title.textContent = entry.media.title || 'Untitled';
-
-                    const sub = document.createElement('p');
-                    sub.className = 'text-sm text-[var(--text-mid)]';
-                    const when = entry.watched_date
-                        ? new Date(entry.watched_date).toLocaleDateString()
-                        : '';
-                    if (entry.episode) {
-                        sub.textContent = 'S' + entry.episode.season +
-                            'E' + entry.episode.number +
-                            ' \u00b7 Watched on ' + when;
-                    } else {
-                        sub.textContent = 'Watched on ' + when;
-                    }
-
-                    left.appendChild(title);
-                    left.appendChild(sub);
-
-                    if (entry.is_rewatch) {
-                        const tag = document.createElement('span');
-                        tag.className = 'text-xs bg-yellow-600 text-white px-2 py-1 rounded mt-1 inline-block';
-                        tag.textContent = 'Rewatch';
-                        left.appendChild(tag);
-                    }
-
-                    head.appendChild(left);
-
-                    if (entry.rating) {
-                        const stars = document.createElement('div');
-                        stars.className = 'text-yellow-400 text-lg';
-                        stars.textContent = '\u2605 ' + entry.rating;
-                        head.appendChild(stars);
-                    }
-
-                    body.appendChild(head);
-                    card.appendChild(img);
-                    card.appendChild(body);
-                    document.getElementById('diary-entries').appendChild(card);
-                });
-
-                hasMore = data.has_next;
-                document.getElementById('load-more').classList.toggle('hidden', !hasMore);
-
-            } catch (error) {
-                const wrap = document.createElement('div');
-                wrap.className = 'text-center py-20 text-red-400';
-                const msg = document.createElement('p');
-                msg.textContent = 'Error loading diary entries. Please try again.';
-                wrap.appendChild(msg);
-                document.getElementById('diary-entries').appendChild(wrap);
+            function mediaUrl(entry) {
+                var mt = entry.media.media_type === 'tv' ? 'tv' : 'movie';
+                return '/' + mt + '/' + entry.media.id;
             }
-        }
 
-        // Load initial entries
-        loadDiaryEntries();
+            function posterImg(entry, cls) {
+                var img = document.createElement('img');
+                img.loading = 'lazy';
+                if (entry.media.poster_path) {
+                    img.src = 'https://image.tmdb.org/t/p/w200' + entry.media.poster_path;
+                } else {
+                    img.src = '/static/images/no-poster.svg';
+                }
+                img.alt = '';
+                img.className = cls;
+                return img;
+            }
 
-        // Filter handlers
-        document.getElementById('year-filter').addEventListener('change', (e) => {
-            currentPage = 1;
-            const year = e.target.value;
-            const month = document.getElementById('month-filter').value;
-            loadDiaryEntries(1, year || null, month || null);
-        });
+            function ratingNode(entry) {
+                if (!entry.rating) return null;
+                var s = document.createElement('span');
+                s.className = 'ml-auto shrink-0 text-xs text-yellow-400';
+                s.textContent = '\u2605 ' + entry.rating;
+                return s;
+            }
 
-        document.getElementById('month-filter').addEventListener('change', (e) => {
-            currentPage = 1;
-            const year = document.getElementById('year-filter').value;
-            const month = e.target.value;
-            loadDiaryEntries(1, year || null, month || null);
-        });
+            function rewatchTag() {
+                var t = document.createElement('span');
+                t.className = 'shrink-0 rounded bg-yellow-600/80 px-1.5 py-0.5 text-[10px] text-white';
+                t.textContent = 'Rewatch';
+                return t;
+            }
 
-        // Load more handler
-        document.getElementById('load-more').addEventListener('click', () => {
-            currentPage++;
-            const year = document.getElementById('year-filter').value;
-            const month = document.getElementById('month-filter').value;
-            loadDiaryEntries(currentPage, year || null, month || null);
-        });
+            /* Compact movie row. */
+            function movieRow(entry) {
+                var a = document.createElement('a');
+                a.href = mediaUrl(entry);
+                a.className = 'flex items-center gap-3 border-b border-[var(--line)]/60 py-2 transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]';
+
+                a.appendChild(posterImg(entry, 'h-16 w-10 shrink-0 rounded object-cover'));
+
+                var mid = document.createElement('div');
+                mid.className = 'min-w-0 flex-1';
+                var t = document.createElement('p');
+                t.className = 'truncate text-sm font-medium text-[var(--text-hi)]';
+                t.textContent = entry.media.title || 'Untitled';
+                var s = document.createElement('p');
+                s.className = 'text-xs text-[var(--text-mid)]';
+                s.textContent = 'Movie';
+                mid.appendChild(t);
+                mid.appendChild(s);
+
+                var right = document.createElement('div');
+                right.className = 'flex shrink-0 items-center gap-2';
+                if (entry.is_rewatch) right.appendChild(rewatchTag());
+                var r = ratingNode(entry);
+                if (r) right.appendChild(r);
+
+                a.appendChild(mid);
+                a.appendChild(right);
+                return a;
+            }
+
+            /* One collapsible group of episodes for a single show on a single
+               recorded date. Uses <details> so it is keyboard operable, exposes
+               correct expanded state, and keeps every episode reachable. */
+            function tvGroup(showEntries, dateLabel) {
+                var first = showEntries[0];
+                var details = document.createElement('details');
+                details.className = 'border-b border-[var(--line)]/60 py-2';
+
+                var summary = document.createElement('summary');
+                summary.className = 'flex cursor-pointer list-none items-center gap-3 rounded transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]';
+
+                summary.appendChild(posterImg(first, 'h-16 w-10 shrink-0 rounded object-cover'));
+
+                var mid = document.createElement('div');
+                mid.className = 'min-w-0 flex-1';
+                var t = document.createElement('p');
+                t.className = 'truncate text-sm font-medium text-[var(--text-hi)]';
+                t.textContent = first.media.title || 'Unknown Show';
+                var s = document.createElement('p');
+                s.className = 'text-xs text-[var(--text-mid)]';
+                var n = showEntries.length;
+                s.textContent = n + (n === 1 ? ' episode' : ' episodes') +
+                    ' \u00b7 ' + dateLabel;
+                mid.appendChild(t);
+                mid.appendChild(s);
+                summary.appendChild(mid);
+
+                var right = document.createElement('div');
+                right.className = 'flex shrink-0 items-center gap-2';
+                if (showEntries.some(function (e) { return e.is_rewatch; })) {
+                    right.appendChild(rewatchTag());
+                }
+                summary.appendChild(right);
+                details.appendChild(summary);
+
+                var ul = document.createElement('ul');
+                ul.className = 'ml-[3.25rem] mt-1.5 space-y-1';
+                showEntries.forEach(function (entry) {
+                    var li = document.createElement('li');
+                    var a = document.createElement('a');
+                    a.href = mediaUrl(entry);
+                    a.className = 'flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]';
+
+                    var code = document.createElement('span');
+                    code.className = 'shrink-0 font-mono text-[var(--accent)]';
+                    code.textContent = 'S' + entry.episode.season + 'E' +
+                        String(entry.episode.number).padStart(2, '0');
+
+                    var name = document.createElement('span');
+                    name.className = 'min-w-0 flex-1 truncate text-[var(--text-hi)]';
+                    name.textContent = entry.episode.name || 'Episode ' + entry.episode.number;
+
+                    a.appendChild(code);
+                    a.appendChild(name);
+                    if (entry.is_rewatch) a.appendChild(rewatchTag());
+                    var r = ratingNode(entry);
+                    if (r) a.appendChild(r);
+
+                    li.appendChild(a);
+                    ul.appendChild(li);
+                });
+                details.appendChild(ul);
+                return details;
+            }
+
+            function dateLabel(iso) {
+                if (!iso) return '';
+                var d = new Date(iso);
+                if (isNaN(d)) return iso;
+                return d.toLocaleDateString(undefined,
+                    { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+            }
+
+            /* Render one page. Server order is (watched_date, created_at, kind,
+               id) DESC, so same-date entries arrive adjacent; grouping here only
+               ever merges rows that share a RECORDED watched_date. */
+            function renderPage(data) {
+                var entries = data.entries || [];
+                var frag = document.createDocumentFragment();
+
+                var i = 0;
+                while (i < entries.length) {
+                    var date = entries[i].watched_date;
+                    var j = i;
+                    while (j < entries.length && entries[j].watched_date === date) j++;
+                    var block = entries.slice(i, j);
+
+                    var movies = block.filter(function (e) { return !e.episode; });
+                    var tvs = block.filter(function (e) { return e.episode; });
+
+                    movies.forEach(function (e) { frag.appendChild(movieRow(e)); });
+
+                    // Group TV by show within the day.
+                    var order = [];
+                    var byShow = {};
+                    tvs.forEach(function (e) {
+                        var key = e.media.id;
+                        if (!byShow[key]) { byShow[key] = []; order.push(key); }
+                        byShow[key].push(e);
+                    });
+                    order.forEach(function (key) {
+                        frag.appendChild(tvGroup(byShow[key], dateLabel(date)));
+                    });
+
+                    i = j;
+                }
+
+                entriesEl.appendChild(frag);
+                seenTotal += entries.length;
+                entries.forEach(function (e) {
+                    if (e.watched_date) seenYears[e.watched_date.slice(0, 4)] = true;
+                });
+                refreshYearOptions();
+                summaryEl.textContent = seenTotal === 1
+                    ? '1 entry'
+                    : (seenTotal + ' entries loaded');
+            }
+
+            function refreshYearOptions() {
+                var current = yearEl.value;
+                var years = Object.keys(seenYears).sort(function (a, b) { return b - a; });
+                if (!years.length) return;
+                yearEl.replaceChildren();
+                var all = document.createElement('option');
+                all.value = '';
+                all.textContent = 'All years';
+                yearEl.appendChild(all);
+                years.forEach(function (y) {
+                    var o = document.createElement('option');
+                    o.value = y;
+                    o.textContent = y;
+                    yearEl.appendChild(o);
+                });
+                yearEl.value = current;
+            }
+
+            function emptyState(message) {
+                var wrap = document.createElement('div');
+                wrap.className = 'py-16 text-center';
+                var icon = document.createElement('i');
+                icon.className = 'fas fa-book-open text-5xl text-[var(--text-mid)] mb-3';
+                var msg = document.createElement('p');
+                msg.className = 'text-[var(--text-mid)]';
+                msg.textContent = message;
+                wrap.appendChild(icon);
+                wrap.appendChild(msg);
+                entriesEl.appendChild(wrap);
+            }
+
+            async function loadDiaryEntries(page) {
+                if (loading) return;
+                loading = true;
+                loadMoreBtn.disabled = true;
+                try {
+                    var year = yearEl.value || null;
+                    var month = monthEl.value || null;
+                    var url = '/api/diary?page=' + page + '&per_page=' + PAGE_SIZE;
+                    if (year) url += '&year=' + encodeURIComponent(year);
+                    if (month) url += '&month=' + encodeURIComponent(month);
+
+                    var response = await fetch(url);
+                    if (!response.ok) throw new Error('http ' + response.status);
+                    var data = await response.json();
+
+                    if (page === 1) {
+                        entriesEl.replaceChildren();
+                        seenTotal = 0;
+                    }
+                    if ((data.entries || []).length === 0 && page === 1) {
+                        emptyState('Your diary is empty. Start logging your watches!');
+                        loadMoreBtn.classList.add('hidden');
+                        return;
+                    }
+                    renderPage(data);
+                    loadMoreBtn.classList.toggle('hidden', !data.has_next);
+                } catch (error) {
+                    if (page === 1) {
+                        entriesEl.replaceChildren();
+                        var wrap = document.createElement('div');
+                        wrap.className = 'py-16 text-center text-red-400';
+                        var msg = document.createElement('p');
+                        msg.textContent = 'Error loading diary entries. Please try again.';
+                        wrap.appendChild(msg);
+                        entriesEl.appendChild(wrap);
+                    }
+                } finally {
+                    loading = false;
+                    loadMoreBtn.disabled = false;
+                }
+            }
+
+            function reload() {
+                currentPage = 1;
+                seenYears = {};
+                loadDiaryEntries(1);
+            }
+
+            loadDiaryEntries(1);
+
+            yearEl.addEventListener('change', reload);
+            monthEl.addEventListener('change', reload);
+            loadMoreBtn.addEventListener('click', function () {
+                currentPage += 1;
+                loadDiaryEntries(currentPage);
+            });
+        })();
     </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>

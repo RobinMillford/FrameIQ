@@ -1,0 +1,28 @@
+# --- Test / development dependencies ---
+#
+# Deliberately SEPARATE from requirements.txt, which is the PRODUCTION
+# dependency file: Dockerfile copies and installs requirements.txt only, so
+# nothing listed here reaches a deployed image or the runtime environment.
+#
+# The offline CI test job (.github/workflows/ci-cd.yml) installs both files
+# and then runs `python -m playwright install --with-deps chromium`, because
+# the Playwright wheel alone does not ship a browser binary.
+
+# Test runner / lint — these were previously listed inline in the workflow's
+# `pip install` command; they live here now so local and CI installs agree.
+pytest>=8.0
+flake8>=7.0
+pytest-cov>=5.0
+
+# Browser automation for tests/test_edit_profile_picker_browser.py.
+#
+# That suite drives a REAL headless Chromium against the REAL
+# static/js/my-services.js: keyboard-focus retention and the 20-service
+# selection cap are runtime behaviours that no source-level assertion can
+# prove. It uses only the `playwright.sync_api` driver — it does NOT need the
+# pytest-playwright plugin or its fixtures.
+#
+# It remains guarded by pytest.importorskip so a developer without the browser
+# extras can still run the rest of the suite; CI is responsible for installing
+# this dependency so the guard never silently skips there.
+playwright>=1.40

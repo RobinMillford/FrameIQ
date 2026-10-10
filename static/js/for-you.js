@@ -64,6 +64,107 @@
     var section = container.closest('section');
     if (!section) return;
 
+    // ── Feature F10: watchlist resurfacings (own section, own lifecycle) ──
+    // Independent of the For You section on purpose. hide() below removes the
+    // For You section for cold-start/error users; resurfacings are the user's
+    // OWN saved titles and do not depend on the personalization gate, so they
+    // live in a sibling section with their own show/hide.
+    var resurfaceContainer =
+        document.querySelector('[data-watchlist-resurface]');
+    var resurfaceSection = resurfaceContainer
+        && resurfaceContainer.closest('section');
+
+    function hideResurface() {
+        if (resurfaceSection && resurfaceSection.parentNode) {
+            resurfaceSection.parentNode.removeChild(resurfaceSection);
+        }
+        resurfaceSection = null;
+        resurfaceContainer = null;
+    }
+
+    // Deliberately NOT card(): card() stamps data-rec-* attributes and an
+    // action menu, and the whole feedback pipeline (impression observer,
+    // click handler) is scoped to `container` above. Reusing card() here would
+    // emit controls that post feedback to the home_for_you surface for cards
+    // that were never impression-tracked in that rail. These cards carry a
+    // separate data-resurface-* namespace so they can never be mis-attributed.
+    function resurfaceCard(item, position) {
+        var isMovie = item.media_type === 'movie';
+        var wrap = document.createElement('div');
+        wrap.className = 'relative shrink-0 snap-start w-[148px] sm:w-[160px]';
+        wrap.setAttribute('data-resurface-tmdb-id', item.tmdb_id);
+        wrap.setAttribute('data-resurface-media-type', item.media_type);
+        wrap.setAttribute('data-resurface-position', position);
+
+        var a = document.createElement('a');
+        a.href = isMovie ? '/movie/' + item.tmdb_id : '/tv/' + item.tmdb_id;
+        a.className =
+            'rail-card poster-glow group block shrink-0 snap-start w-full';
+
+        var box = document.createElement('div');
+        box.className =
+            'poster-box relative overflow-hidden rounded-xl ' +
+            'bg-[var(--bg-surface)] ring-1 ring-[var(--line)] aspect-[2/3]';
+        box.appendChild(posterTag(item.poster_path, item.title));
+
+        var title = document.createElement('p');
+        title.className = 'mt-2 text-[13px] font-medium ' +
+            'text-[var(--text-hi)] truncate group-hover:text-[var(--accent)]' +
+            ' transition-colors';
+        title.textContent = item.title;
+
+        // The "why" — when it was saved, and release context only when the
+        // server already had trustworthy data for it.
+        var note = item.reason && item.reason.text ? item.reason.text : '';
+        if (item.release && item.release.text) {
+            note = note ? note + ' · ' + item.release.text : item.release.text;
+        }
+        var reason = document.createElement('p');
+        reason.className = 'font-slate text-[10px] text-[var(--text-low)]';
+        reason.textContent = note;
+
+        a.appendChild(box);
+        a.appendChild(title);
+        a.appendChild(reason);
+        wrap.appendChild(a);
+        return wrap;
+    }
+
+    function renderResurface(data) {
+        var items = (data && Array.isArray(data.resurfaced))
+            ? data.resurfaced : null;
+        if (!resurfaceSection || !items || items.length === 0) {
+            hideResurface();
+            return;
+        }
+
+        // Same (media_type, tmdb_id) dedupe guard as render(): a resurfacING
+        // title may also be a regular For You item, and the two rails sit
+        // side by side.
+        var seen = Object.create(null);
+        var frag = document.createDocumentFragment();
+        var position = 0;
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (!item || item.tmdb_id === null || item.tmdb_id === undefined) {
+                continue;
+            }
+            var key = item.media_type + ':' + item.tmdb_id;
+            if (seen[key]) continue;
+            seen[key] = true;
+            position += 1;
+            frag.appendChild(resurfaceCard(item, position));
+        }
+        if (position === 0) {
+            hideResurface();
+            return;
+        }
+
+        resurfaceContainer.textContent = '';
+        resurfaceContainer.appendChild(frag);
+        resurfaceSection.removeAttribute('hidden');
+    }
+
     // ── Feedback constants (Phase 7) ─────────────────────────────────────
     var SURFACE = 'home_for_you';
     var IMPRESSION_THRESHOLD = 0.5;   // ≥50% of the card visible counts
@@ -477,6 +578,10 @@
     }
 
     function render(data) {
+        // Resurfacings first, and on every path: a cold-start or empty For You
+        // rail must NOT suppress them (independent section, own gate).
+        renderResurface(data);
+
         if (!data || data.personalized !== true || !Array.isArray(data.items)
                 || data.items.length === 0) {
             hide();
@@ -523,5 +628,11 @@
     }).then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
-    }).then(render).catch(hide);   // any failure → silently hide the rail
+    }).then(render).catch(function () {
+        // Any failure → silently remove BOTH rails. Deliberately not hide():
+        // hide() is also used when only the For You rail empties, and it must
+        // not take the independent watchlist rail down with it.
+        hide();
+        hideResurface();
+    });
 })();
