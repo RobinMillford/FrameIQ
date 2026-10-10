@@ -295,7 +295,18 @@ def test_js_uses_canonical_detail_urls():
 def test_js_hides_section_on_cold_start_or_error():
     src = _js_source()
     assert 'personalized !== true' in src        # cold start → hide
-    assert '.catch(hide)' in src                 # network/parse error → hide
+    # Network/parse error → hide BOTH rails. F10 added an independent
+    # watchlist-resurface section, so the failure handler clears both.
+    #
+    # Scoped to the failure handler on purpose: a bare `"hide();" in src`
+    # assertion would still pass if the .catch handler were deleted outright,
+    # because both calls also appear elsewhere in the file. Requiring
+    # `.then(render).catch(` and then checking the text that FOLLOWS it means
+    # removing the handler fails this test.
+    assert '.then(render).catch(' in src, 'fetch failure handler is gone'
+    handler = src.split('.then(render).catch(', 1)[1]
+    assert 'hide();' in handler
+    assert 'hideResurface();' in handler
     assert 'removeChild' in src                  # section actually removed
 
 

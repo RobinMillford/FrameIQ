@@ -316,7 +316,11 @@
         </div>
         {% elif rail.kind == 'for_you' %}
         {# Placeholder only — cards arrive via GET /api/for-you (for-you.js).
-            Cold-start/error → the JS removes this whole section. #}
+            Cold-start/error → the JS removes this whole section.
+            The F10 watchlist-resurfacing section is deliberately NOT nested
+            here: for-you.js removes this section outright on cold-start, and
+            resurfacings must survive that. It is emitted after the rails loop
+            below as a sibling section with its own lifecycle. #}
         {% with %}{% include "partials/for_you_rail.html" %}{% endwith %}
         {% else %}
         <div class="rail" id="rail-{{ rail.key }}">
@@ -339,6 +343,24 @@
         {% endif %}
     </section>
     {% endfor %}
+
+    {# Feature F10 — Watchlist Resurfacing. A SIBLING of the rails-loop sections
+       (deliberately not nested inside the For You one, which for-you.js removes
+       wholesale on cold-start/error). These are the user's OWN saved titles, so
+       they are not gated on TasteProfile personalization and are shown whether
+       or not the For You rail appears. Hidden by default and only revealed by
+       for-you.js when there is genuinely something stale to show.
+       No scroll arrows: the repo's .rail-arrow buttons have no JS handler
+       anywhere, so adding them here would ship dead controls. #}
+    {% if current_user.is_authenticated %}
+    <section class="rise-in" aria-label="Still on your list" data-watchlist-resurface-section hidden>
+        <div class="mb-4">
+            <h2 class="h-display text-xl">Still on your list</h2>
+            <p class="rail-header-sub">▸ saved a while back</p>
+        </div>
+        <div class="rail" id="rail-watchlist_resurface" data-watchlist-resurface></div>
+    </section>
+    {% endif %}
 
     <!-- ══ Trending people ══ -->
     {% if trending_people %}

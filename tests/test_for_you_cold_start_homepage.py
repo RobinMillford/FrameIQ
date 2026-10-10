@@ -195,7 +195,15 @@ def test_any_fetch_failure_hides_section():
     """HTTP error, parse error, network failure → section removed (PART 7
     outcome C) — the placeholder can never outlive the request."""
     src = _js_source()
-    assert ".catch(hide)" in src
+    # F10: the failure handler clears the For You section AND the independent
+    # watchlist-resurface section, so a failed request leaves nothing behind.
+    #
+    # Anchored to the handler itself — a whole-file substring check would pass
+    # even with the .catch() deleted, since both calls appear elsewhere too.
+    assert '.then(render).catch(' in src, 'fetch failure handler is gone'
+    handler = src.split('.then(render).catch(', 1)[1]
+    assert "hide();" in handler
+    assert "hideResurface();" in handler
 
 
 def test_homepage_placeholder_wrapped_in_section(auth_client):

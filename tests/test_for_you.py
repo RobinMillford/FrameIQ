@@ -210,7 +210,11 @@ def test_cold_start_zero_signals(app, user):
         out = fy.get_for_you(user.id)
     assert out == {'personalized': False, 'mode': 'cold',
                    'confidence': 0.0, 'reason_state': 'no_meaningful_signals',
-                   'items': []}
+                   'items': [],
+                   # Feature F10 additive key. Always present so the response
+                   # shape never varies; empty here because this user has no
+                   # watchlist. `items` is untouched.
+                   'resurfaced': []}
 
 
 def test_missing_profile_returns_cold_start(app, user):

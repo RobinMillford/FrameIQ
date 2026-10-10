@@ -345,7 +345,15 @@ def _resolve_local_items(local_ids):
 
 
 def _collect_watched_exclusions(watched_rows, watchlist_rows, id_map):
-    """Junction-table rows → (excluded keys, watchlisted keys)."""
+    """Junction-table rows → (excluded keys, watchlisted keys).
+
+    NOTE the two sets are NOT interchangeable, and ``exclude_keys`` is NOT a
+    watched-state signal: it also contains watchlist members, whose exclusion
+    is only *duplicate suppression* (a saved title must not be suggested back
+    as if it were new). Code that needs "has the user actually seen this"
+    must use :func:`_collect_watched_state_keys` instead. Feature F10 depends
+    on that distinction.
+    """
     exclude_keys, watchlisted_keys = set(), set()
     for r in list(watched_rows):
         item = id_map.get(r.media_id)
@@ -395,22 +403,20 @@ def _select_seeds(seed_pool):
     return seeds[:2]
 
 
-def _load_local_state(user_id):
-    """One joined exclusion read + one seeds read.
+def _load_watched_rows(user_id):
+    """The three "engaged with this" sources, at their established bounds.
 
-    Read 1: exclusion state — watched/watchlist junction rows and
-    diary entries, all joined to MediaItem ONCE, yielding (media_type,
-    tmdb_id) exclusion keys plus watchlisted keys for the intent bonus.
-    Read 2: seed selection — top positive diary/review evidence (TMDb ids
-    via the same join, plus title names for reasons).
+    Split out so the cold/hedged branch of ``get_for_you`` can obtain watched
+    keys WITHOUT also loading watchlist rows, seeds, or anything else the
+    recommendation engine needs. The bounds below are the long-standing ones
+    (50 most recent diary entries, 50 highest-rated reviews) and are
+    deliberately preserved: the two paths must agree exactly, and changing a
+    bound here would change canonical watched-state behaviour.
 
-    No N+1: two major queries total, joined, bounded.
+    Four statements total across the three reads; all bounded by user_id.
     """
-    # ── Read 1: exclusions (watched ∪ watchlist ∪ diary) ──
     watched_rows = db.session.execute(
         user_viewed.select().where(user_viewed.c.user_id == user_id)).all()
-    watchlist_rows = db.session.execute(
-        user_watchlist.select().where(user_watchlist.c.user_id == user_id)).all()
     diary_rows = (
         DiaryEntry.query.with_entities(
             DiaryEntry.media_id, DiaryEntry.media_type, DiaryEntry.rating,
@@ -424,6 +430,61 @@ def _load_local_state(user_id):
         .filter(Review.user_id == user_id, Review.rating.isnot(None))
         .order_by(Review.rating.desc()).limit(50).all()
     )
+    return watched_rows, diary_rows, review_rows
+
+
+def _collect_watched_state_keys(watched_rows, diary_rows, review_rows, id_map):
+    """Canonical "engaged with" keys: ``viewed ∪ diary ∪ review``.
+
+    The single source of truth for "has the user actually seen this", shared
+    by the personalized and cold/hedged paths so the two cannot drift apart.
+
+    Deliberately NOT ``exclude_keys - watchlisted_keys``: ``exclude_keys``
+    also carries watchlist members whose exclusion is only duplicate
+    suppression, so that difference silently drops every title that is BOTH
+    watched AND still listed — exactly what the F10 rail surfaces.
+    """
+    keys = set()
+    for rows in (watched_rows, diary_rows, review_rows):
+        for r in rows:
+            item = id_map.get(r.media_id)
+            if item:
+                keys.add((item.media_type, item.tmdb_id))
+    return keys
+
+
+def _load_watched_keys(user_id):
+    """Watched/engaged-with keys for ``user_id`` on its own.
+
+    Used by the cold/hedged branch, which returns before ``_load_local_state``
+    runs and therefore has no watched set to hand the resurfacING engine.
+    Bounded: three user-scoped reads plus ONE batched MediaItem resolution —
+    never a per-title lookup, never an unbounded read.
+    """
+    watched_rows, diary_rows, review_rows = _load_watched_rows(user_id)
+    local_ids = ({r.media_id for r in watched_rows}
+                 | {d.media_id for d in diary_rows}
+                 | {r.media_id for r in review_rows})
+    id_map = _resolve_local_items(local_ids)
+    return _collect_watched_state_keys(
+        watched_rows, diary_rows, review_rows, id_map)
+
+
+def _load_local_state(user_id):
+    """One joined exclusion read + one seeds read.
+
+    Read 1: exclusion state — watched/watchlist junction rows and
+    diary entries, all joined to MediaItem ONCE, yielding (media_type,
+    tmdb_id) exclusion keys plus watchlisted keys for the intent bonus.
+    Read 2: seed selection — top positive diary/review evidence (TMDb ids
+    via the same join, plus title names for reasons).
+
+    No N+1: two major queries total, joined, bounded.
+    """
+    # ── Read 1: exclusions (watched ∪ watchlist ∪ diary ∪ review) ──
+    watched_rows, diary_rows, review_rows = _load_watched_rows(user_id)
+    watchlist_rows = db.session.execute(
+        user_watchlist.select().where(user_watchlist.c.user_id == user_id)).all()
 
     all_local_ids = {r.media_id for r in watched_rows} \
         | {r.media_id for r in watchlist_rows} \
@@ -437,9 +498,16 @@ def _load_local_state(user_id):
         diary_rows, review_rows, id_map)
     exclude_keys |= history_excludes
 
+    # Feature F10 source of truth for "has the user actually engaged with
+    # this title": viewed ∪ diary ∪ review, via the SAME helper the cold/hedged
+    # path uses (_load_watched_keys), so the two paths cannot disagree.
+    watched_keys = _collect_watched_state_keys(
+        watched_rows, diary_rows, review_rows, id_map)
+
     return {
         'exclude_keys': exclude_keys,
         'watchlisted_keys': watchlisted_keys,
+        'watched_keys': watched_keys,
         'seeds': _select_seeds(seed_pool),
     }
 
@@ -819,14 +887,49 @@ def _cache_put(key, value):
         _cache[key] = (value, time.time())
 
 
+def _resurface(user_id, watched_keys, region):
+    """Feature F10 — the additive ``resurfaced`` list for the response.
+
+    A thin, total wrapper: a resurfacING failure must never take down the
+    personalized rail the user came for, so any error degrades to an empty list
+    and is logged. Resurfacing is an enhancement, not the main event.
+    """
+    from api.watchlist_resurface import resurface_cards
+    try:
+        return resurface_cards(user_id, watched_keys=watched_keys,
+                               region=region)
+    except Exception:  # noqa: BLE001 — enhancement must never break the rail
+        logger.warning("Watchlist resurfacING failed for user %s",
+                       user_id, exc_info=True)
+        return []
+
+
 def get_for_you(user_id, region=None, limit=MAX_RESULTS):
     """Bounded, deterministic personalized candidates for one user.
 
     Returns a plain dict (never SQLAlchemy models, never raw internals):
         {'personalized': bool, 'mode': str, 'confidence': float,
-         'reason_state': str, 'items': [...]}
+         'reason_state': str, 'items': [...], 'resurfaced': [...]}
     Cold-start users get personalized=False and no items — the CALLER picks
     the fallback rail. Anonymous access is impossible: user_id is required.
+
+    Feature F10 adds ``resurfaced`` as an ADDITIVE key: neglected titles from
+    the caller's OWN watchlist, ranked by api/watchlist_resurface.py. ``items``
+    — its ordering, its diversity pass, its pagination contract — is unchanged,
+    so every existing consumer keeps working untouched. The key is always
+    present (empty list when nothing qualifies) so the response shape never
+    varies.
+
+    ``resurfaced`` is computed for cold/hedged users too. Watchlist intent does
+    not depend on TasteProfile confidence, and withholding it would mean a user
+    with a rich watchlist but a young profile never sees it.
+
+    Cache staleness: the 45-minute cache also holds ``resurfaced``. Nothing
+    invalidates on a watchlist add/remove (no equivalent of TasteProfile's
+    ``updated_at`` exists), so a title removed moments ago can linger in this
+    rail until the entry expires. That is bounded, consistent with how this
+    engine already caches, and not misleading — the card carries no save
+    control of its own and the shared view-state sync reports the true state.
     """
     limit = max(1, min(int(limit or MAX_RESULTS), MAX_RESULTS))
 
@@ -853,6 +956,21 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
         # one-signal user received 'Popular right now' cards labeled
         # personalized=true. The homepage JS hides the whole For You
         # section on personalized=false.
+        #
+        # Feature F10: resurfacings are NOT personalized discovery, they are
+        # the user's own saved titles, so they are still returned here. The
+        # frontend shows them from their own section, which is independent of
+        # the personalized For You section.
+        #
+        # The watched/engaged-with set MUST still be supplied. This branch
+        # returns before _load_local_state() runs, so it has to obtain the
+        # keys itself; passing an empty set here previously let a watchlisted
+        # movie that had already been watched (canonical DiaryEntry, unrated
+        # so it contributes no taste signal and the user is legitimately
+        # cold-start) resurface as something they still needed to watch.
+        # _load_watched_keys shares its derivation with _load_local_state, so
+        # both paths agree exactly. Cost: three bounded user-scoped reads plus
+        # one batched MediaItem resolution, on the cold/hedged path only.
         result = {
             'personalized': False,
             'mode': mode,
@@ -860,6 +978,8 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
                            if profile is not None else 0.0),
             'reason_state': reason_state,
             'items': [],
+            'resurfaced': _resurface(
+                user_id, _load_watched_keys(user_id), region),
         }
         _cache_put(cache_key, result)
         return result
@@ -867,6 +987,24 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
     from datetime import datetime
     today = datetime.utcnow().date()
     local = _load_local_state(user_id)
+    # Real watched/engaged state: viewed ∪ diary ∪ review, computed inside
+    # _load_local_state.
+    #
+    # This MUST NOT be `local['exclude_keys'] - local['watchlisted_keys']`.
+    # `exclude_keys` also carries watchlist members, where the exclusion is
+    # merely duplicate suppression. Subtracting the watchlist set therefore
+    # erases any title that is BOTH watched AND still on the watchlist — and
+    # the F10 rail is precisely the rail that surfaces still-watched
+    # watchlist entries. Under the set difference a fully-watched film the
+    # user never removed from their watchlist resurfaced as something they
+    # still needed to watch. The three exclusion kinds are not
+    # interchangeable; `_load_local_state` now returns them separately.
+    #
+    # TV show completion is NOT resolved here: it lives in TVShowProgress
+    # (see api/watchlist_resurface._completed_shows), which this engine does
+    # not read and never did.
+    watched_keys = local['watched_keys']
+
     budget = _TmdbBudget()
     candidates = _generate_candidates(profile, local, budget)
     candidates = _merge_candidates(candidates)
@@ -893,6 +1031,7 @@ def get_for_you(user_id, region=None, limit=MAX_RESULTS):
         'confidence': describe_profile(profile)['confidence'],
         'reason_state': reason_state,
         'items': items,
+        'resurfaced': _resurface(user_id, watched_keys, region),
     }
     _cache_put(cache_key, result)
     return result
