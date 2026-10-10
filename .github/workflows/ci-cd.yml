@@ -34,7 +34,77 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest pytest-cov flake8
+          # requirements-dev.txt holds the test-only tooling (pytest, flake8,
+          # playwright). It is intentionally NOT in requirements.txt, which is
+          # the production file the Dockerfile installs.
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install Chromium for Playwright
+        run: |
+          # The playwright wheel ships no browser binary. Without this the
+          # picker suite skips itself via pytest.importorskip and the focus /
+          # selection-cap guarantees would go unverified in CI.
+          python -m playwright install --with-deps chromium
+
+      - name: Browser test preflight
+        run: |
+          # Explicit guard: this job must never treat "Playwright missing" as
+          # "browser tests passed". Verifies the driver imports, a real
+          # headless Chromium launches, and the picker suite COLLECTS tests
+          # rather than skipping at import time.
+          python - <<'PY'
+          import sys
+          try:
+              from playwright.sync_api import sync_playwright
+          except Exception as exc:                       # noqa: BLE001
+              sys.exit(f"::error::Playwright is not importable: {exc}")
+          try:
+              with sync_playwright() as p:
+                  browser = p.chromium.launch()
+                  version = browser.version
+                  browser.close()
+          except Exception as exc:                       # noqa: BLE001
+              sys.exit(
+                  "::error::Chromium could not be launched. Run "
+                  "`python -m playwright install --with-deps chromium`. "
+                  f"Underlying error: {exc}")
+          print(f"Playwright Chromium available (build {version})")
+
+          import subprocess
+          collected = subprocess.run(
+              [sys.executable, "-m", "pytest",
+               "tests/test_edit_profile_picker_browser.py",
+               "--collect-only", "-q"],
+              capture_output=True, text=True)
+          if collected.returncode != 0:
+              sys.exit("::error::picker browser suite failed to collect:\n"
+                       + collected.stdout + collected.stderr)
+          count = sum(1 for line in collected.stdout.splitlines()
+                      if "::" in line and "test" in line)
+          if count == 0:
+              sys.exit("::error::picker browser suite collected 0 tests — it "
+                       "would silently skip instead of verifying anything.")
+          print(f"Picker browser suite collected {count} tests")
+          PY
+
+      - name: Browser tests (Edit Profile picker)
+        run: |
+          # Run explicitly, and treat a SKIP as a failure. The suite's own
+          # importorskip is deliberate so a developer without browser extras
+          # can still run the rest of the suite, but this job has just
+          # guaranteed Playwright + Chromium — so any skip here means that
+          # guarantee silently regressed and must fail the build rather than
+          # be reported as success.
+          set -euo pipefail
+          out="$(pytest tests/test_edit_profile_picker_browser.py \
+            -v --tb=short -rs 2>&1)" || { echo "$out"; exit 1; }
+          echo "$out"
+          if grep -qE '^SKIPPED .*test_edit_profile_picker_browser' <<<"$out"; then
+            echo "::error::The Edit Profile picker browser suite was SKIPPED. "
+            echo "Playwright or Chromium is unavailable, so keyboard-focus"
+            echo "retention and the 20-service cap are UNVERIFIED."
+            exit 1
+          fi
 
       - name: Compile Python
         run: |
