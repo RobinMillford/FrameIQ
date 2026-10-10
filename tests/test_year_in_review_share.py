@@ -771,9 +771,9 @@ def test_public_share_call_counts(client, auth_client, user, app):
 
 def test_public_share_bounded_query_count(client, user, app):
     """§38: fixed bounded work — an anonymous public view performs a
-    FIXED 10 statements: 1 share lookup + 1 owner read + the canonical
-    8-statement statistics build (no login, no auth query, nothing that
-    scales with events/directors/seasons)."""
+    FIXED 11 statements: 1 share lookup + 1 owner read + the canonical
+    9-statement statistics build (no login, no auth query, nothing that
+    scales with events/directors/cast/seasons)."""
     for i in range(12):
         _seed_watch_events(user, 1)
         _diary(user, _media(f'Bulk {i}', runtime=90), date(2026, 3, 3))
@@ -792,7 +792,8 @@ def test_public_share_bounded_query_count(client, user, app):
         finally:
             sa_event.remove(_db.engine, 'before_cursor_execute', _record)
     assert r.status_code == 200
-    assert len(statements) == 10, statements  # 1 share + 1 owner + 8 canonical
+    # 1 share + 1 owner + 9 canonical (F9's cast GROUP BY is included)
+    assert len(statements) == 11, statements
 
 
 def test_public_share_deterministic_content(client, auth_client, user):

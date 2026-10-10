@@ -72,6 +72,7 @@ os.environ.setdefault('SKIP_SCHEMA_GUARD', '1')
 from app import app  # noqa: E402
 from models import db  # noqa: E402
 from sqlalchemy import inspect  # noqa: E402
+from utils.schema_guard import pending_migration_objects  # noqa: E402
 
 
 # The ONLY tables this migration is allowed to create on a database that
@@ -121,6 +122,44 @@ EXPECTED_REPAIR_SET = frozenset({
 # instead of "helpfully" filling it in. Deliberately excludes the legacy
 # tables, because a correctly-migrated database may no longer have them.
 ANCHOR_TABLES = ('user', 'media_item', 'diary_entry', 'review')
+
+
+def pending_migration_tables():
+    """Tables a REGISTERED, PENDING, non-destructive migration will create.
+
+    Thin wrapper over :func:`utils.schema_guard.pending_migration_objects`, the
+    single definition of "who owns this object". Convergence and the
+    pre-upgrade guard MUST agree, so they call the same function rather than
+    each deriving ownership from the registry.
+
+    Why this is separate from EXPECTED_REPAIR_SET
+    ----------------------------------------------
+    :data:`EXPECTED_REPAIR_SET` is a list of HISTORICAL gaps — tables that were
+    already missing in production before the versioned runner existed, each one
+    created by an unregistered script in ``migrates/``. Convergence repairs
+    those.
+
+    A table introduced by a NEW registered migration is a different situation.
+    It is not drift; it is schema that simply has not been applied yet, and the
+    runner's ``upgrade`` step applies it and records it in the ledger.
+
+    The distinction matters because of what happened the other way round. In
+    F8 ``schema_migrations`` was a brand-new table, convergence correctly
+    refused to create it, and the only fix considered was "widen the allow-list
+    to include the ledger itself" — which would have created the ledger outside
+    the ledger. Adding ``person``/``media_cast`` to the historical allow-list
+    for the same reason would reproduce that mistake: an unledgered creation
+    path, invisible to ``status``.
+
+    So convergence recognises these tables, refuses to create them, and reports
+    them as pending. Only the runner creates them.
+
+    Ownership is narrow and fail-closed (see the helper): a module that cannot
+    be imported, or that declares itself DESTRUCTIVE, owns nothing, and an
+    already-applied migration owns nothing either — so if its table is missing
+    that remains genuine drift and convergence still refuses.
+    """
+    return pending_migration_objects(db.engine)['tables']
 
 
 def missing_tables():
@@ -195,7 +234,7 @@ def name_conflicts(tables):
     return conflicts
 
 
-def check_repair_is_expected(wanted, live):
+def check_repair_is_expected(wanted, live, pending=frozenset()):
     """Decide whether it is safe to create `wanted`. Returns (ok, reason).
 
     The rule, in order:
@@ -205,6 +244,9 @@ def check_repair_is_expected(wanted, live):
       creating the full declared schema is legitimate bootstrap behaviour.
     * **Missing set within :data:`EXPECTED_REPAIR_SET`** -> the diagnosed
       production drift, or a subset of it. Safe.
+    * **Missing set declared by a registered non-destructive migration**
+      (``pending``) -> not drift at all; the runner's ``upgrade`` step creates
+      it and records it in the ledger. Convergence does not create it.
     * **Anything else** -> refuse.
 
     That last branch is the fail-closed one. Without it, adding a model in some
@@ -215,7 +257,9 @@ def check_repair_is_expected(wanted, live):
     coherent report and exit non-zero without having touched anything.
     """
     names = {table.name for table in wanted}
-    unexpected = sorted(names - EXPECTED_REPAIR_SET)
+    repairable = {name for name in names
+                  if name in EXPECTED_REPAIR_SET or name in pending}
+    unexpected = sorted(names - repairable)
 
     if not names:
         return True, 'nothing missing'
@@ -235,7 +279,16 @@ def check_repair_is_expected(wanted, live):
             'unexpected tables missing: %s. Expected only: %s.'
             % (', '.join(unexpected), ', '.join(sorted(EXPECTED_REPAIR_SET))))
 
-    return True, 'within the expected repair set'
+    if not names - EXPECTED_REPAIR_SET:
+        return True, 'within the expected repair set'
+
+    return True, (
+        'historical repair set plus %d table(s) declared by a registered '
+        'non-destructive migration (%s), which this script deliberately does '
+        'NOT create — `python scripts/migrate.py upgrade` applies them and '
+        'records them in the ledger'
+        % (len(names - EXPECTED_REPAIR_SET),
+           ', '.join(sorted(names - EXPECTED_REPAIR_SET))))
 
 
 def migrate():
@@ -247,18 +300,36 @@ def migrate():
         print("  live tables before : %d" % len(live_before))
         print("  declared tables    : %d" % len(db.metadata.sorted_tables))
 
+        pending = pending_migration_tables()
         wanted = missing_tables()
         if not wanted:
             print("[OK] every declared table already exists — nothing to do.")
-            _verify()
+            _verify(pending)
             return 0
+
+        # Split the gaps: convergence repairs historical drift, the runner
+        # applies registered migrations. Keeping them apart is the whole point
+        # — see pending_migration_tables().
+        #
+        # EXCEPTION: an EMPTY database is bootstrap, not a database with drift.
+        # There is no history to protect and no ledger to keep coherent, so the
+        # declared schema is created in full — including tables a migration
+        # would otherwise own. Deferring there would leave a freshly bootstrapped
+        # database permanently "incomplete" until someone also ran the runner.
+        if live_before:
+            repairable = [t for t in wanted if t.name not in pending]
+            deferred = [t for t in wanted if t.name in pending]
+        else:
+            repairable, deferred = list(wanted), []
 
         print("  missing tables     : %d" % len(wanted))
         for table in wanted:
-            print("      - %s" % table.name)
+            marker = "  (pending registered migration)" if table in deferred \
+                else ""
+            print("      - %s%s" % (table.name, marker))
         print()
 
-        ok, reason = check_repair_is_expected(wanted, live_before)
+        ok, reason = check_repair_is_expected(wanted, live_before, pending)
         if not ok:
             print("[FAIL] refusing to run — unexpected schema drift.")
             print("  %s" % reason)
@@ -270,7 +341,7 @@ def migrate():
             return 1
         print("  repair set check : %s" % reason)
 
-        conflicts = name_conflicts(wanted)
+        conflicts = name_conflicts(repairable)
         if conflicts:
             print("[FAIL] schema name collision — refusing to run.")
             print("  PostgreSQL scopes index and constraint names to the schema,")
@@ -283,10 +354,11 @@ def migrate():
             print("  object on the owning table. Nothing was changed.")
             return 1
 
-        # Metadata for exactly the missing tables — the single source of truth
-        # for the declared schema, so the migration cannot drift from models/.
+        # Metadata for exactly the tables this script owns — the single source
+        # of truth for the declared schema, so the migration cannot drift from
+        # models/. Deferred tables are excluded on purpose.
         created = []
-        for table in wanted:
+        for table in repairable:
             table.create(bind=db.engine, checkfirst=True)
             created.append(table.name)
             print("[DONE] created %s" % table.name)
@@ -295,22 +367,42 @@ def migrate():
 
         print()
         print("  created %d table(s)" % len(created))
-        _verify()
+        if deferred:
+            print("  deferred %d table(s) to `scripts/migrate.py upgrade`:"
+                  % len(deferred))
+            for table in deferred:
+                print("      - %s" % table.name)
+        _verify(pending)
     return 0
 
 
-def _verify():
-    """Re-inspect with a fresh Inspector and confirm the declared schema."""
+def _verify(pending=frozenset()):
+    """Re-inspect with a fresh Inspector and report the true state.
+
+    Tables a registered migration owns are allowed to be absent — this script
+    does not create them. But it must never CLAIM the schema is complete when
+    they are, so the "every declared table exists" line is only printed when
+    nothing is actually missing.
+    """
     inspector = inspect(db.engine)
     live = set(inspector.get_table_names())
     declared = {t.name for t in db.metadata.sorted_tables}
 
-    missing = sorted(declared - live)
+    deferred = sorted((declared - live) & set(pending))
+    missing = sorted(declared - live - set(pending))
     if missing:
         print("[FAIL] still missing after convergence: %s" % ", ".join(missing))
         return 1
-
-    print("[OK] every declared table exists (%d total)." % len(live))
+    if deferred:
+        print("[DEFERRED] %d declared table(s) are owned by a registered "
+              "migration and are NOT created here: %s"
+              % (len(deferred), ", ".join(deferred)))
+        print("           They are applied and recorded by "
+              "`python scripts/migrate.py upgrade`.")
+        print("[OK] all %d non-deferred declared table(s) exist (%d total in "
+              "this database)." % (len(declared) - len(deferred), len(live)))
+    else:
+        print("[OK] every declared table exists (%d total)." % len(live))
 
     # Tables the models do not declare must survive untouched. The wishlist
     # consolidation and the legacy discovery tables live here.

@@ -316,12 +316,15 @@ def test_concurrent_runners_cannot_apply_the_same_migration(pg_engine, capsys):
     assert len(versions) == len(set(versions)), 'a version was recorded twice'
     # Either the second runner found nothing pending, or it could not proceed.
     # What must never happen is both applying the same migration.
+    # F9 adds a third migration (0003_cast_persistence, additive), so the
+    # ledger now holds three rows: 0001, F9's 0003, and the gated 0002.
     assert sorted(versions) == ['0001_canonical_watched_reconcile',
-                                DESTRUCTIVE_VERSION]
+                                DESTRUCTIVE_VERSION,
+                                '0003_cast_persistence']
     succeeded = [v for v in outcomes.values() if v[0] == 'ok']
     assert succeeded, 'no runner succeeded at all: %r' % outcomes
     total_applied = sum(len(v[1]) for v in succeeded)
-    assert total_applied == 2, 'migrations were applied more than once: %r' % outcomes
+    assert total_applied == 3, 'migrations were applied more than once: %r' % outcomes
 
 
 # ── transactional DDL ────────────────────────────────────────────────────────
@@ -383,7 +386,10 @@ def test_failed_migration_is_not_recorded_and_retry_succeeds(pg_engine,
     monkeypatch.setattr(module, 'run', original)
     applied = _apply_all(pg_engine)
     assert '0001_canonical_watched_reconcile' in applied
+    # F9's additive 0003 rides the ordinary stage, so it is recorded here too.
+    assert '0003_cast_persistence' in applied
     assert set(_ledger(pg_engine)) == {'0001_canonical_watched_reconcile',
+                                       '0003_cast_persistence',
                                        DESTRUCTIVE_VERSION}
 
 
@@ -658,3 +664,306 @@ def test_convergence_then_runs_after_the_bootstrap_on_postgres(pg_engine):
     with pg_engine.connect() as connection:
         assert connection.execute(text(
             'SELECT COUNT(*) FROM schema_migrations')).scalar() == 0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Feature F9 — cast persistence, on real PostgreSQL
+#
+# Three guarantees here are UNPROVABLE on SQLite and are the reason this
+# module exists (see its docstring):
+#   * transactional DDL — a failed additive migration must leave nothing behind;
+#   * schema-scoped index names — SQLite permits duplicates, so only here can
+#     the pre-flight name-collision guard be shown to fire for the right reason;
+#   * real FOREIGN KEY enforcement — SQLite does not enforce FKs by default,
+#     so CASCADE behaviour is otherwise untested.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _strip_f9_objects(connection):
+    """Return the database to its pre-F9 shape."""
+    for name in ('media_cast', 'person'):
+        connection.execute(text('DROP TABLE IF EXISTS "%s" CASCADE' % name))
+    connection.execute(text('ALTER TABLE media_item '
+                            'DROP COLUMN IF EXISTS cast_enriched_at'))
+    connection.execute(text('ALTER TABLE taste_profile '
+                            'DROP COLUMN IF EXISTS actor_affinity_json'))
+
+
+def _cast_module():
+    import importlib
+    return importlib.import_module('migrations_0003_cast_persistence')
+
+
+def test_f9_objects_absent_before_the_migration_on_postgres(pg_engine):
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+    with pg_engine.connect() as connection:
+        names = set(inspect(connection).get_table_names())
+        assert 'person' not in names
+        assert 'media_cast' not in names
+
+
+def test_f9_migration_applies_and_converges_on_postgres(pg_engine):
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            assert module.verify(connection) != []   # really missing first
+            module.run(connection)
+            assert module.verify(connection) == []
+        names = set(inspect(connection).get_table_names())
+        assert {'person', 'media_cast'} <= names
+        media_columns = {c['name'] for c in
+                         inspect(connection).get_columns('media_item')}
+        assert 'cast_enriched_at' in media_columns
+        profile_columns = {c['name'] for c in
+                           inspect(connection).get_columns('taste_profile')}
+        assert 'actor_affinity_json' in profile_columns
+
+
+def test_f9_migration_is_idempotent_on_postgres(pg_engine):
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+    for _ in range(2):
+        with pg_engine.connect() as connection:
+            with connection.begin():
+                module.run(connection)
+                assert module.verify(connection) == []
+
+
+def test_f9_writes_no_rows_on_postgres(pg_engine):
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            module.run(connection)
+    with pg_engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT COUNT(*) FROM person')).scalar() == 0
+        assert connection.execute(
+            text('SELECT COUNT(*) FROM media_cast')).scalar() == 0
+
+
+def test_f9_ddl_is_transactional_on_postgres(pg_engine, monkeypatch):
+    """The guarantee SQLite cannot give: a failure leaves NOTHING behind.
+
+    ``person`` is created first, so making the SECOND table fail must roll the
+    first one back too — and the ledger must not claim success.
+    """
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+
+    original = module._table
+
+    def _explode(name):
+        if name == 'media_cast':
+            raise RuntimeError('simulated failure after person was created')
+        return original(name)
+
+    monkeypatch.setattr(module, '_table', _explode)
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError, match='simulated failure'):
+            with connection.begin():
+                module.run(connection)
+
+    with pg_engine.connect() as connection:
+        names = set(inspect(connection).get_table_names())
+    assert 'person' not in names, 'transactional DDL did not roll back'
+    assert 'media_cast' not in names
+
+
+def test_f9_index_name_collision_is_refused_on_postgres(pg_engine):
+    """The documented idx_taste_profile_updated hazard, proven for real.
+
+    SQLite tolerates duplicate index names, so only PostgreSQL can show that
+    the pre-flight refuses for the RIGHT reason — before any DDL — instead of
+    letting a CREATE INDEX fail mid-transaction.
+    """
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+        connection.execute(text('DROP TABLE IF EXISTS legacy_owner'))
+        connection.execute(text('CREATE TABLE legacy_owner ('
+                                'id INTEGER PRIMARY KEY)'))
+        connection.execute(text('CREATE UNIQUE INDEX uq_media_cast_pair '
+                                'ON legacy_owner(id)'))
+
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            conflicts = module.name_conflicts(connection)
+        assert any(name == 'uq_media_cast_pair' and owner == 'legacy_owner'
+                   for _kind, name, _wanted, owner in conflicts), conflicts
+        with pytest.raises(RuntimeError, match='already owned by'):
+            with connection.begin():
+                module.run(connection)
+
+    with pg_engine.connect() as connection:
+        names = set(inspect(connection).get_table_names())
+    assert 'person' not in names
+    assert 'media_cast' not in names
+
+
+def test_f9_cascade_is_enforced_by_postgres(pg_engine):
+    """SQLite does not enforce FKs by default; PostgreSQL does."""
+    with pg_engine.begin() as connection:
+        connection.execute(text('DELETE FROM media_cast'))
+        connection.execute(text('DELETE FROM person'))
+        connection.execute(text(
+            "INSERT INTO media_item (tmdb_id, media_type, title) "
+            "VALUES (900001, 'movie', 'Cascade Film')"))
+        # `source` has an ORM-side default only, so a raw INSERT must supply it.
+        connection.execute(text(
+            "INSERT INTO person (tmdb_person_id, name, source, created_at, "
+            "updated_at) VALUES (900001, 'Cascade Actor', 'tmdb', "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
+        connection.execute(text(
+            'INSERT INTO media_cast (media_item_id, person_id, credit_order, '
+            'created_at, updated_at) '
+            'SELECT id, id, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP '
+            'FROM media_item WHERE tmdb_id = 900001'))
+        assert connection.execute(
+            text('SELECT COUNT(*) FROM media_cast')).scalar() == 1
+
+        connection.execute(text('DELETE FROM media_item WHERE tmdb_id = 900001'))
+        assert connection.execute(
+            text('SELECT COUNT(*) FROM media_cast')).scalar() == 0
+        assert connection.execute(
+            text('SELECT COUNT(*) FROM person')).scalar() == 1
+
+
+def test_f9_unique_pair_is_enforced_by_postgres(pg_engine):
+    from sqlalchemy.exc import IntegrityError
+    with pg_engine.begin() as connection:
+        connection.execute(text('DELETE FROM media_cast'))
+        connection.execute(text('DELETE FROM person'))
+        connection.execute(text(
+            "INSERT INTO media_item (tmdb_id, media_type, title) "
+            "VALUES (900002, 'movie', 'Unique Film')"))
+        connection.execute(text(
+            "INSERT INTO person (tmdb_person_id, name, source, created_at, "
+            "updated_at) VALUES (900002, 'Unique Actor', 'tmdb', "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
+    stmt = text(
+        'INSERT INTO media_cast (media_item_id, person_id, credit_order, '
+        'created_at, updated_at) '
+        'SELECT id, id, :o, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP '
+        'FROM media_item WHERE tmdb_id = 900002')
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            connection.execute(stmt, {'o': 0})
+        with pytest.raises(IntegrityError):
+            with connection.begin():
+                connection.execute(stmt, {'o': 5})
+
+
+def test_f9_applies_by_ordinary_upgrade_while_0002_stays_deferred(pg_engine):
+    """The ordering guarantee, proven on the production engine."""
+    with pg_engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS schema_migrations'))
+        _strip_f9_objects(connection)
+
+    applied = runner.apply_pending(pg_engine)
+
+    assert '0003_cast_persistence' in applied, applied
+    assert '0002_remove_legacy_wishlist' not in applied, applied
+
+    with pg_engine.connect() as connection:
+        recorded = {row[0] for row in connection.execute(
+            text('SELECT version FROM schema_migrations'))}
+        names = set(inspect(connection).get_table_names())
+    assert {'0001_canonical_watched_reconcile',
+            '0003_cast_persistence'} <= recorded
+    assert '0002_remove_legacy_wishlist' not in recorded
+    assert {'person', 'media_cast'} <= names
+
+
+def test_schema_guard_passes_after_f9_on_postgres(pg_engine):
+    from utils.schema_guard import check_schema
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+        connection.execute(text('DROP TABLE IF EXISTS schema_migrations'))
+    runner.init_ledger(pg_engine)
+    verdict = check_schema(pg_engine)
+    assert verdict['ok'] is False
+    assert 'person' in verdict['missing_tables']
+
+    runner.apply_pending(pg_engine)
+    assert check_schema(pg_engine)['ok'] is True
+
+
+def _seed_taste_profile(connection, count=2):
+    """Populate taste_profile the way production is populated.
+
+    Necessary, not decoration: `actor_affinity_json` is added by ALTER TABLE to
+    an already-populated table, and PostgreSQL refuses `ADD COLUMN ... NOT NULL`
+    with no DEFAULT on such a table. A test on an EMPTY taste_profile passes
+    while production fails, which is precisely the bug this seeds against.
+    """
+    # PostgreSQL enforces the FK, so the parent rows must exist first.
+    _seed_identity(connection, [200000 + i for i in range(count)], [])
+    for index in range(count):
+        connection.execute(text(
+            'INSERT INTO taste_profile (user_id, genre_weights_json, '
+            'decade_weights_json, director_affinity_json, runtime_pref_json, '
+            'media_type_pref_json, confidence, signal_count, '
+            'distinct_title_count, profile_version, created_at, updated_at) '
+            'VALUES (:u, :g, :d, :dir, :r, :m, 0.4, 7, 6, 1, '
+            'CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'), {
+                'u': 200000 + index,
+                'g': '{"Drama": 0.5}', 'd': '{"2010s": 0.5}',
+                'dir': '{"Old Director": 1.0}',
+                'r': '{"p25": 90, "p75": 120, "sample_count": 3}',
+                'm': '{"movie": 0.8, "tv": 0.2}'})
+
+
+def test_f9_adds_not_null_column_to_populated_profile_on_postgres(pg_engine):
+    """Blocker 1 on the production engine: the ADD COLUMN must backfill.
+
+    This is the only place the PostgreSQL-specific refusal can be observed
+    directly. SQLite rejects the same statement, so the SQLite suite also
+    covers it — but production is PostgreSQL, and the two error differently.
+    """
+    module = _cast_module()
+    with pg_engine.begin() as connection:
+        _strip_f9_objects(connection)
+        _seed_taste_profile(connection, count=3)
+
+    before = pg_engine.connect().execute(
+        text('SELECT COUNT(*) FROM taste_profile')).scalar()
+    assert before == 3, before
+
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            module.run(connection)
+            assert module.verify(connection) == []
+
+    with pg_engine.connect() as connection:
+        rows = connection.execute(text(
+            'SELECT user_id, genre_weights_json, director_affinity_json, '
+            'signal_count, profile_version, actor_affinity_json '
+            'FROM taste_profile ORDER BY user_id')).fetchall()
+        # Existing rows survive untouched, with the new column initialised.
+        assert len(rows) == 3
+        for user_id, genre, director, signals, version, actor in rows:
+            assert user_id == 200000 + (user_id - 200000)
+            assert genre == '{"Drama": 0.5}'
+            assert director == '{"Old Director": 1.0}'
+            assert (signals, version) == (7, 1)
+            assert actor == '{}', 'existing rows must be backfilled: %r' % (actor,)
+
+        # And the column carries the NOT NULL + DEFAULT contract.
+        defaults = connection.execute(text(
+            "SELECT column_name, is_nullable, column_default "
+            "FROM information_schema.columns WHERE table_name = "
+            "'taste_profile' AND column_name = 'actor_affinity_json'")).fetchall()
+        assert defaults, 'actor_affinity_json is missing'
+        _name, nullable, default = defaults[0]
+        assert nullable == 'NO', 'the NOT NULL invariant must survive'
+        assert default is not None and '{}' in str(default), (
+            'a database-side default is what lets ADD COLUMN backfill existing '
+            'rows on PostgreSQL; got %r' % (default,))

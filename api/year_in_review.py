@@ -325,7 +325,10 @@ def build_year_in_review(user_id, year):
         # ── Phase 8 additive passthroughs (verbatim canonical values) ──
         "people": {
             "directors": stats["directors"],
-            "actors": stats["actors"],  # unavailable → [] (§23)
+            # F9: populated from persisted cast (models/cast.py). Empty
+            # until scripts/enrich_cast.py has run — that is the
+            # "enriched-and-empty" contract, not a placeholder.
+            "actors": stats["actors"],
         },
         "season_quality": stats["season_quality"],
         "daily_activity": stats["daily_activity"],

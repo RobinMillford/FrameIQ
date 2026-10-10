@@ -5,7 +5,7 @@ Derives everything from the canonical watch history:
 
     DiaryEntry (authoritative watch-event log)  ×  MediaItem (metadata)
         ↓  get_statistics(user_id, year=... | lifetime=True | dates)
-    8 bounded SQL aggregates  →  deterministic presentation dict
+    9 bounded SQL aggregates  →  deterministic presentation dict
 
 ROLLUP DECISION (Phase 10 audit, §6 outcome A — NOT justified): all 8
 statements are bounded per-user aggregates completing in well under a
@@ -114,6 +114,7 @@ from sqlalchemy import (case, column, distinct, extract, func,
                         literal_column, select)
 
 from models.base import db
+from models.cast import MediaCast, Person
 from models.director import Director, MediaDirector
 from models.media import MediaItem
 from models.social import DiaryEntry
@@ -731,8 +732,8 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
                    year=None, lifetime=False):
     """Compute the canonical statistics presentation model for a user.
 
-    Exactly 8 bounded SQL statements for episode-less histories (and
-    at most 9 when episode rows exist — the extra statement is the
+    Exactly 9 bounded SQL statements for episode-less histories (and
+    at most 10 when episode rows exist — the extra statement is the
     id-only TV projection reused by every TV fold).
     Returns a compact, deterministic, JSON-ready dict of aggregate
     statistics — never ORM rows, never database IDs. A user with no
@@ -845,14 +846,16 @@ def get_statistics(user_id, start_date=None, end_date=None, *,
     # MediaDirector → Director, grouped in SQL by director identity +
     # name. A director contributes only when all three links exist;
     # missing enrichment degrades to no contribution — never a
-    # fabricated "Unknown Director". Actors are deliberately an empty
-    # list: this repository has NO persisted actor/cast relationship
-    # (audit: models/ contains Director/MediaDirector only), and §3
-    # forbids inventing one or scraping TMDb at request time. The field
-    # is documented as unavailable until actor persistence exists.
+    # fabricated "Unknown Director".
     directors = build_people_statistics(
         _director_rows(user_id, lower, upper))
-    actors = []  # no persisted actor relationship exists (§3/§16)
+    # Actors (F9): the same shape over persisted cast (Person/MediaCast,
+    # populated only by the offline scripts/enrich_cast.py batch). Still
+    # local-only — no request-time TMDb call, and no invented relationship.
+    # A user whose titles have not been cast-enriched gets [] here, which is
+    # the correct answer rather than a placeholder.
+    actors = build_people_statistics(
+        _cast_rows(user_id, lower, upper))
 
     # ── Season quality (see _season_quality_rows: 8th bounded query) ──
     # Persisted episode-level user ratings only (§8–§12):
@@ -940,6 +943,43 @@ def _director_rows(user_id, lower, upper):
             .join(Director, MediaDirector.director_id == Director.id)
             .filter(DiaryEntry.user_id == user_id)
             .group_by(Director.tmdb_person_id, Director.name),
+            lower, upper,
+        )
+        .all()
+    )
+
+
+def _cast_rows(user_id, lower, upper):
+    """Grouped (name, event_count, distinct_titles) cast-member scalars.
+
+    The ninth bounded statement (F9): the exact analogue of
+    :func:`_director_rows` — DiaryEntry JOIN MediaItem JOIN MediaCast JOIN
+    Person, filtered by the canonical user + watched_date window, grouped by
+    person identity and display name. Same guarantees as the director query:
+
+    * ``COUNT(*)`` as watch events, so a title watched 3x contributes 3 events
+      to each credited person (never deduplicated at event level);
+    * ``COUNT(DISTINCT media_item.id)`` for distinct titles;
+    * grouping by ``Person.tmdb_person_id`` keeps a renamed person single;
+    * lightweight scalar rows only — no ORM hydration, no per-person query, so
+      the cast series costs ONE statement rather than one per title.
+
+    Only titles with persisted cast contribute. Missing enrichment degrades to
+    no contribution — never a fabricated "Unknown Actor" (§17).
+    """
+    return (
+        _windowed(
+            db.session.query(
+                Person.name,
+                func.count(DiaryEntry.id),
+                func.count(distinct(MediaItem.id)),
+            )
+            .select_from(DiaryEntry)
+            .join(MediaItem, DiaryEntry.media_id == MediaItem.id)
+            .join(MediaCast, MediaCast.media_item_id == MediaItem.id)
+            .join(Person, MediaCast.person_id == Person.id)
+            .filter(DiaryEntry.user_id == user_id)
+            .group_by(Person.tmdb_person_id, Person.name),
             lower, upper,
         )
         .all()

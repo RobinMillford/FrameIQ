@@ -341,24 +341,26 @@ class _record_statements:
         return False
 
 
-def test_query_count_pinned_8(user):
+def test_query_count_pinned_9(user):
     m = _media("P10 Q", runtime=90)
     _diary(user, m, date(2026, 9, 1))
     uid = user.id
     with _record_statements() as rec:
         get_statistics(uid, year=2026)
-    assert len(rec.statements) == 8, rec.statements
+    # F9 added the cast GROUP BY: 8 -> 9. Still a fixed count.
+    assert len(rec.statements) == 9, rec.statements
 
 
 def test_no_n_plus_one_across_many_titles(user):
-    # 30 distinct titles, all watched: query count must stay exactly 8
+    # 30 distinct titles, all watched: query count must stay exactly 9
+    # (F9's cast GROUP BY is the ninth; it must not scale with titles)
     for i in range(30):
         m = _media(f"P10 N1 {i}", runtime=90 + i)
         _diary(user, m, date(2026, 5, i % 28 + 1))
     uid = user.id
     with _record_statements() as rec:
         get_statistics(uid, year=2026)
-    assert len(rec.statements) == 8, len(rec.statements)
+    assert len(rec.statements) == 9, len(rec.statements)
 
 
 def test_no_network_during_statistics(user, monkeypatch):

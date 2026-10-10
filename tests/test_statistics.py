@@ -691,7 +691,10 @@ def test_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) <= 8, statements
+    # F9 added the cast GROUP BY, so the service now issues 9 bounded
+    # statements. The contract is "a small fixed number that does not scale
+    # with events/titles/people" -- not the literal 8.
+    assert len(statements) <= 9, statements
 
 
 def test_no_n_plus_one_across_many_titles(user):
@@ -941,7 +944,8 @@ def test_bounded_query_count_with_daily_activity(user):
     # §20 — the invariant: one service call → a small fixed number of
     # SQL statements → no per-event queries. The Phase 2 architecture
     # pins exactly 6 (event/rating/media/monthly aggregates, genre
-    # projection, daily GROUP BY); the daily extension adds exactly one.
+    # projection, daily GROUP BY); the daily extension adds exactly one;
+    # F9's cast GROUP BY adds a ninth.
     from sqlalchemy import event as sa_event
     m = _media("Q Daily", runtime=90)
     for _ in range(5):
@@ -957,7 +961,7 @@ def test_bounded_query_count_with_daily_activity(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) == 8, statements
+    assert len(statements) == 9, statements
 
 
 def test_daily_helper_pure_and_graceful():
@@ -1085,6 +1089,23 @@ def _director(name, tmdb_person_id):
 def _attach_director(media, director):
     from models import MediaDirector
     link = MediaDirector(media_item_id=media.id, director_id=director.id)
+    db.session.add(link)
+    db.session.commit()
+    return link
+
+
+def _person(name, tmdb_person_id):
+    from models import Person
+    p = Person(tmdb_person_id=tmdb_person_id, name=name)
+    db.session.add(p)
+    db.session.commit()
+    return p
+
+
+def _attach_cast(media, person, character=None, credit_order=0):
+    from models import MediaCast
+    link = MediaCast(media_item_id=media.id, person_id=person.id,
+                     character=character, credit_order=credit_order)
     db.session.add(link)
     db.session.commit()
     return link
@@ -1364,13 +1385,16 @@ def test_people_stats_helper_pure():
 
 
 def test_people_stats_bounded_query_count(user):
-    # §14/§20/§26: exactly 8 statements (Phase 2–5 base 6 + director
-    # GROUP BY + Phase 7 season-quality read); the count must not scale
-    # with people/titles/events/seasons.
+    # §14/§20/§26: exactly 9 statements (Phase 2–5 base 6 + director GROUP BY
+    # + F9 cast GROUP BY + Phase 7 season-quality read); the count must not
+    # scale with people/titles/events/seasons. Cast is ATTACHED here so the
+    # count is proven with the joined rows actually present.
     from sqlalchemy import event as sa_event
     d = _director("Q Dir", 1301)
+    person = _person("Q Cast", 1401)
     m = _media("Q Dir Movie", runtime=90)
     _attach_director(m, d)
+    _attach_cast(m, person, character="Hero", credit_order=0)
     for day in range(1, 6):
         _diary(user, m, date(2026, 9, day))
     uid = user.id
@@ -1384,7 +1408,7 @@ def test_people_stats_bounded_query_count(user):
         get_statistics(uid, year=2026)
     finally:
         sa_event.remove(db.engine, "before_cursor_execute", _record)
-    assert len(statements) == 8, statements
+    assert len(statements) == 9, statements
 
 
 def test_people_stats_no_n_plus_one_across_many_directors(user):

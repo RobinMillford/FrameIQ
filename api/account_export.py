@@ -645,6 +645,7 @@ def taste_profile_section(user_id):
         'genre_weights': _json_text(row.genre_weights_json),
         'decade_weights': _json_text(row.decade_weights_json),
         'director_affinity': _json_text(row.director_affinity_json),
+        'actor_affinity': _json_text(row.actor_affinity_json),
         'runtime_pref': _json_text(row.runtime_pref_json),
         'media_type_pref': _json_text(row.media_type_pref_json),
         'mood_tags': _json_text(row.mood_tags_json) if row.mood_tags_json

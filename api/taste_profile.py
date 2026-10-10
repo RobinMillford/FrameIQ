@@ -35,11 +35,18 @@ Design invariants:
 
 Dimension-specific notes (verified against the current data model):
 
-  director_affinity — deliberately EMPTY in this phase. No persisted
-  director evidence exists (directors are fetched from TMDb credits at
-  request time, never stored), and this service must not make external
-  calls or invent new persistence. The field is ready for the later
-  director-capture phase.
+  director_affinity — top-N directors, from persisted Director/MediaDirector
+    rows (models/director.py, populated by the offline
+    scripts/enrich_directors.py batch; MOVIES only). No external calls.
+
+  actor_affinity — Feature F9, top-N cast members from persisted
+    Person/MediaCast rows (models/cast.py, populated by the offline
+    scripts/enrich_cast.py batch; movies AND tv). Kept as a SEPARATE
+    dimension from director_affinity: different evidence, different
+    completeness, and merging them would reweight existing director values.
+    Like the director dimension it REUSES the same evidence events, so it adds
+    no signal and no distinct title of its own. It is not yet a scoring
+    component — taste_match_score() weights are unchanged.
 
   runtime_pref — computed ONLY from MediaItem.runtime that already exists
   locally; titles without a persisted runtime are skipped (no backfill,
@@ -107,6 +114,10 @@ _FEEDBACK_ROW_LIMIT = 300
 # target). The dimension reuses existing evidence events — see
 # _director_affinity().
 _DIRECTOR_TOP_N = 8
+
+# F9: same audited target for the cast dimension, kept separate so actor and
+# director weights are never mixed (see _actor_affinity).
+_ACTOR_TOP_N = 8
 
 # Watchlist is weak intent: it may inform genre/decade/media-type but must
 # never overwhelm explicit ratings. Hard cap on titles drawn from it.
@@ -293,15 +304,24 @@ class _Accumulator:
         self.genre = defaultdict(float)
         self.decade = defaultdict(float)
         self.director = defaultdict(float)
+        self.actor = defaultdict(float)
         self.media_type = defaultdict(float)
         self.runtime_values = []
         self.runtime_weights = []
         self.signal_count = 0
         self.titles = set()
 
+    @staticmethod
+    def _fold(mapping, names, contribution):
+        """Add one signed contribution to every name in a weighted map."""
+        if not names:
+            return
+        for name in names:
+            mapping[name] += contribution
+
     def add(self, evidence, weight, title_key, signal_name,
             genre=None, decade=None, media_type=None, runtime=None,
-            directors=None):
+            directors=None, actors=None):
         """Record one evidence observation.
 
         evidence: signed quality factor (positive/negative/neutral)
@@ -315,14 +335,13 @@ class _Accumulator:
             self.titles.add(title_key)
 
         contribution = evidence * weight
-        if genre:
-            for g in genre:
-                self.genre[g] += contribution
+        # genre, director and actor are all "weighted sum per label" maps, so
+        # they share one helper; decade is single-valued.
+        self._fold(self.genre, genre, contribution)
+        self._fold(self.director, directors, contribution)
+        self._fold(self.actor, actors, contribution)
         if decade:
             self.decade[decade] += contribution
-        if directors:
-            for d in directors:
-                self.director[d] += contribution
         if media_type:
             self.media_type[media_type] += abs(contribution)
         if runtime is not None:
@@ -407,6 +426,38 @@ def _director_names_map(items):
     return dict(names)
 
 
+def _person_names_map(items):
+    """Batched local cast lookup: {MediaItem.id: [name, ...]}.
+
+    Feature F9: persisted Person/MediaCast evidence (models/cast.py, populated
+    by the offline scripts/enrich_cast.py batch — NEVER at request time). The
+    exact analogue of :func:`_director_names_map`, so the cast dimension costs
+    the same ONE batched join over the resolved MediaItems rather than a
+    per-title query.
+
+    Names are sorted for deterministic aggregation. A title with no persisted
+    cast (enrichment not run, or 'enriched and empty') is simply absent from the
+    map and the caller skips the dimension — never a fabricated "Unknown".
+    """
+    ids = {m.id for m in items if m is not None}
+    if not ids:
+        return {}
+    from models.cast import MediaCast, Person
+    rows = (
+        MediaCast.query
+        .filter(MediaCast.media_item_id.in_(ids))
+        .join(MediaCast.person)
+        .with_entities(MediaCast.media_item_id, Person.name)
+        .all()
+    )
+    names = defaultdict(list)
+    for media_item_id, name in rows:
+        names[media_item_id].append(name)
+    for media_item_id in names:
+        names[media_item_id].sort()
+    return dict(names)
+
+
 def _collect_review_ratings(acc, user_id, now):
     """review_rating signal (1.0) — explicit, signed, strongest per-title."""
     reviews = (
@@ -422,6 +473,7 @@ def _collect_review_ratings(acc, user_id, now):
         'tv', {r.media_id for r in reviews if r.media_type == 'tv'},
         by='pk'))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
     for r in reviews:
         item, key = _lookup(meta, r.media_type, r.media_id)
         event_time = r.created_at or (r.watched_date if r.watched_date else now)
@@ -436,6 +488,7 @@ def _collect_review_ratings(acc, user_id, now):
             media_type=r.media_type,
             runtime=item.runtime if item else None,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -458,6 +511,7 @@ def _collect_diary_entries(acc, user_id, now):
         'tv', {e.media_id for e in entries if e.media_type == 'tv'},
         by='pk'))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     for e in entries:
         item, key = _lookup(meta, e.media_type, e.media_id)
@@ -475,6 +529,7 @@ def _collect_diary_entries(acc, user_id, now):
                 media_type=e.media_type,
                 runtime=item.runtime if item else None,
                 directors=directors_map.get(item.id) if item else None,
+                actors=actors_map.get(item.id) if item else None,
             )
 
         if e.is_rewatch:
@@ -488,6 +543,7 @@ def _collect_diary_entries(acc, user_id, now):
                 decade=decade_from_release_date(item.release_date) if item else None,
                 media_type=e.media_type,
                 directors=directors_map.get(item.id) if item else None,
+                actors=actors_map.get(item.id) if item else None,
             )
 
 
@@ -508,6 +564,7 @@ def _collect_media_likes(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {lk.media_id for lk in likes if lk.media_type == 'tv'}))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     for lk in likes:
         item, key = _lookup(meta, lk.media_type, lk.media_id)
@@ -522,6 +579,7 @@ def _collect_media_likes(acc, user_id, now):
             media_type=lk.media_type,
             runtime=item.runtime if item else None,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -538,6 +596,7 @@ def _collect_tags(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {t.media_id for t in tags if t.media_type == 'tv'}))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     # Resolve tag names in ONE query instead of per-row lazy loads.
     from models import Tag
@@ -564,6 +623,7 @@ def _collect_tags(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=t.media_type,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -588,6 +648,7 @@ def _collect_watchlist(acc, user_id, now):
         'tv', {r.media_id for r in rows if r.media_type == 'tv'},
         by='pk'))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     for r in rows:
         item, key = _lookup(meta, r.media_type, r.media_id)
@@ -600,6 +661,7 @@ def _collect_watchlist(acc, user_id, now):
             decade=decade_from_release_date(item.release_date) if item else None,
             media_type=r.media_type,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -646,6 +708,7 @@ def _collect_feedback_events(acc, user_id, now):
     meta.update(_media_meta_map(
         'tv', {e.media_id for e in events if e.media_type == 'tv'}))
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     for e in events:
         item, key = _lookup(meta, e.media_type, e.media_id)
@@ -661,6 +724,7 @@ def _collect_feedback_events(acc, user_id, now):
             media_type=e.media_type,
             runtime=item.runtime if item else None,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -685,6 +749,7 @@ def _collect_episode_ratings(acc, user_id, now):
     # series-level director source — see models/director.py), so this map
     # is empty for shows; wiring is future-proof if TV capture ever lands.
     directors_map = _director_names_map(meta.values())
+    actors_map = _person_names_map(meta.values())
 
     for e in episodes:
         item, key = _lookup(meta, 'tv', e.show_id)
@@ -700,6 +765,7 @@ def _collect_episode_ratings(acc, user_id, now):
             media_type='tv',
             runtime=item.runtime if item else None,
             directors=directors_map.get(item.id) if item else None,
+            actors=actors_map.get(item.id) if item else None,
         )
 
 
@@ -741,16 +807,21 @@ def _director_affinity(acc):
 # Public API
 # ══════════════════════════════════════════════════════════════════════════
 
-PROFILE_VERSION = 1  # bump when the computation algorithm changes
+PROFILE_VERSION = 2  # bump when the computation algorithm changes
+# 2 = Feature F9 added the actor_affinity dimension. Deliberately NOT wired
+# into taste_match_score()'s component weights: F9 adds a dimension without
+# re-weighting ranking, so For You / Smart Lists scoring is unchanged. Weights
+# summing to 1.0 stay summing to 1.0.
 
 
 def compute_profile(user_id, now=None):
     """Compute and persist the user's TasteProfile. Idempotent.
 
-    Bounded reads: ≤8 targeted queries (reviews, diary, likes, tags,
-    watchlist rows, episode ratings, recent recommendation feedback, plus
-    batched MediaItem metadata lookups) — no full-table scans, no N+1, no
-    external calls.
+    Bounded reads: a fixed handful of targeted queries per collector —
+    reviews, diary, likes, tags, watchlist rows, episode ratings and recent
+    recommendation feedback, each paired with batched MediaItem metadata,
+    director and cast lookups. No full-table scans, no N+1, no external
+    calls. The count does not scale with events, titles or people.
 
     Returns the TasteProfile model instance (created or updated).
     """
@@ -782,6 +853,7 @@ def compute_profile(user_id, now=None):
     profile.genre_weights_json = db_json(normalize_l2(dict(acc.genre)))
     profile.decade_weights_json = db_json(normalize_l2(dict(acc.decade)))
     profile.director_affinity_json = db_json(_director_affinity(acc))
+    profile.actor_affinity_json = db_json(_actor_affinity(acc))
     profile.media_type_pref_json = db_json(
         _media_type_pref(acc))
     runtime = _runtime_pref(acc)
@@ -799,6 +871,34 @@ def compute_profile(user_id, now=None):
         "Taste profile computed user=%s signals=%s titles=%s confidence=%s",
         user_id, acc.signal_count, len(acc.titles), profile.confidence)
     return profile
+
+
+def _actor_affinity(acc):
+    """Top-8 cast members by the SAME signed weighted evidence as genre/decade.
+
+    Feature F9: the cast analogue of :func:`_director_affinity`, deliberately
+    kept as its OWN dimension rather than folded into ``director_affinity``:
+
+    * the two answer different questions (who made it vs who is in it) and are
+      captured with different completeness (directors: movies only; cast:
+      movies and tv), so merging them would silently reweight every existing
+      director value;
+    * a billed cast list is far larger than a director list, so mixing them
+      would let one prolific actor dominate a director affinity that consumers
+      (For You, Smart Lists ``matches_my_taste``) read as directors.
+
+    Everything else mirrors the director path exactly: the SAME already-
+    supported evidence events flow through ``_Accumulator.add(actors=...)``
+    with their existing weight, recency decay and sign, so negative evidence is
+    preserved and no signal, title or distinct-title count is inflated by the
+    extra dimension. Output is L2-normalized with keys sorted for deterministic
+    JSON.
+    """
+    if not acc.actor:
+        return {}
+    normalized = normalize_l2(dict(acc.actor))
+    ranked = sorted(normalized.items(), key=lambda kv: (-kv[1], kv[0]))
+    return dict(ranked[:_ACTOR_TOP_N])
 
 
 def _media_type_pref(acc):
@@ -867,6 +967,13 @@ def describe_profile(profile):
         },
         'director_affinity': _as_float_map(
             data.get('director_affinity') or {}),
+        # F9. Purely additive: an extra key on the explanation-layer summary.
+        # Every current consumer (api/for_you.py, src/api/agent_service.py)
+        # reads named keys and never iterates this dict, so nothing about
+        # ranking, explanations or CineBot context changes. NOT added to
+        # taste_match_inputs / TASTE_MATCH_WEIGHTS — that would re-rank users.
+        'actor_affinity': _as_float_map(
+            data.get('actor_affinity') or {}),
         'confidence': data.get('confidence') or 0.0,
         'signal_count': data.get('signal_count') or 0,
         'distinct_title_count': data.get('distinct_title_count') or 0,

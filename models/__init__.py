@@ -18,6 +18,7 @@ Submodules:
     watch         — WatchProgress
     taste_profile — TasteProfile
     director      — Director, MediaDirector
+    cast          — Person, MediaCast
 """
 
 # db must be imported first so all modules share the same instance
@@ -61,6 +62,7 @@ from models.tv import (                                       # noqa: F401
 from models.movie_release import MovieReleaseDate             # noqa: F401
 from models.watch import WatchProgress                        # noqa: F401
 from models.director import Director, MediaDirector          # noqa: F401
+from models.cast import Person, MediaCast                    # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
 from models.notification import Notification                  # noqa: F401
 from models.smart_lists import SmartList                      # noqa: F401
@@ -82,6 +84,8 @@ __all__ = [
     'user_watchlist', 'user_viewed',
     'User', 'UserFollow',
     'MediaItem',
+    'Director', 'MediaDirector',
+    'Person', 'MediaCast',
     'Review', 'ReviewLike', 'ReviewComment', 'ReviewHelpful',
     'UserList', 'ListCollaborator', 'ListCategory', 'UserListCategory',
     'ListAnalytics', 'ListView', 'UserListItem', 'ListLike', 'ListComment',
