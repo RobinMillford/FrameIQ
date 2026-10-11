@@ -316,15 +316,18 @@ def test_concurrent_runners_cannot_apply_the_same_migration(pg_engine, capsys):
     assert len(versions) == len(set(versions)), 'a version was recorded twice'
     # Either the second runner found nothing pending, or it could not proceed.
     # What must never happen is both applying the same migration.
-    # F9 adds a third migration (0003_cast_persistence, additive), so the
-    # ledger now holds three rows: 0001, F9's 0003, and the gated 0002.
+    # The ordinary (non-destructive) stage applies every additive migration —
+    # 0001, F9's 0003_cast_persistence and F12's 0004_notification_preferences —
+    # and the approval-gated stage applies 0002. So the ledger holds four rows.
+    # Kept as an EXACT list: a stray extra row is as much a bug as a missing one.
     assert sorted(versions) == ['0001_canonical_watched_reconcile',
                                 DESTRUCTIVE_VERSION,
-                                '0003_cast_persistence']
+                                '0003_cast_persistence',
+                                '0004_notification_preferences']
     succeeded = [v for v in outcomes.values() if v[0] == 'ok']
     assert succeeded, 'no runner succeeded at all: %r' % outcomes
     total_applied = sum(len(v[1]) for v in succeeded)
-    assert total_applied == 3, 'migrations were applied more than once: %r' % outcomes
+    assert total_applied == 4, 'migrations were applied more than once: %r' % outcomes
 
 
 # ── transactional DDL ────────────────────────────────────────────────────────
@@ -388,8 +391,11 @@ def test_failed_migration_is_not_recorded_and_retry_succeeds(pg_engine,
     assert '0001_canonical_watched_reconcile' in applied
     # F9's additive 0003 rides the ordinary stage, so it is recorded here too.
     assert '0003_cast_persistence' in applied
+    # F12's additive 0004 is ordinary too, so it is recorded in the same stage.
+    assert '0004_notification_preferences' in applied
     assert set(_ledger(pg_engine)) == {'0001_canonical_watched_reconcile',
                                        '0003_cast_persistence',
+                                       '0004_notification_preferences',
                                        DESTRUCTIVE_VERSION}
 
 
