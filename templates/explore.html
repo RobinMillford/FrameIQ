@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Discover — FrameIQ{% endblock %}
+
+{% block extra_head %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+
+  <header class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold text-white">Discover</h1>
+    <p class="text-sm mt-1" style="color:var(--text-mid)">
+      Browse movies and TV by genre, year and rating. Results come from TMDb.
+    </p>
+  </header>
+
+  {% if notices %}
+  <div role="status" class="mb-4 rounded-lg border px-4 py-3 text-sm"
+       style="border-color:var(--line-hi); background:var(--surface,transparent); color:var(--text-mid)">
+    <p class="font-medium text-white mb-1">Some filters were adjusted</p>
+    <ul class="list-disc pl-5 space-y-0.5">
+      {% for notice in notices %}<li>{{ notice }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-6">
+
+    <!-- ── Filters ─────────────────────────────────────────────── -->
+    <aside class="lg:sticky lg:top-4 lg:self-start">
+      <form id="facet-form" method="get" action="{{ url_for('explore.explore_page') }}"
+            class="rounded-xl border p-4 space-y-5 max-h-none lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+            style="border-color:var(--line)">
+
+        <fieldset>
+          <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                  style="color:var(--text-low)">Media type</legend>
+          <div class="flex gap-2" role="radiogroup" aria-label="Media type">
+            {% for value, label in [('movie', 'Movies'), ('tv', 'TV Shows')] %}
+            <label class="flex-1 cursor-pointer">
+              <input type="radio" name="type" value="{{ value }}"
+                     class="sr-only peer"
+                     {% if config.media_type == value %}checked{% endif %}>
+              <span class="block text-center text-sm py-2 rounded-lg border transition-colors peer-checked:font-semibold"
+                    style="border-color:var(--line); color:var(--text-mid)">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                  style="color:var(--text-low)">Genres</legend>
+          <p class="text-xs mb-2" style="color:var(--text-low)">Up to 10.</p>
+          <div class="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
+            {% for g in genres %}
+            <label class="cursor-pointer">
+              <input type="checkbox" name="genres" value="{{ g.value }}"
+                     class="sr-only peer facet-genre" data-media="{{ config.media_type }}"
+                     {% if g.value in selected_genres %}checked{% endif %}>
+              <span class="inline-block text-xs px-2.5 py-1.5 rounded-full border transition-colors peer-checked:font-semibold"
+                    style="border-color:var(--line); color:var(--text-mid)">{{ g.label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                  style="color:var(--text-low)">Release year</legend>
+          <div class="flex items-center gap-2">
+            <label class="flex-1">
+              <span class="sr-only">From year</span>
+              <input type="number" name="year_from" inputmode="numeric"
+                     placeholder="From" min="1888" max="2100"
+                     value="{{ year_from_value }}"
+                     class="w-full bg-transparent border rounded-lg px-3 py-2 text-sm text-white"
+                     style="border-color:var(--line)">
+            </label>
+            <span aria-hidden="true" style="color:var(--text-low)">–</span>
+            <label class="flex-1">
+              <span class="sr-only">To year</span>
+              <input type="number" name="year_to" inputmode="numeric"
+                     placeholder="To" min="1888" max="2100"
+                     value="{{ year_to_value }}"
+                     class="w-full bg-transparent border rounded-lg px-3 py-2 text-sm text-white"
+                     style="border-color:var(--line)">
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                  style="color:var(--text-low)">Minimum rating</legend>
+          <label class="flex items-center gap-3">
+            <span class="sr-only">Minimum TMDb rating</span>
+            <input type="range" name="min_rating" min="0" max="10" step="0.5"
+                   value="{{ min_rating_value }}"
+                   class="flex-1 accent-[var(--accent)]">
+            <output id="rating-out" class="text-sm tabular-nums w-10 text-right"
+                    style="color:var(--text-mid)">
+              {{ rating_display }}
+            </output>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                  style="color:var(--text-low)">Sort by</legend>
+          <label>
+            <span class="sr-only">Sort results by</span>
+            <select name="sort" class="w-full bg-transparent border rounded-lg px-3 py-2 text-sm text-white"
+                    style="border-color:var(--line)">
+              {% for s in sorts %}
+              <option value="{{ s.value }}" class="bg-gray-900"
+                      {% if s.value == config.sort %}selected{% endif %}>{{ s.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </fieldset>
+
+        <div class="flex gap-2 pt-1">
+          <button type="submit" id="apply-filters"
+                  class="flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
+                  style="background:var(--accent); color:#111">
+            Apply filters
+          </button>
+          <a href="{{ url_for('explore.explore_page') }}" id="reset-filters"
+             class="px-4 py-2.5 rounded-lg border text-sm text-center"
+             style="border-color:var(--line); color:var(--text-mid)">Reset</a>
+        </div>
+
+        {% if current_user.is_authenticated %}
+        <div class="pt-2 border-t" style="border-color:var(--line)">
+          <label class="block">
+            <span class="text-xs font-semibold uppercase tracking-wide mb-2 block"
+                  style="color:var(--text-low)">Save this discovery</span>
+            <span class="sr-only">Name for these saved discovery filters</span>
+            <input type="text" id="preset-name" maxlength="200"
+                   placeholder="e.g. 90s sci-fi favourites"
+                   class="w-full bg-transparent border rounded-lg px-3 py-2 text-sm text-white mb-2"
+                   style="border-color:var(--line)">
+          </label>
+          <button type="button" id="save-preset"
+                  class="w-full py-2 px-4 rounded-lg border text-sm font-medium hover:opacity-80"
+                  style="border-color:var(--line); color:var(--text-mid)">
+            Save these filters
+          </button>
+          <p class="text-xs mt-2" style="color:var(--text-low)">
+            Saved filters reopen here in Discover — they are not lists of your own titles.
+          </p>
+        </div>
+        {% endif %}
+      </form>
+
+      {% if current_user.is_authenticated and presets %}
+      <section aria-labelledby="saved-heading" class="mt-5">
+        <h2 id="saved-heading" class="text-xs font-semibold uppercase tracking-wide mb-2"
+            style="color:var(--text-low)">Saved discovery</h2>
+        <ul class="space-y-1.5">
+          {% for p in presets %}
+          <li class="flex items-center gap-1">
+            {% if p.query %}
+            <a href="{{ url_for('explore.explore_page', **p.query) }}"
+               class="flex-1 truncate text-sm px-3 py-2 rounded-lg border hover:opacity-80"
+               style="border-color:var(--line); color:var(--text-mid)"
+               title="{{ p.name }}">{{ p.name }}</a>
+            {% else %}
+            <span class="flex-1 truncate text-sm px-3 py-2 rounded-lg border opacity-60"
+                  style="border-color:var(--line); color:var(--text-low)"
+                  title="This saved filter can no longer be read">{{ p.name }}</span>
+            {% endif %}
+            <button type="button" class="delete-preset text-xs px-2 py-1 rounded"
+                    data-id="{{ p.id }}"
+                    aria-label="Delete saved discovery {{ p.name }}"
+                    style="color:var(--text-low)">✕</button>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </aside>
+
+    <!-- ── Results ─────────────────────────────────────────────── -->
+    <section aria-labelledby="results-heading">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <h2 id="results-heading" class="sr-only">Results</h2>
+        <ul id="active-chips" class="flex flex-wrap items-center gap-2 flex-1"
+            aria-label="Active filters">
+          {% for chip in chips %}
+          <li>
+            <span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border"
+                  style="border-color:var(--line); color:var(--text-mid)">
+              {{ chip.label }}
+              {% if chip.key != 'type' %}
+              <a href="#" class="remove-chip" data-key="{{ chip.key }}"
+                 data-value="{{ chip.value|default('') }}"
+                 aria-label="Remove filter {{ chip.label }}">✕</a>
+              {% endif %}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <p id="result-status" role="status" aria-live="polite" class="text-sm mb-4"
+         style="color:var(--text-mid)">Loading titles…</p>
+
+      <div id="result-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+      <div id="empty-state" hidden class="text-center py-16">
+        <p class="text-lg font-medium text-white mb-1">No titles match these filters</p>
+        <p class="text-sm" style="color:var(--text-mid)">
+          Try widening the year range or clearing a genre.</p>
+      </div>
+
+      <nav id="pager" class="flex items-center justify-center gap-3 mt-8" aria-label="Pagination">
+        <button type="button" id="prev-page"
+                class="px-4 py-2 rounded-lg border text-sm disabled:opacity-40"
+                style="border-color:var(--line); color:var(--text-mid)">Previous</button>
+        <span id="page-label" class="text-sm" style="color:var(--text-mid)"></span>
+        <button type="button" id="next-page"
+                class="px-4 py-2 rounded-lg border text-sm disabled:opacity-40"
+                style="border-color:var(--line); color:var(--text-mid)">Next</button>
+      </nav>
+    </section>
+  </div>
+</div>
+
+<script id="explore-config" type="application/json">
+{{ {'path': path, 'params': params, 'page': page, 'media_type': config.media_type,
+     'query': query} | tojson }}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/explore.js') }}"></script>
+{% endblock %}

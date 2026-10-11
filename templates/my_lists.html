@@ -113,6 +113,26 @@
         {% if smart_lists %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for sl in smart_lists %}
+            {% if sl.is_discovery %}
+            {# Saved discovery presets are TMDb-backed: open them in Explore,
+               never the SQL-first Smart List results page. #}
+            <a href="/explore/presets/{{ sl.id }}/restore" class="list-card rounded-lg p-6 border border-gray-700 hover:border-[var(--accent)] block">
+                <div class="flex justify-between items-start mb-3">
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="fas fa-compass text-[var(--accent)] text-sm" aria-hidden="true"></i> {{ sl.name }}
+                    </h3>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mb-4">
+                    {% for rule in sl.rules %}
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-300">{{ rule }}</span>
+                    {% endfor %}
+                </div>
+                <div class="flex items-center justify-between text-sm text-[var(--text-mid)]">
+                    <span><i class="fas fa-compass"></i> Saved discovery</span>
+                    <span><i class="fas fa-lock"></i> Private</span>
+                </div>
+            </a>
+            {% else %}
             <a href="/smart-lists/{{ sl.id }}" class="list-card  rounded-lg p-6 border border-gray-700 hover:border-[var(--accent)] block">
                 <div class="flex justify-between items-start mb-3">
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
@@ -129,6 +149,7 @@
                     <span><i class="fas fa-lock"></i> Private</span>
                 </div>
             </a>
+            {% endif %}
             {% endfor %}
         </div>
         {% else %}
