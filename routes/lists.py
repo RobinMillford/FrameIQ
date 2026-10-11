@@ -600,15 +600,17 @@ def discover_lists():
 def my_lists():
     """View all user's lists (normal + Smart Lists)"""
     from models.smart_lists import SmartList
-    from api.smart_lists import rule_summary
+    from api.smart_lists import rule_summary, is_discovery_preset
 
     user_lists = current_user.lists.order_by(UserList.created_at.desc()).all()
     smart_lists = (SmartList.query
                    .filter_by(user_id=current_user.id)
                    .order_by(SmartList.created_at.desc())
                    .all())
-    smart_data = [{**sl.to_dict(), 'rules': rule_summary(sl)}
-                  for sl in smart_lists]
+    smart_data = [
+        {**sl.to_dict(), 'rules': rule_summary(sl),
+         'is_discovery': is_discovery_preset(sl)}
+        for sl in smart_lists]
     return render_template('my_lists.html', user_lists=user_lists,
                            smart_lists=smart_data)
 

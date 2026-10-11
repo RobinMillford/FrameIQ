@@ -34,8 +34,26 @@ from models import (
     db, MediaItem, user_watchlist, user_viewed, TVShowProgress, DiaryEntry,
 )
 from models.smart_lists import SmartList
+from api.discovery import (
+    DISCOVERY_KIND, validate_discovery_config, DiscoveryError,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def is_discovery_preset(smart_list):
+    """True when this row stores an F11 discovery preset, not a local query.
+
+    A preset holds VALIDATED TMDb discovery parameters for the /discover
+    experience. It is NOT a query over the owner's watchlist/diary/tracking and
+    must never be evaluated by ``evaluate_smart_list``.
+
+    Every reader that interprets ``scope`` MUST call this first: the row's
+    ``scope`` is a non-nullable compatibility placeholder, and without this
+    check a preset would silently evaluate as an ordinary "Everything" list.
+    """
+    return (smart_list.filters or {}).get('kind') == DISCOVERY_KIND
+
 
 SCOPES = ('watchlist', 'diary', 'tracked_tv', 'all')
 
@@ -152,6 +170,17 @@ def _validate_filters(filters):
         'matches_my_taste': lambda v: (
             v if v is True or v is False
             else (_raise_bool('matches_my_taste'))),
+
+        # ── F11 discovery presets ───────────────────────────────────────
+        # Reserved keys, appended last so the canonical ordering of every
+        # pre-existing filter is unchanged. These are NOT ordinary filters:
+        # they mark the row as a TMDb-backed discovery preset (see
+        # is_discovery_preset). They are accepted only as a valid PAIR — see
+        # the kind/discovery binding check below — so an ordinary Smart List
+        # can neither gain nor smuggle them.
+        'kind': lambda v: _validate_choice(
+            'kind', v, (DISCOVERY_KIND,), f'"{DISCOVERY_KIND}"'),
+        'discovery': lambda v: _validate_discovery(v),
     }
 
     clean = {}
@@ -161,7 +190,39 @@ def _validate_filters(filters):
     unknown = set(filters) - set(clean)
     if unknown:
         raise ValueError(f'Unknown filter(s): {", ".join(sorted(unknown))}')
+    _bind_discovery(clean)
     return clean
+
+
+def _validate_discovery(raw):
+    """Validate a stored discovery configuration against api.discovery."""
+    try:
+        return validate_discovery_config(raw or {}, source='saved discovery')
+    except DiscoveryError as exc:
+        raise ValueError(str(exc))
+
+
+def _bind_discovery(clean):
+    """Require ``kind`` and ``discovery`` to appear together.
+
+    Prevents a half-written config from being stored or restored: without both
+    keys the row cannot be identified as a preset, which would let it fall
+    through to the SQL-first evaluator using its placeholder scope.
+    """
+    has_kind = 'kind' in clean
+    has_discovery = 'discovery' in clean
+    if has_kind != has_discovery:
+        raise ValueError(
+            'A discovery preset needs both "kind" and "discovery"')
+    if has_kind:
+        # A preset describes a TMDb query and nothing else. Ordinary filters
+        # are evaluated against local media, so accepting them here would
+        # persist redundant, never-read state.
+        extra = set(clean) - {'kind', 'discovery'}
+        if extra:
+            raise ValueError(
+                'A discovery preset cannot also carry: '
+                f'{", ".join(sorted(extra))}')
 
 
 def validate_config(scope, filters, sort):
@@ -480,6 +541,10 @@ def rule_summary(smart_list):
         'tracked_tv': 'Tracked TV',
         'all': 'Everything',
     }
+    # A discovery preset is not a local query, so it must never borrow the
+    # scope chip ("Everything" is a placeholder, not a true description).
+    if is_discovery_preset(smart_list):
+        return discovery_rule_summary(smart_list)
     # Table-driven chip formatters in canonical display order; a formatter
     # may return None to suppress its chip (e.g. services == 'none').
     filter_labels = {
@@ -512,13 +577,38 @@ def rule_summary(smart_list):
     return labels
 
 
+def discovery_rule_summary(smart_list):
+    """Rule chips for an F11 discovery preset (TMDb-backed, not local)."""
+    from api.discovery import summarize, validate_discovery_config
+
+    try:
+        config = validate_discovery_config(
+            smart_list.filters.get('discovery') or {}, source='saved discovery')
+    except DiscoveryError:
+        # An unreadable legacy config still describes itself safely.
+        return ['Saved Discovery', 'Unavailable']
+    labels = ['Saved Discovery',
+              'Movies' if config['media_type'] == 'movie' else 'TV Shows']
+    for chip in summarize(config):
+        labels.append(chip['label'])
+    return labels
+
+
 def evaluate_smart_list(smart_list, page=1, per_page=24):
     """Evaluate a Smart List and return the canonical result page.
 
     Returns {'items': [...], 'total': int, 'page': int, 'pages': int}.
     Each item carries the MediaItem plus optional scope context (priority /
     date added / tv status) so cards can render without further queries.
+
+    Raises ValueError for an F11 discovery preset: those are TMDb-backed and
+    are restored onto /discover, never queried against local media. The HTTP
+    layer already refuses them; this is the last line of defence.
     """
+    if is_discovery_preset(smart_list):
+        raise ValueError(
+            'This is a saved discovery preset. Open it in Discover — it is '
+            'not a list of your own titles.')
     filters = validate_config(smart_list.scope, smart_list.filters,
                               smart_list.sort)
     query = _scope_query(smart_list)

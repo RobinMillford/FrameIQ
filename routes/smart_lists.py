@@ -17,14 +17,16 @@ engine re-validates on every evaluation.
 """
 import logging
 
-from flask import Blueprint, jsonify, request, render_template
+from flask import (Blueprint, jsonify, redirect, render_template,
+                   request, url_for)
 from flask_login import login_required, current_user
 
 from extensions import limiter
 from models import db
 from models.smart_lists import SmartList
 from api.smart_lists import (validate_config, evaluate_smart_list,
-                             rule_summary)
+                             rule_summary, is_discovery_preset)
+from api.discovery import DISCOVERY_KIND
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,37 @@ def _config_from_payload(data):
     return validate_config(scope, filters, sort), scope, sort
 
 
+def _type_change_error(data, smart_list):
+    """Reject a generic PUT that would change a row's Smart List TYPE.
+
+    The generic Smart List endpoint owns ordinary lists. A discovery preset is
+    a different kind of record (TMDb-backed, restored into /explore), so its
+    identity must not drift through this route:
+
+      * a preset must NOT be downgraded into an ordinary Smart List — that
+        would silently change what the row means and how it is evaluated;
+      * an ordinary Smart List must NOT be turned into a preset here — preset
+        creation/editing is owned by the dedicated /explore workflow.
+
+    Returns an error message, or None when the type is unchanged. Ordinary
+    metadata edits (name/description/is_public) and same-type config edits are
+    untouched, so renaming a preset still works and normal Smart List updates
+    behave exactly as before.
+    """
+    was_preset = is_discovery_preset(smart_list)
+    # The prospective filters, using the same defaulting the update applies
+    # below, so a payload that omits `filters` counts as "unchanged".
+    prospective = data.get('filters', smart_list.filters) or {}
+    will_be_preset = prospective.get('kind') == DISCOVERY_KIND
+    if was_preset == will_be_preset:
+        return None
+    if will_be_preset:
+        return ('This Smart List is not a saved discovery filter. Use the '
+                'Discover page to save discovery filters.')
+    return ('A saved discovery filter cannot be changed into a regular Smart '
+            'List here. Update it in Discover instead.')
+
+
 @smart_lists_bp.route('/api/smart-lists')
 @login_required
 def api_list_smart_lists():
@@ -54,7 +87,8 @@ def api_list_smart_lists():
             .all())
     return jsonify({
         'smart_lists': [
-            {**sl.to_dict(), 'rules': rule_summary(sl)} for sl in rows
+            {**sl.to_dict(), 'rules': rule_summary(sl),
+             'is_discovery': is_discovery_preset(sl)} for sl in rows
         ],
         'count': len(rows),
     })
@@ -105,6 +139,7 @@ def api_get_smart_list(smart_list_id):
         return jsonify({'error': 'Smart List not found'}), 404
     payload = smart_list.to_dict()
     payload['rules'] = rule_summary(smart_list)
+    payload['is_discovery'] = is_discovery_preset(smart_list)
     return jsonify(payload)
 
 
@@ -119,6 +154,13 @@ def api_update_smart_list(smart_list_id):
         return jsonify({'error': 'Smart List not found'}), 404
 
     data = request.get_json(silent=True) or {}
+
+    # Type is immutable through this route — checked BEFORE any mutation so a
+    # rejected request leaves the stored row completely untouched.
+    type_error = _type_change_error(data, smart_list)
+    if type_error:
+        return jsonify({'error': type_error, 'is_discovery':
+                        is_discovery_preset(smart_list)}), 400
 
     if 'name' in data:
         name = (data.get('name') or '').strip()
@@ -147,6 +189,7 @@ def api_update_smart_list(smart_list_id):
 
     payload = smart_list.to_dict()
     payload['rules'] = rule_summary(smart_list)
+    payload['is_discovery'] = is_discovery_preset(smart_list)
     return jsonify(payload)
 
 
@@ -174,6 +217,19 @@ def api_smart_list_results(smart_list_id):
         id=smart_list_id, user_id=current_user.id).first()
     if not smart_list:
         return jsonify({'error': 'Smart List not found'}), 404
+
+    # A discovery preset is TMDb-backed. It must never be evaluated against the
+    # owner's local watchlist/diary/tracking, so refuse BEFORE any query runs
+    # and point the caller at Discover. (evaluate_smart_list also refuses, but
+    # this stops it at the edge.)
+    if is_discovery_preset(smart_list):
+        return jsonify({
+            'error': 'This is a saved discovery filter, not a list of your '
+                     'own titles.',
+            'is_discovery': True,
+            'restore_url': url_for('explore.restore_discovery',
+                                   preset_id=smart_list.id),
+        }), 409
 
     try:
         page = int(request.args.get('page', 1))
@@ -207,5 +263,9 @@ def view_smart_list_page(smart_list_id):
         id=smart_list_id, user_id=current_user.id).first()
     if not smart_list:
         return render_template('error.html', message='Smart List not found'), 404
+    # Presets live in Discover (TMDb-backed); this page evaluates local rows.
+    if is_discovery_preset(smart_list):
+        return redirect(url_for('explore.restore_discovery',
+                                preset_id=smart_list.id))
     return render_template('smart_list_detail.html', smart_list=smart_list,
                            rules=rule_summary(smart_list))
