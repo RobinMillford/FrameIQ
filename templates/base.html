@@ -12,6 +12,12 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>{% block title %}FrameIQ — Your Film Brain{% endblock %}</title>
 
+    {# F13 — single metadata contract. A page opts in by defining `meta` at the
+       top level of its own template; everything else gets the privacy-safe
+       default (noindex, no personalised content). Rendered here, in <head>, so
+       crawlers see it in the initial server response — never injected by JS. #}
+    {% include "partials/meta.html" %}
+
     <!-- Tailwind CSS + design tokens -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -182,8 +188,14 @@
                             <div id="notif-panel" class="fi-menu hidden absolute right-0 top-full mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl" role="dialog" aria-label="Notifications">
                                 <div class="fi-menu-header">
                                     <span class="fi-menu-title">Notifications</span>
-                                    <button id="notif-mark-all" class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors">Mark all as read</button>
+                                    <div class="flex items-center gap-3">
+                                        <button id="notif-prefs-toggle" type="button"
+                                                class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors"
+                                                aria-expanded="false" aria-controls="notif-prefs-panel">Settings</button>
+                                        <button id="notif-mark-all" class="text-xs text-[var(--text-low)] hover:text-[var(--accent-hi)] transition-colors">Mark all as read</button>
+                                    </div>
                                 </div>
+                                {% include "partials/notification_preferences.html" %}
                                 <div id="notif-list" class="max-h-[24rem] overflow-y-auto"></div>
                             </div>
                         </div>
@@ -278,6 +290,7 @@
     {% if current_user.is_authenticated %}
     <script src="{{ url_for('static', filename='js/continue-watching.js') }}"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/notification-preferences.js') }}"></script>
     {% endif %}
 
     <!-- Page-specific JavaScript -->

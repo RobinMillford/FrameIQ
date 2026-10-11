@@ -4,13 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {# §54: user sharing, not per-user/year SEO pages. #}
-    <meta name="robots" content="noindex, nofollow">
     <title>{{ recap.year }} in Review — FrameIQ</title>
-    <meta property="og:title" content="{{ recap.year }} in Review — FrameIQ">
-    <meta property="og:type" content="website">
-    <meta property="og:description" content="A Year in Review recap shared on FrameIQ.">
-    {# No token in page metadata (§22); the canonical URL is the share URL itself. #}
-    <link rel="canonical" href="{{ request.url }}">
+    {# F13 — richer preview built ONLY from `public_model`, the deliberately
+       narrowed payload this share route already exposes. The share token is
+       never placed in page metadata (§22); the canonical URL is the share URL
+       itself. No aggregateRating is emitted: these are one person's private
+       watch totals, not a public fact about the work. #}
+    {% set _share_url = request.url %}
+    {% set _share_image = url_for('static', filename='images/no-backdrop.svg', _external=True) %}
+    {% set _titles = recap.summary.distinct_titles if recap.summary else None %}
+    {% set _genre = (recap.highlights.top_genre.name
+                     if recap.highlights and recap.highlights.top_genre else None) %}
+    {% set _share_desc = (
+        (_titles ~ ' titles watched in ' ~ recap.year ~ ' on FrameIQ.')
+        if _titles else ('A ' ~ recap.year ~ ' watch recap shared on FrameIQ.'))
+        ~ (' Top genre: ' ~ _genre ~ '.' if _genre else '') %}
+    {% set meta = {
+        'title': recap.year ~ ' in Review — FrameIQ',
+        'description': _share_desc,
+        'canonical': _share_url,
+        'image': _share_image,
+        'image_alt': 'FrameIQ year in review recap artwork for ' ~ recap.year,
+        'type': 'website',
+        'indexable': False,
+        'jsonld': share_meta.webpage_jsonld(
+            name=recap.year ~ ' in Review',
+            description=_share_desc,
+            url=_share_url,
+            image=_share_image),
+    } %}
+    {% include "partials/meta.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">

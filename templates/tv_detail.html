@@ -11,9 +11,35 @@
 
 {% block title %}{{ show.name }} - FrameIQ{% endblock %}
 
+{# F13 — TV link-preview metadata. Uses the TV endpoints' own date field
+   semantics (first_air_date), never the movie release-date field, and the same
+   shipped local fallback for missing artwork. #}
+{% set _share_fallback = url_for('static', filename='images/no-backdrop.svg', _external=True) %}
+{% set _share_image = share_meta.select_image(show.backdrop_path, show.poster_path, _share_fallback) %}
+{% set _share_name = show.name %}
+{% set _share_url = url_for('main.index', _external=True).rstrip('/') ~ '/tv/' ~ show.id %}
+{% set _share_desc = share_meta.build_description(
+    show.overview, 'Watch %s on FrameIQ.' % show.name) %}
+{% set meta = {
+    'title': show.name ~ ' - FrameIQ',
+    'description': _share_desc,
+    'canonical': _share_url,
+    'image': _share_image,
+    'image_alt': 'Backdrop artwork for ' ~ show.name,
+    'type': 'video.tv_show',
+    'indexable': True,
+    'jsonld': share_meta.tv_series_jsonld(
+        name=show.name,
+        description=_share_desc,
+        image=_share_image if _share_image != _share_fallback else None,
+        url=_share_url,
+        first_air_date=show.first_air_date if show.first_air_date not in (None, '', 'N/A') else None,
+        genre=show.genres or None,
+        creator=show.creator or None,
+        cast=share_meta.names(show.cast)),
+} %}
+
 {% block extra_head %}
-<!-- Canonical URL so watch/tv URLs with query params consolidate -->
-<link rel="canonical" href="{{ url_for('main.index', _external=True).rstrip('/') }}/tv/{{ show.id }}">
 {% endblock %}
 
 {% block body_attrs %}data-media-id="{{ show.id }}" data-media-type="tv" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"{% endblock %}
@@ -443,6 +469,18 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                     </svg>
                                 </button>
+
+                                {# F13 — canonical-URL share control (see movie_detail). #}
+                                <div id="detail-share" class="flex items-center gap-2"
+                                     data-share-url="{{ _share_url }}"
+                                     data-share-title="{{ _share_name }}">
+                                    <button type="button" data-share-button
+                                            class="glass-effect text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-600 transition-colors">
+                                        <i class="fas fa-share-alt" aria-hidden="true"></i> Share
+                                    </button>
+                                    <span data-share-status role="status" aria-live="polite" class="text-xs"></span>
+                                </div>
+
                                 <div id="watchlist-priority" class="hidden absolute top-full mt-1 left-0  rounded-lg shadow-xl border border-gray-700 overflow-hidden z-50 min-w-[180px]">
                                     {{ post_action(url_for('main.add_to_watchlist', media_id=show.id, media_type='tv'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-red-600 transition-colors flex items-center gap-2', fields={'priority': 'high'}) }}
                                     {{ post_action(url_for('main.add_to_watchlist', media_id=show.id, media_type='tv'), icon=WL_ICON, classes='block px-4 py-2 text-white hover:bg-yellow-600 transition-colors flex items-center gap-2', fields={'priority': 'medium'}) }}
@@ -1247,6 +1285,7 @@
     </script>
     <script src="{{ url_for('static', filename='js/tv-tracker.js') }}?v=12"></script>
     <script src="{{ url_for('static', filename='js/tv-seasons.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='js/share-link.js') }}"></script>
 </body>
 
 </html>{% endblock %}

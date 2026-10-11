@@ -78,6 +78,17 @@ MIGRATIONS: Tuple['MigrationSpec', ...] = (
                 'and TasteProfile.actor_affinity_json for offline cast '
                 'capture. Additive.',
     ),
+    # F12 notification preferences. Same reasoning as 0003: additive, and it
+    # depends on 0001 ONLY so the deferred destructive 0002 cannot block it.
+    # Populates nothing — a user with no preference row resolves to documented
+    # defaults at read time.
+    MigrationSpec(
+        version='0004_notification_preferences',
+        module='migrations_0004_notification_preferences',
+        depends_on=('0001_canonical_watched_reconcile',),
+        summary='Add user_notification_preference (one row per user) for '
+                'in-app notification categories. Additive.',
+    ),
 )
 
 

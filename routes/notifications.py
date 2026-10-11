@@ -4,6 +4,12 @@
 - POST /api/notifications/<id>/read  → mark one read (owner only)
 - POST /api/notifications/read-all   → mark all read
 
+Feature F12 adds per-user notification preferences:
+
+- GET  /api/notification-preferences        → effective preferences + catalogue
+- POST /api/notification-preferences        → validate + save (owner only)
+- GET  /api/notification-preferences/categories → supported categories
+
 All endpoints are authenticated and strictly user-scoped: a notification id
 belonging to another user is indistinguishable from a nonexistent one (404),
 and ownership is enforced by user_id filters — never by trusting the client.
@@ -21,6 +27,10 @@ from extensions import limiter
 from models import db
 from models.notification import Notification
 from api.notifications import unread_count, list_notifications
+from api.notification_preferences import (
+    PreferenceError, describe_categories, get_preferences, save_preferences,
+)
+from models.notification_preferences import UserNotificationPreference
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +92,45 @@ def api_mark_all_read():
                        synchronize_session=False))
     db.session.commit()
     return jsonify({'ok': True, 'marked': updated, 'unread_count': 0})
+
+
+@notifications_bp.route('/api/notification-preferences')
+@login_required
+def api_get_notification_preferences():
+    """The caller's effective preferences + the supported category catalogue.
+
+    A user with no stored record gets the documented defaults; reading never
+    creates a row, so simply visiting the settings cannot fork state.
+    """
+    return jsonify({
+        'preferences': get_preferences(current_user.id),
+        'categories': describe_categories(),
+        'saved': UserNotificationPreference.query.filter_by(
+            user_id=current_user.id).first() is not None,
+    })
+
+
+@notifications_bp.route('/api/notification-preferences', methods=['POST'])
+@login_required
+@limiter.limit("30 per minute")
+def api_save_notification_preferences():
+    """Validate and persist the caller's preferences.
+
+    Recipient isolation is structural: there is no user id in the payload, so
+    one user cannot read or write another's preferences. CSRF is enforced
+    globally by CSRFProtect on this unsafe verb.
+    """
+    data = request.get_json(silent=True) or {}
+    payload = data.get('preferences', data)
+    try:
+        stored = save_preferences(current_user.id, payload)
+    except PreferenceError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': True, 'preferences': stored, 'saved': True})
+
+
+@notifications_bp.route('/api/notification-preferences/categories')
+@login_required
+def api_notification_preference_categories():
+    """The supported categories (keys, labels, explanations)."""
+    return jsonify({'categories': describe_categories()})

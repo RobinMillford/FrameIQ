@@ -5,8 +5,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>{{ actor.name|default('Actor Details') }} - ActorHub</title>
-    <link rel="canonical" href="{{ url_for('main.index', _external=True).rstrip('/') }}/actor/{{ actor.id }}">
+    <title>{{ actor.name|default('Actor Details') }} - FrameIQ</title>
+    {# F13 — public person page. Rendered through the same metadata contract as
+       every other page. No birth date / place of birth / biography is promoted
+       into the preview description, and no aggregate rating is invented. #}
+    {% set _share_fallback = url_for('static', filename='images/default_avatar.svg', _external=True) %}
+    {% set _share_url = url_for('main.index', _external=True).rstrip('/') ~ '/actor/' ~ actor.id %}
+    {% set _share_image = share_meta.select_image(actor.profile_path, None, _share_fallback) %}
+    {% set _share_desc = share_meta.build_description(
+        actor.biography, 'Filmography for %s on FrameIQ.' % actor.name) %}
+    {% set meta = {
+        'title': (actor.name|default('Actor Details')) ~ ' - FrameIQ',
+        'description': _share_desc,
+        'canonical': _share_url,
+        'image': _share_image,
+        'image_alt': 'Profile photo of ' ~ actor.name,
+        'type': 'profile',
+        'indexable': True,
+        'jsonld': share_meta.person_jsonld(
+            name=actor.name,
+            description=_share_desc,
+            image=_share_image if _share_image != _share_fallback else None,
+            url=_share_url),
+    } %}
+    {% include "partials/meta.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">

@@ -6,9 +6,37 @@
 
 {% block title %}{{ movie.title }} - FrameIQ{% endblock %}
 
+{# F13 — link-preview metadata. Built from the same TMDb payload that renders
+   the page; no extra request and no per-card fan-out. Missing artwork falls
+   back to the app's own shipped asset rather than a third-party placeholder.
+   `indexable` is explicit: this is a genuinely public catalogue page. #}
+{% set _share_image = share_meta.select_image(
+    movie.backdrop_path, movie.poster_path,
+    url_for('static', filename='images/no-backdrop.svg', _external=True)) %}
+{% set _share_name = movie.title %}
+{% set _share_url = url_for('main.index', _external=True).rstrip('/') ~ '/movie/' ~ movie.id %}
+{% set _share_desc = share_meta.build_description(
+    movie.overview, movie.tagline or 'Watch %s on FrameIQ.' % movie.title) %}
+{% set meta = {
+    'title': movie.title ~ ' - FrameIQ',
+    'description': _share_desc,
+    'canonical': _share_url,
+    'image': _share_image,
+    'image_alt': 'Backdrop artwork for ' ~ movie.title,
+    'type': 'video.movie',
+    'indexable': True,
+    'jsonld': share_meta.movie_jsonld(
+        name=movie.title,
+        description=_share_desc,
+        image=_share_image if _share_image != url_for('static', filename='images/no-backdrop.svg', _external=True) else None,
+        url=_share_url,
+        release_date=movie.release_date or None,
+        genre=movie.genres or None,
+        director=movie.director or None,
+        cast=share_meta.names(movie.cast)),
+} %}
+
 {% block extra_head %}
-<!-- Canonical URL so watch/movie URLs with query params consolidate -->
-<link rel="canonical" href="{{ url_for('main.index', _external=True).rstrip('/') }}/movie/{{ movie.id }}">
 {% endblock %}
 
 {% block body_attrs %}data-media-id="{{ movie.id }}" data-media-type="movie" data-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"{% endblock %}
@@ -321,6 +349,20 @@
                         </svg>
                         Play Trailer
                     </button>
+
+                {# F13 — share the CANONICAL public URL (not window.location,
+                   which may carry tracking params), matching the URL declared
+                   in <link rel="canonical">. Accessible label + live region for
+                   success/failure feedback. #}
+                <div id="detail-share" class="flex items-center gap-2"
+                     data-share-url="{{ _share_url }}"
+                     data-share-title="{{ _share_name }}">
+                    <button type="button" data-share-button
+                            class="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-share-alt" aria-hidden="true"></i> Share
+                    </button>
+                    <span data-share-status role="status" aria-live="polite" class="text-xs"></span>
+                </div>
 
                     <!-- Status indicators and Action Buttons -->
                     {% if current_user.is_authenticated %}
@@ -1182,5 +1224,6 @@
     <script src="{{ url_for('static', filename='js/review-manager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/detail-init.js') }}"></script>
     <script src="{{ url_for('static', filename='js/where-to-watch.js') }}"></script>
+<script src="{{ url_for('static', filename='js/share-link.js') }}"></script>
 </body>
 </html>{% endblock %}

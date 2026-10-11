@@ -260,7 +260,10 @@ def test_route_limit_definitions_unchanged():
     expected = {
         "routes/smart_lists.py": ["30 per minute", "30 per minute",
                                   "30 per minute", "60 per minute"],
-        "routes/notifications.py": ["60 per minute", "10 per minute"],
+        # F12 added a rate-limited preference save (30/minute); the two
+        # pre-existing notification limits are unchanged.
+        "routes/notifications.py": ["60 per minute", "10 per minute",
+                                    "30 per minute"],
         "routes/watch.py": ["60 per minute"] * 6,
         "routes/recommendations.py": ["60 per minute"],
         "routes/diary.py": ["60 per minute"],
