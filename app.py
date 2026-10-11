@@ -129,6 +129,12 @@ _CSP = (
 def create_app() -> Flask:
     app = Flask(__name__)
 
+    # F13: expose the pure share-metadata helpers to templates so every page
+    # builds its Open Graph / JSON-LD through ONE audited implementation rather
+    # than hand-rolled tags. The module is pure (no DB, no network, no Flask).
+    from api import share_meta as _share_meta
+    app.jinja_env.globals['share_meta'] = _share_meta
+
     # ── Proxy fix (nginx → gunicorn) ──────────────────────────────────────────
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 

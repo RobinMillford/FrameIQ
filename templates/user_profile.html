@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ user.username }}'s Profile - FrameIQ</title>
+    {# F13 — authenticated, user-specific page. Emits ONLY an explicit
+       noindex directive: no description, no OG tags, no canonical, no JSON-LD.
+       Nothing about this user's watchlist, diary or profile reaches a crawler
+       even if a preview is triggered. #}
+    {% set meta = {'indexable': False} %}
+    {% include "partials/meta.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chrome.css') }}">

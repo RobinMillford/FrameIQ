@@ -1,0 +1,33 @@
+{# F13 — one metadata contract for every page. A page opts in by defining
+   `meta` at the top level of its own template; everything else gets the
+   privacy-safe default.
+
+   Keys (all optional): title, og_title, description, og_description,
+   canonical, image, image_alt, type, twitter_card, indexable, jsonld.
+
+   PRIVACY DEFAULT: robots is ALWAYS rendered — a page that forgets to opt in
+   is noindex, so an authenticated page cannot become indexable just because
+   this partial exists. Everything else is gated on its value being present,
+   so `{'indexable': False}` emits the directive and nothing else: no
+   description, OG tags, canonical or JSON-LD. #}
+{% set _m = meta or {} %}
+{% set _t = _m.og_title or _m.title %}
+{% set _d = _m.og_description or _m.description %}
+<meta name="robots" content="{{ 'index, follow' if _m.indexable else 'noindex, nofollow' }}">
+{% if _d %}<meta name="description" content="{{ _d }}">{% endif %}
+{% if _m.canonical %}<link rel="canonical" href="{{ _m.canonical }}">{% endif %}
+{% if _t %}<meta property="og:site_name" content="FrameIQ">{% endif %}
+{% if _t %}<meta property="og:title" content="{{ _t }}">{% endif %}
+{% if _t %}<meta property="og:type" content="{{ _m.type or 'website' }}">{% endif %}
+{% if _d %}<meta property="og:description" content="{{ _d }}">{% endif %}
+{% if _m.canonical %}<meta property="og:url" content="{{ _m.canonical }}">{% endif %}
+{% if _m.image %}<meta property="og:image" content="{{ _m.image }}">{% endif %}
+{% if _m.image and _m.image_alt %}<meta property="og:image:alt" content="{{ _m.image_alt }}">{% endif %}
+{% if _t or _d or _m.image %}<meta name="twitter:card" content="{{ _m.twitter_card or 'summary_large_image' }}">{% endif %}
+{% if _t %}<meta name="twitter:title" content="{{ _t }}">{% endif %}
+{% if _d %}<meta name="twitter:description" content="{{ _d }}">{% endif %}
+{% if _m.image %}<meta name="twitter:image" content="{{ _m.image }}">{% endif %}
+{% if _m.image and _m.image_alt %}<meta name="twitter:image:alt" content="{{ _m.image_alt }}">{% endif %}
+{% if _m.jsonld %}<script type="application/ld+json">{{ _m.jsonld | tojson }}</script>{% endif %}
+{# No og:image:width/height/type: none is verified for the TMDb images or the
+   local SVG fallbacks, and an unverified dimension is worse than none. #}

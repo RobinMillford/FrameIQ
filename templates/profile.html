@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Profile - FrameIQ</title>
+    {# F13 — authenticated, user-specific page. Emits ONLY an explicit
+       noindex directive: no description, no OG tags, no canonical, no JSON-LD.
+       Nothing about this user's watchlist, diary or profile reaches a crawler
+       even if a preview is triggered. #}
+    {% set meta = {'indexable': False} %}
+    {% include "partials/meta.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">

@@ -12,6 +12,12 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>{% block title %}FrameIQ — Your Film Brain{% endblock %}</title>
 
+    {# F13 — single metadata contract. A page opts in by defining `meta` at the
+       top level of its own template; everything else gets the privacy-safe
+       default (noindex, no personalised content). Rendered here, in <head>, so
+       crawlers see it in the initial server response — never injected by JS. #}
+    {% include "partials/meta.html" %}
+
     <!-- Tailwind CSS + design tokens -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
