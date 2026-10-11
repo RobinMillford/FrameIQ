@@ -337,11 +337,17 @@ def test_registered_and_ordered_after_0002_in_the_registry(app, db):
     from migrates import registry
     assert registry.validate() == []
     versions = [s.version for s in registry.ordered_migrations()]
+    # 0004 (F12 notification preferences) is registered after 0003 and, like
+    # it, depends on 0001 only so the deferred destructive 0002 cannot block
+    # purely additive schema.
     assert versions == ['0001_canonical_watched_reconcile',
                         '0002_remove_legacy_wishlist',
-                        '0003_cast_persistence']
+                        '0003_cast_persistence',
+                        '0004_notification_preferences']
     spec = registry.by_version()['0003_cast_persistence']
     assert spec.depends_on == ('0001_canonical_watched_reconcile',)
+    f12 = registry.by_version()['0004_notification_preferences']
+    assert f12.depends_on == ('0001_canonical_watched_reconcile',)
 
 
 def test_depends_on_0001_and_not_on_the_deferred_destructive_migration(app, db):
@@ -380,9 +386,11 @@ def test_ordinary_upgrade_applies_f9_while_0002_stays_deferred(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'DEFERRED' in result.stdout
     assert '0002_remove_legacy_wishlist' in result.stdout
+    # 0004 (F12) is additive too and joins the ordinary stage.
     assert '+ 0003_cast_persistence' in result.stdout
+    assert '+ 0004_notification_preferences' in result.stdout
     assert '0002_remove_legacy_wishlist' not in result.stdout.split(
-        'Applied 2 migration(s)')[1]
+        'Applied 3 migration(s)')[1]
 
     conn = sqlite3.connect(str(db_path))
     versions = [r[0] for r in conn.execute(
@@ -394,8 +402,11 @@ def test_ordinary_upgrade_applies_f9_while_0002_stays_deferred(tmp_path):
         'PRAGMA table_info(taste_profile)')}
     conn.close()
 
+    # The ordinary stage applies every additive migration: 0001, 0003 (F9) and
+    # 0004 (F12). 0002 remains deferred, which is the point of the assertion.
     assert versions == ['0001_canonical_watched_reconcile',
-                        '0003_cast_persistence']
+                        '0003_cast_persistence',
+                        '0004_notification_preferences']
     assert '0002_remove_legacy_wishlist' not in versions
     assert {'person', 'media_cast'} <= tables
     assert 'cast_enriched_at' in columns

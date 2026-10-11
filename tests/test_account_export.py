@@ -682,10 +682,22 @@ def test_notification_records_export_without_delivery_metadata(export_json):
                                'episode', 'created_at', 'read_at'}
 
 
-def test_notification_preferences_are_reported_as_absent(export_json):
-    """§30 — FrameIQ has no preferences model; say so rather than invent one."""
+def test_notification_preferences_are_reported_as_not_yet_exported(
+        export_json):
+    """F12 — say preferences are not exported YET.
+
+    The previous wording ("FrameIQ has no persisted notification
+    preferences model") became FALSE when F12 introduced
+    ``UserNotificationPreference``. The note must now describe an export gap
+    rather than deny that the model exists, and must never re-assert the old
+    claim.
+    """
     preferences = export_json['notifications']['preferences']
-    assert 'no persisted notification preferences' in preferences['note']
+    note = preferences['note']
+    assert 'not included in this export yet' in note
+    # The obsolete, now-false claim must not come back.
+    assert 'no persisted notification preferences' not in note
+    assert 'nothing to export' not in note
 
 
 def test_user_authored_relationships_are_exported(app, export_user,

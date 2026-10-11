@@ -65,6 +65,7 @@ from models.director import Director, MediaDirector          # noqa: F401
 from models.cast import Person, MediaCast                    # noqa: F401
 from models.continue_watching import ContinueWatchingItem    # noqa: F401
 from models.notification import Notification                  # noqa: F401
+from models.notification_preferences import UserNotificationPreference  # noqa: F401
 from models.smart_lists import SmartList                      # noqa: F401
 from models.streaming import UserStreamingService             # noqa: F401
 from models.taste_profile import TasteProfile                 # noqa: F401

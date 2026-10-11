@@ -1,13 +1,20 @@
 """In-app notifications (Feature 04).
 
 Minimal, user-scoped notification model. Types are free-form strings so future
-categories (season_premiere, availability_change, social, ...) can be added
-without schema changes; only 'new_episode' exists today.
+categories can be added without schema changes; the two supported categories
+are 'new_episode' and 'season_premiere' (Feature F12).
 
 Notifications are created ONLY by backend jobs (today: the UpcomingEpisode
 sync) at meaningful state transitions — never during page rendering — and are
 idempotent via uq_notification_user_episode (user + type + show + season +
 episode). Read state lives in read_at (NULL = unread).
+
+A season premiere is an ALTERNATIVE PRESENTATION of the season's first
+episode, never a second notification for the same event: the producer emits
+either the season-premiere row or the plain episode row for a given episode,
+never both. ``api.notifications`` additionally checks prior notifications
+across types, so toggling the preference cannot duplicate an already-notified
+episode.
 """
 from datetime import datetime
 
@@ -19,6 +26,7 @@ class Notification(db.Model):
     __tablename__ = 'notification'
 
     TYPE_NEW_EPISODE = 'new_episode'
+    TYPE_SEASON_PREMIERE = 'season_premiere'
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)

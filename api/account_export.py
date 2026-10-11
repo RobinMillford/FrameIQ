@@ -1138,8 +1138,8 @@ def build_export(user, generated_at=None):
         },
         'notifications': {
             'preferences': {
-                'note': 'FrameIQ has no persisted notification preferences '
-                        'model; there is nothing to export.',
+                'note': 'Notification preferences are not included in this '
+                        'export yet.',
             },
             'records': domains['notifications'],
         },

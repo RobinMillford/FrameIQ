@@ -1,0 +1,26 @@
+{# F12 — per-user notification preferences, embedded in the notifications
+   panel. Rendered only for authenticated users. Categories are supplied by the
+   route so this partial can never show a control that has no producer. #}
+<div id="notif-prefs-panel" class="hidden border-b px-4 py-3" style="border-color:var(--line)">
+    <fieldset>
+        <legend class="text-xs font-semibold uppercase tracking-wide mb-2"
+                style="color:var(--text-low)">What you get notified about</legend>
+
+        <div id="notif-prefs-list" class="space-y-2.5">
+            <p class="text-xs" style="color:var(--text-low)">Loading…</p>
+        </div>
+    </fieldset>
+
+    <div class="flex items-center gap-2 mt-3">
+        <button type="button" id="notif-prefs-save"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90"
+                style="background:var(--accent); color:#111">Save</button>
+        <p id="notif-prefs-status" role="status" aria-live="polite" class="text-xs"
+           style="color:var(--text-mid)"></p>
+    </div>
+
+    <p class="text-xs mt-2" style="color:var(--text-low)">
+        Turning something off stops NEW alerts. Notifications you already have
+        are kept, and unread ones stay unread until you open them.
+    </p>
+</div>
