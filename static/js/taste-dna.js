@@ -183,6 +183,63 @@
         }
     }
 
+    /**
+     * Feature F18 — empty-state copy for the director section.
+     *
+     * Deliberately qualified. An empty director dimension means no persisted
+     * director rows were found; it does NOT mean the user has no director
+     * preferences, and it does NOT mean credits were successfully persisted
+     * (the historical enrichment defect could mark titles enriched while
+     * writing nothing). So the wording names the coverage limitation and stops
+     * there — it makes no claim about taste, and no promise about what will
+     * appear later.
+     */
+    var DIRECTOR_EMPTY_TEXT = {
+        // No director evidence at all. We genuinely cannot tell WHY — the
+        // titles may be uncredited, never enriched, or unreadable — so the
+        // copy states only the observable fact and stops there.
+        no_director_data: 'Director credits aren\u2019t available for enough ' +
+            'of the titles you\u2019ve watched, so director insights can\u2019t ' +
+            'be calculated yet.',
+        // Director evidence EXISTS but nothing scored positive. Saying credits
+        // were missing here would be false — they were read.
+        no_positive_directors: 'No directors stand out yet \u2014 the titles ' +
+            'you\u2019ve watched so far haven\u2019t produced a clear director ' +
+            'signal.'
+    };
+
+    /**
+     * Feature F18 — render directors, or the honest reason there are none.
+     *
+     * The chips themselves are unchanged from Phase 10; this only adds the
+     * empty state and guarantees a re-render cannot leave a stale block
+     * behind. Both states reset to hidden first.
+     */
+    function fillDirectors(items, status) {
+        var block = el('taste-dna-directors-block');
+        var empty = el('taste-dna-directors-empty-block');
+        if (block) {
+            block.classList.add('hidden');
+        }
+        if (empty) {
+            empty.classList.add('hidden');
+        }
+
+        if (items && items.length) {
+            fillList('taste-dna-directors', 'taste-dna-directors-block', items);
+            return;
+        }
+        var message = DIRECTOR_EMPTY_TEXT[status];
+        if (!message) {
+            return;  // unknown/absent status stays silent rather than guessing
+        }
+        var node = el('taste-dna-directors-empty');
+        if (node) {
+            node.textContent = message;
+            show('taste-dna-directors-empty-block');
+        }
+    }
+
     function mediaSentence(mediaPreference) {
         if (!mediaPreference) {
             return null;
@@ -228,8 +285,7 @@
             data.top_genres);
         fillList('taste-dna-avoid', 'taste-dna-avoid-block',
             data.avoid_genres);
-        fillList('taste-dna-directors', 'taste-dna-directors-block',
-            data.top_directors);
+        fillDirectors(data.top_directors, data.directors_status);
         fillList('taste-dna-eras', 'taste-dna-eras-block', data.eras);
         fillActors(data.top_actors, data.actors_status);
 

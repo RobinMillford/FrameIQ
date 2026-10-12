@@ -1328,6 +1328,48 @@ def _strength_from_share(share):
     return 'low'
 
 
+def _directors_status(entries, titles, affinity):
+    """Honest state for the director section (pure).
+
+    Returns ``'ready'`` | ``'no_positive_directors'`` | ``'no_director_data'``
+    | None.
+
+    * ``ready`` — directors were computed and at least one qualifies.
+    * ``no_positive_directors`` — the dimension RAN and holds director
+      evidence, but nothing scored positive (e.g. only negative director
+      signals). The user's director data EXISTS; there is simply no clear
+      positive director signal yet. This is a calculated result and must not
+      be reported as missing credits.
+    * ``no_director_data`` — the user has watched titles yet the dimension
+      holds no director evidence at all, i.e. usable director credits are
+      absent or unreadable. Says nothing about the user's preferences.
+    * None — nothing watched; the section stays silent.
+
+    Why three states. ``director_affinity`` is keyed by display name and holds
+    SIGNED weights, so a non-empty map that yields no qualifying entry is
+    genuinely distinguishable from an empty one — and the two need different
+    words. Collapsing them would tell a user with real director evidence that
+    their credits are missing, which the data does not support.
+
+    Still NOT distinguishable, by design: an empty map cannot tell us whether
+    the titles are genuinely uncredited, were never enriched, or failed to
+    parse. F18 therefore does not guess a specific cause for that case.
+
+    The crucial honesty constraint: an empty dimension is NOT proof the user
+    has no director preferences, and it is NOT proof credits were persisted.
+    Feature F16 established that the historical enrichment run could mark titles
+    enriched while writing zero director rows, so this function deliberately
+    does NOT consult ``directors_enriched_at`` — that column proves nothing
+    about persistence, and treating it as coverage evidence would repeat the
+    original mistake.
+    """
+    if entries:
+        return 'ready'
+    if not titles:
+        return None
+    return 'no_positive_directors' if affinity else 'no_director_data'
+
+
 def _actors_status(entries, titles, affinity):
     """Distinguish the actor section's three honest states (pure).
 
@@ -1436,10 +1478,11 @@ def taste_dna(profile, actor_links=None):
         for name, w in reversed(ranked) if w < 0
     ][:DNA_AVOID_GENRES]
 
-    directors = _as_float_map(data.get('director_affinity') or {})
+    raw_directors = _as_float_map(data.get('director_affinity') or {})
     top_directors = [
         {'name': name, 'strength': _strength_from_weight(w)}
-        for name, w in sorted(directors.items(), key=lambda kv: (-kv[1], kv[0]))
+        for name, w in sorted(raw_directors.items(),
+                              key=lambda kv: (-kv[1], kv[0]))
         if w > 0
     ][:DNA_TOP_DIRECTORS]
 
@@ -1506,4 +1549,26 @@ def taste_dna(profile, actor_links=None):
     status = _actors_status(top_actors, titles, raw_actors)
     if status:
         response['actors_status'] = status
+
+    # F18: the director section already existed (Phase 10 `top_directors`);
+    # what it lacked was an honest reason for being empty. Additive key, same
+    # shape as actors_status, and it never invents coverage evidence.
+    response.update(_status_flags(top_directors, raw_directors,
+                                  top_actors, raw_actors, titles))
     return response
+
+
+def _status_flags(top_directors, raw_directors, top_actors, raw_actors, titles):
+    """The director/actor empty-state flags as one additive dict (pure).
+
+    Kept separate so `taste_dna` stays within the project's complexity budget
+    and so both dimensions report emptiness the same way.
+    """
+    flags = {}
+    directors_status = _directors_status(top_directors, titles, raw_directors)
+    if directors_status:
+        flags['directors_status'] = directors_status
+    actors_status = _actors_status(top_actors, titles, raw_actors)
+    if actors_status:
+        flags['actors_status'] = actors_status
+    return flags
