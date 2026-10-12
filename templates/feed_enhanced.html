@@ -453,80 +453,127 @@ function loadStats() {
         })
 }
 
+// F21 — media links are rebuilt from validated components only.
+// `media_type` comes from the DB and `media_id` is a TMDb id; neither is
+// trusted into a URL without passing the validators.
+const MEDIA_TYPES = ['movie', 'tv', 'anime'];
+
+// Shared helpers (static/js/dom-safety.js), bound at module scope so the
+// helper functions below — not just createActivityCard — can reach them.
+const D = window.FrameIQDOM;
+
+function mediaHref(activity) {
+    const type = MEDIA_TYPES.includes(activity.media_type) ? activity.media_type : null;
+    const id = D.safeId(activity.media_id);
+    if (!type || id === null) return '';
+    return D.safeLinkUrl(`/${type}/${id}`);
+}
+
+function mediaLink(activity, label) {
+    const href = mediaHref(activity);
+    if (!href) {
+        // No safe link available — render the label as plain text rather than
+        // emitting a link that goes nowhere.
+        return D.el('span', { text: label });
+    }
+    return D.el('a', { href: href, text: label });
+}
+
 function createActivityCard(activity) {
-    const card = document.createElement('div');
-    card.className = 'activity-card';
+    const card = D.el('div', { class: 'activity-card' });
 
     let badgeClass = '';
     let badgeText = '';
-    let contentHtml = '';
+
+    // ── header ────────────────────────────────────────────────────────────
+    const header = D.el('div', { class: 'activity-header' });
+    header.appendChild(D.el('img', {
+        src: D.safeImageUrl(activity.user_avatar, '/static/images/default-avatar.png', '/static/'),
+        alt: D.text(activity.username),
+        class: 'user-avatar',
+    }));
+
+    const userInfo = D.el('div', { class: 'activity-user-info' });
+    userInfo.appendChild(D.el('div', { class: 'activity-username', text: activity.username }));
+    userInfo.appendChild(D.el('div', { class: 'activity-time', text: formatTimestamp(activity.timestamp) }));
+    header.appendChild(userInfo);
+
+    // ── body ──────────────────────────────────────────────────────────────
+    const body = D.el('div');
 
     switch (activity.type) {
-        case 'review':
+        case 'review': {
             badgeClass = 'badge-review';
             badgeText = 'Review';
-            const stars = '★'.repeat(activity.rating || 0) + '☆'.repeat(10 - (activity.rating || 0));
-            contentHtml = `
-                <div class="activity-content">
-                    <div class="rating-stars">${stars}</div>
-                    <p>${activity.content || 'No review text provided.'}</p>
-                </div>
-                <div class="activity-media">
-                    <a href="/${activity.media_type}/${activity.media_id}">${activity.media_title}</a>
-                </div>
-            `;
+            const rating = Number(activity.rating) || 0;
+            const stars = '★'.repeat(rating) + '☆'.repeat(10 - rating);
+
+            const content = D.el('div', { class: 'activity-content' });
+            content.appendChild(D.el('div', { class: 'rating-stars', text: stars }));
+            // Review body is free text written by any user — it is TEXT, never markup.
+            content.appendChild(D.el('p', {
+                text: activity.content || 'No review text provided.',
+            }));
+            body.appendChild(content);
+
+            const media = D.el('div', { class: 'activity-media' });
+            media.appendChild(mediaLink(activity, activity.media_title || 'View details'));
+            body.appendChild(media);
             break;
-        case 'like':
+        }
+        case 'like': {
             badgeClass = 'badge-like';
             badgeText = 'Like';
-            contentHtml = `
-                <div class="activity-content">
-                    Liked a ${activity.media_type}
-                </div>
-                <div class="activity-media">
-                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
-                </div>
-            `;
+            const content = D.el('div', { class: 'activity-content' });
+            content.appendChild(document.createTextNode('Liked a '));
+            content.appendChild(D.el('span', { text: activity.media_type }));
+            body.appendChild(content);
+
+            const media = D.el('div', { class: 'activity-media' });
+            media.appendChild(mediaLink(activity, 'View ' + D.text(activity.media_type)));
+            body.appendChild(media);
             break;
-        case 'comment':
+        }
+        case 'comment': {
             badgeClass = 'badge-comment';
             badgeText = 'Comment';
-            contentHtml = `
-                <div class="activity-content">
-                    <p>${activity.content}</p>
-                </div>
-                <div class="activity-media">
-                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
-                </div>
-            `;
+            const content = D.el('div', { class: 'activity-content' });
+            // Comment body is free text written by any user.
+            content.appendChild(D.el('p', { text: activity.content || '' }));
+            body.appendChild(content);
+
+            const media = D.el('div', { class: 'activity-media' });
+            media.appendChild(mediaLink(activity, 'View ' + D.text(activity.media_type)));
+            body.appendChild(media);
             break;
-        case 'tag':
+        }
+        case 'tag': {
             badgeClass = 'badge-tag';
             badgeText = 'Tag';
-            contentHtml = `
-                <div class="activity-content">
-                    Added tag: <strong>${activity.tag_name}</strong>
-                </div>
-                <div class="activity-media">
-                    <a href="/${activity.media_type}/${activity.media_id}">View ${activity.media_type}</a>
-                </div>
-            `;
+            const content = D.el('div', { class: 'activity-content' });
+            content.appendChild(document.createTextNode('Added tag: '));
+            // Tag names are user-created — text only.
+            content.appendChild(D.el('strong', { text: activity.tag_name || '' }));
+            body.appendChild(content);
+
+            const media = D.el('div', { class: 'activity-media' });
+            media.appendChild(mediaLink(activity, 'View ' + D.text(activity.media_type)));
+            body.appendChild(media);
+            break;
+        }
+        default:
+            badgeClass = 'badge-generic';
+            badgeText = activity.type || 'Activity';
             break;
     }
 
-    card.innerHTML = `
-        <div class="activity-header">
-            <img src="${activity.user_avatar || '/static/images/default-avatar.png'}" 
-                 alt="${activity.username}" 
-                 class="user-avatar">
-            <div class="activity-user-info">
-                <div class="activity-username">${activity.username}</div>
-                <div class="activity-time">${formatTimestamp(activity.timestamp)}</div>
-            </div>
-            <span class="activity-type-badge ${badgeClass}">${badgeText}</span>
-        </div>
-        ${contentHtml}
-    `;
+    header.appendChild(D.el('span', {
+        class: 'activity-type-badge ' + badgeClass,
+        text: badgeText,
+    }));
+
+    card.appendChild(header);
+    card.appendChild(body);
 
     return card;
 }

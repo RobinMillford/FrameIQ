@@ -188,7 +188,13 @@
                 mobileMenu.classList.toggle('hidden');
             });
         }
-});
+
+        // F21 — the previously-orphaned `});` made this whole block fail to
+        // parse, so setupMobileMenu() was dead. The closing token is removed;
+        // the function body itself is unchanged and contains only static markup.
+        if (document.getElementById('mobile-menu-button')) {
+            setupMobileMenu();
+        }
     </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>

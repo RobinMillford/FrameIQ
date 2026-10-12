@@ -86,7 +86,13 @@
 {% block extra_js %}
     <script src="{{ url_for('static', filename='js/activity-feed.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
-    <script><script>
+    {#- F21 — these two blocks were written with nested script tags. A nested
+        script tag is not a script: the browser treats the inner tag as text,
+        so neither body ever ran. The nesting is removed. The first IIFE is
+        already guarded on `btn && menu`, so it is a no-op on pages that do not
+        render those elements. The second block was an empty stub; its intent is
+        preserved as a comment below. -#}
+    <script>
         (function() {
             var btn = document.getElementById('mobile-menu-button');
             var menu = document.getElementById('mobile-menu');
@@ -97,14 +103,8 @@
                 });
             }
         })();
-    </script></script>
-    <script><script>
-        // Use the existing activity-feed.js which handles both following and global feeds
-        document.addEventListener('DOMContentLoaded', () => {
-            if (typeof ActivityFeed !== 'undefined') {
-                // The activity-feed.js script should automatically initialize if it finds the containers
-                // But we can ensure it's set up for the feed page specifically if needed.
-            }
-        });
-    </script></script>
+    </script>
+    {# activity-feed.js handles both the following and global feeds; it
+       self-initialises when it finds its containers, so no extra bootstrap is
+       needed here. #}
 {% endblock %}

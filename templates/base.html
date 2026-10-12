@@ -294,6 +294,14 @@
     {% endif %}
 
     <!-- Page-specific JavaScript -->
+    {#
+        F21 — shared DOM-safety helpers. Loaded FIRST, before any page script,
+        so `window.FrameIQDOM` is available for scripts that build elements
+        from untrusted data (feed cards, tag pills, collaborator rows,
+        trending tiles). Loaded once here rather than per template so the
+        ordering guarantee cannot drift.
+    #}
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     {% block extra_js %}{% endblock %}
 
 

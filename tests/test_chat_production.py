@@ -273,14 +273,23 @@ class TestPersistenceAcrossMessages:
 def _file_backed_app(tmp_path, monkeypatch):
     """A second app instance on a FILE sqlite DB for threaded tests.
 
-    The session app uses :memory: (one connection per thread = empty DB
-    per thread), so real cross-thread requests need a shared file.
+    A ``:memory:`` database gives every pooled connection its own empty
+    database, which is exactly why the suite-wide conftest uses a temp FILE
+    (see the comment there). Cross-thread requests therefore need a shared file.
+
+    F21 - the previous version restored ``sqlite:///:memory:`` on the way out.
+    That is NOT the value it borrowed: conftest sets a temp-FILE url, so the
+    "restore" silently replaced the suite's database for every test that ran
+    afterwards, and directly contradicted conftest's documented rationale. We
+    now restore whatever was actually in place before this helper ran.
     """
     import os
     db_file = str(tmp_path / "concurrency.db")
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
+    target_url = f"sqlite:///{db_file}"
+    previous_url = os.environ.get("DATABASE_URL")
+    monkeypatch.setenv("DATABASE_URL", target_url)
     # create_app reads env at call time; SECRET_KEY/TMDB key already set.
-    os.environ["DATABASE_URL"] = f"sqlite:///{db_file}"
+    os.environ["DATABASE_URL"] = target_url
     try:
         from app import create_app
         file_app = create_app()
@@ -292,7 +301,10 @@ def _file_backed_app(tmp_path, monkeypatch):
         with file_app.app_context():
             _db.create_all()
     finally:
-        os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+        if previous_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_url
     file_app.config.update(TESTING=True, WTF_CSRF_ENABLED=False,
                            RATELIMIT_ENABLED=False)
     return file_app, db_file

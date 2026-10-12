@@ -286,15 +286,31 @@ class ReviewManager {
         const rewatchBadge = review.rewatch ? '<span class="rewatch-badge">🔁 Rewatch</span>' : '';
         const spoilerWarning = review.contains_spoilers ? '<span class="spoiler-badge">⚠️ Spoilers</span>' : '';
 
+        // F21 — URL values are validated and scheme-checked, then attribute-escaped.
+        // escapeHtml() alone was not sufficient here: `textContent -> innerHTML`
+        // does not encode quotes, so a `"` in profile_picture broke out of
+        // src="…". safeImageUrl() rejects such values outright (and URL parsing
+        // percent-encodes any quote it ever keeps), so the result is safe to
+        // place in a double-quoted attribute.
+        // Fail CLOSED if the helper is unavailable. The previous fallback
+        // re-introduced the vulnerable path: escapeHtml() does not encode
+        // quotes, so a `"` in profile_picture would break out of src="…".
+        // A missing helper must degrade the avatar, never the escaping.
+        const D = window.FrameIQDOM;
+        const avatarUrl = D && typeof D.safeImageUrl === 'function'
+            ? this.escapeHtml(D.safeImageUrl(review.user.profile_picture,
+                '/static/images/default-avatar.png', '/static/'))
+            : '/static/images/default-avatar.png';
+
         // User section (all user-controlled fields escaped — see escapeHtml)
         const userSection = `
             <div class="review-header">
                 <div class="review-user-info">
-                    <img src="${this.escapeHtml(review.user.profile_picture || '/static/images/default-avatar.png')}"
+                    <img src="${avatarUrl}"
                          alt="${this.escapeHtml(review.user.username)}"
                          class="review-user-avatar">
                     <div class="review-user-details">
-                        <a href="/user/${review.user.id}" class="review-username">${this.escapeHtml(review.user.username)}</a>
+                        <a href="/user/${D ? (D.safeId(review.user.id) ?? '') : review.user.id}" class="review-username">${this.escapeHtml(review.user.username)}</a>
                         <span class="review-date">${formattedDate}${isEdited ? ' (edited)' : ''}</span>
                     </div>
                 </div>
@@ -303,10 +319,17 @@ class ReviewManager {
         `;
 
         // Media info (only show in feed, not on media detail page)
+        // F21 — poster_path is third-party data and was previously interpolated
+        // completely unescaped; it now goes through the URL validator.
+        const posterSrc = (D && typeof D.safeImageUrl === 'function')
+            ? this.escapeHtml(D.safeImageUrl(
+                'https://image.tmdb.org/t/p/w92' + String(review.media.poster_path || ''),
+                '/static/images/no-poster.png'))
+            : '/static/images/no-poster.png';
         const mediaSection = !this.mediaId ? `
             <div class="review-media-info">
                 <a href="/${review.media.media_type}/${review.media.id}">
-                    <img src="https://image.tmdb.org/t/p/w92${review.media.poster_path}" 
+                    <img src="${posterSrc}"
                          alt="${this.escapeHtml(review.media.title)}"
                          class="review-media-poster">
                     <span class="review-media-title">${this.escapeHtml(review.media.title)}</span>

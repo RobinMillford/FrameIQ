@@ -505,6 +505,12 @@
             }
         }
     </script>
+    {#
+        F21 — list_detail.html does not extend base.html, so it loads the
+        shared DOM-safety helpers itself. It must come before list-advanced.js,
+        which builds collaborator/category rows from user-supplied text.
+    #}
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/list-enhancements.js') }}"></script>
     <script src="{{ url_for('static', filename='js/list-advanced.js') }}"></script>
     <script src="{{ url_for('static', filename='js/lists-v2.js') }}"></script>

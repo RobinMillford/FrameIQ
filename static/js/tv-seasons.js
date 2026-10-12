@@ -1,7 +1,70 @@
 /**
  * TV Seasons & Episodes Manager - Clean Implementation
  * Handles season overview, episode tracking with real-time database sync
+ *
+ * F21 — season cards previously carried inline `onclick`/`onerror` attributes
+ * built from TMDb fields. They are now plain `data-*` attributes read by one
+ * delegated listener installed in bindDelegatedSeasonHandlers().
  */
+
+/**
+ * Escape a value for an HTML text or quoted-attribute context.
+ * Unlike the `textContent -> innerHTML` variant, this encodes quotes, which is
+ * what an attribute context requires.
+ */
+function escAttr(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Install click/error behaviour for season posters and headings using
+ * delegation, so it survives every re-render of the seasons list.
+ */
+function bindDelegatedSeasonHandlers(container) {
+    if (!container || container.dataset.f21Bound === '1') return;
+    container.dataset.f21Bound = '1';
+
+    container.addEventListener('click', (event) => {
+        const mark = event.target.closest('[data-mark-season-watched]');
+        if (mark && container.contains(mark)) {
+            const season = Number(mark.getAttribute('data-mark-season-watched'));
+            if (Number.isInteger(season)) {
+                event.preventDefault();
+                if (window.tvSeasonsManager) window.tvSeasonsManager.markSeasonWatched(season);
+            }
+            return;
+        }
+        const unmark = event.target.closest('[data-unmark-season-watched]');
+        if (unmark && container.contains(unmark)) {
+            const season = Number(unmark.getAttribute('data-unmark-season-watched'));
+            if (Number.isInteger(season)) {
+                event.preventDefault();
+                if (window.tvSeasonsManager) window.tvSeasonsManager.unmarkSeasonWatched(season);
+            }
+            return;
+        }
+        const target = event.target.closest('[data-season-href]');
+        if (!target || !container.contains(target)) return;
+        const href = target.getAttribute('data-season-href');
+        if (!href) return;
+        event.preventDefault();
+        window.location.href = href;
+    });
+
+    container.addEventListener('error', (event) => {
+        const img = event.target;
+        if (!img || img.tagName !== 'IMG' || !img.matches('img[data-season-poster]')) return;
+        const fallback = img.getAttribute('data-season-fallback');
+        if (fallback && img.getAttribute('src') !== fallback) {
+            img.src = fallback;
+        }
+    }, true);   // error does not bubble
+}
 
 class TVSeasonsManager {
     constructor(showId, apiKey) {
@@ -30,15 +93,21 @@ class TVSeasonsManager {
         } catch (error) {
             const container = document.getElementById('seasons-list');
             if (container) {
+                // F21 — the error text is escaped, and the retry button is a
+                // static handler resolved by delegation (no inline attribute).
                 container.innerHTML = `
                     <div class="text-center py-8 text-red-400">
                         <p class="font-semibold mb-2">Error loading seasons</p>
-                        <p class="text-sm text-gray-400 mb-4">${error.message}</p>
-                        <button onclick="location.reload()" class="px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700">
+                        <p class="text-sm text-gray-400 mb-4">${escAttr(error && error.message)}</p>
+                        <button data-reload-page="1" class="px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700">
                             Retry
                         </button>
                     </div>
                 `;
+                const retryBtn = container.querySelector('[data-reload-page]');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => window.location.reload());
+                }
             }
         }
     }
@@ -109,11 +178,14 @@ class TVSeasonsManager {
 
     renderSeasonsList() {
         const container = document.getElementById('seasons-list');
-        
+
         if (!container) {
             return;
         }
-        
+
+        // F21 — delegated handlers for [data-season-href] / [data-season-poster].
+        bindDelegatedSeasonHandlers(container);
+
         if (this.seasons.length === 0) {
             container.innerHTML = '<p class="text-gray-400 text-center py-4">No seasons available</p>';
             return;
@@ -131,27 +203,41 @@ class TVSeasonsManager {
             const progress = denom > 0 ? (watchedCount / denom) * 100 : 0;
             const isCompleted = denom > 0 && watchedCount >= denom;
             const posterPath = season.poster_path || '';
-            const posterUrl = posterPath.startsWith('http')
-                ? posterPath
-                : `https://image.tmdb.org/t/p/w200${posterPath}`;
+
+            // F21 — the poster URL is scheme-validated, and the season name is
+            // escaped before entering the HTML string. `season.name` is TMDb
+            // data but was previously interpolated raw into both an attribute
+            // and a text node.
+            const D = window.FrameIQDOM;
+            const posterUrl = D
+                ? D.safeImageUrl(
+                    posterPath.startsWith('http')
+                        ? posterPath
+                        : 'https://image.tmdb.org/t/p/w200' + String(posterPath),
+                    'https://via.placeholder.com/200x300?text=No+Poster')
+                : (posterPath.startsWith('http')
+                    ? posterPath
+                    : `https://image.tmdb.org/t/p/w200${posterPath}`);
+            const seasonName = D ? D.text(season.name) : String(season.name || '');
 
             return `
                 <div class="bg-white/5 hover:bg-white/10 rounded-xl p-4 transition-all border border-white/10">
                     <div class="flex flex-col sm:flex-row gap-4">
                         <div class="flex-shrink-0">
-                            <img src="${posterUrl}"
+                            <img src="${D ? escAttr(posterUrl) : posterUrl}"
                                  alt="Season ${season.season_number}"
                                  class="w-24 h-36 rounded-lg object-cover cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                                 onclick="window.location.href='/tv/${this.showId}/season/${season.season_number}'"
-                                 onerror="this.src='https://via.placeholder.com/200x300?text=No+Poster'">
+                                 data-season-poster="1"
+                                 data-season-href="${D ? escAttr(D.safeLinkUrl('/tv/' + this.showId + '/season/' + season.season_number)) : ''}"
+                                 data-season-fallback="https://via.placeholder.com/200x300?text=No+Poster">
                         </div>
                         
                         <div class="flex-1 min-w-0">
                             <div class="flex justify-between items-start gap-2 mb-2">
                                 <div>
                                     <h4 class="text-xl font-bold text-white hover:text-indigo-400 cursor-pointer"
-                                        onclick="window.location.href='/tv/${this.showId}/season/${season.season_number}'">
-                                        ${season.name}
+                                        data-season-href="${D ? escAttr(D.safeLinkUrl('/tv/' + this.showId + '/season/' + season.season_number)) : ''}">
+                                        ${escAttr(seasonName)}
                                     </h4>
                                     <p class="text-sm text-gray-400">
                                         ${totalEpisodes} Episode${totalEpisodes !== 1 ? 's' : ''} 
@@ -188,7 +274,7 @@ class TVSeasonsManager {
                             </div>
                             
                             <div class="flex flex-wrap gap-2">
-                                <button onclick="window.location.href='/tv/${this.showId}/season/${season.season_number}'"
+                                <button data-season-href="${D ? escAttr(D.safeLinkUrl('/tv/' + this.showId + '/season/' + season.season_number)) : ''}"
                                         class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
                                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                         <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/>
@@ -197,7 +283,7 @@ class TVSeasonsManager {
                                 </button>
                                 
                                 ${!isCompleted ? `
-                                    <button onclick="tvSeasonsManager.markSeasonWatched(${season.season_number})"
+                                    <button data-mark-season-watched="${D ? (D.safeId(season.season_number) ?? '') : season.season_number}"
                                             class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -205,7 +291,7 @@ class TVSeasonsManager {
                                         Mark Season Watched
                                     </button>
                                 ` : `
-                                    <button onclick="tvSeasonsManager.unmarkSeasonWatched(${season.season_number})"
+                                    <button data-unmark-season-watched="${D ? (D.safeId(season.season_number) ?? '') : season.season_number}"
                                             class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>

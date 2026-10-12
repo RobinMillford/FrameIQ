@@ -1,7 +1,25 @@
 /**
  * More Like This Manager
  * Displays similar movies/TV shows recommendations
+ *
+ * F21 — recommendation titles and poster paths come from TMDb, a third party.
+ * They are escaped before entering an HTML string and every href/src is
+ * scheme-validated by static/js/dom-safety.js, independently of the escaping.
  */
+
+/**
+ * Escape a value for an HTML text or quoted-attribute context.
+ * Unlike the `textContent -> innerHTML` variant used elsewhere, this DOES
+ * encode quotes, which is what an attribute context requires.
+ */
+function escAttr(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 class MoreLikeThisManager {
     constructor(mediaId, mediaType) {
@@ -53,17 +71,34 @@ class MoreLikeThisManager {
                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
         `;
 
+        const D = window.FrameIQDOM;
+
         this.recommendations.forEach(item => {
-            const url = `/${this.mediaType}/${item.id}`;
             const rating = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
             const year = item.release_date ? new Date(item.release_date).getFullYear() : '';
-            
+
+            // F21 — the href is rebuilt from a validated type + id rather than
+            // interpolating whatever `item.id` happens to be.
+            const itemId = D ? D.safeId(item.id) : null;
+            const mediaType = ['movie', 'tv'].includes(this.mediaType) ? this.mediaType : null;
+            const url = (itemId !== null && mediaType && D)
+                ? D.safeLinkUrl(`/${mediaType}/${itemId}`)
+                : '';
+            const title = escAttr(item.title);
+
+            // F21 — poster path validated as a URL, then attribute-escaped.
+            // Fails closed: without the helper the poster is omitted entirely
+            // rather than rendered from an unvalidated attribute.
+            const posterSrc = (D && typeof D.safeImageUrl === 'function')
+                ? escAttr(D.safeImageUrl(String(item.poster_path || ''), ''))
+                : '';
+
             html += `
                 <a href="${url}" class="group block">
                     <div class="relative overflow-hidden rounded-lg shadow-lg transition-transform duration-300 group-hover:scale-105 group-hover:shadow-2xl">
-                        ${item.poster_path ? `
-                            <img src="${item.poster_path}" 
-                                 alt="${item.title}"
+                        ${posterSrc ? `
+                            <img src="${posterSrc}"
+                                 alt="${title}"
                                  class="w-full h-auto aspect-[2/3] object-cover">
                         ` : `
                             <div class="w-full aspect-[2/3] bg-gray-700 flex items-center justify-center">
@@ -89,7 +124,7 @@ class MoreLikeThisManager {
                     </div>
                     
                     <h4 class="mt-2 text-sm font-medium text-white line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                        ${item.title}
+                        ${title}
                     </h4>
                 </a>
             `;

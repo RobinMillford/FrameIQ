@@ -337,6 +337,13 @@
         </div>
     </div>
 
+    {#
+        F21 — user_profile.html does not extend base.html, so it loads the
+        shared DOM-safety helpers itself. Must precede the inline script below,
+        whose followers/following renderer places user-supplied usernames and
+        avatar URLs into the DOM.
+    #}
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/follow-button.js') }}"></script>
     <script src="{{ url_for('static', filename='js/stats-dashboard.js') }}"></script>
     <script>
@@ -441,8 +448,15 @@
         }
 
         async function loadSocialList(url) {
+            const D = window.FrameIQDOM;
             const container = document.getElementById('modal-content');
-            container.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-3xl text-[var(--accent)]"></i></div>';
+            const spinner = document.createElement('div');
+            spinner.className = 'flex justify-center py-8';
+            const sp = document.createElement('i');
+            sp.className = 'fas fa-spinner fa-spin text-3xl text-[var(--accent)]';
+            spinner.appendChild(sp);
+            D.clear(container);
+            container.appendChild(spinner);
 
             try {
                 const response = await fetch(url);
@@ -450,49 +464,93 @@
 
                 const list = data.followers || data.following || [];
 
+                D.clear(container);
+
                 if (list.length === 0) {
-                    container.innerHTML = `<div class="text-center py-8 text-[var(--text-mid)]">No users found.</div>`;
+                    const empty = D.el('div', {
+                        class: 'text-center py-8 text-[var(--text-mid)]',
+                        text: 'No users found.',
+                    });
+                    container.appendChild(empty);
                     return;
                 }
 
-                let html = '<div class="space-y-4">';
+                // F21 — this renderer is currently REACHABLE only because the
+                // enclosing <script> block had a syntax error that is fixed in
+                // the same change. Usernames, avatar URLs and counts are all
+                // user-controlled, so they are placed with textContent and the
+                // avatar passes the URL validator. No inline handlers are built.
+                const wrapper = D.el('div', { class: 'space-y-4' });
+
                 list.forEach(item => {
-                    let profilePic = item.profile_picture;
-                    if (profilePic && !profilePic.startsWith('http')) {
-                        profilePic = '/static/' + profilePic;
-                    } else if (!profilePic) {
-                        profilePic = `/static/images/default_avatar.svg
+                    const username = D.text(item.username);
+                    const userId = D.safeId(item.id);
+
+                    const row = D.el('div', {
+                        class: 'flex items-center justify-between p-2 rounded hover:bg-gray-700 transition-colors',
+                    });
+
+                    const link = D.el('a', { class: 'flex items-center gap-3 group' });
+                    if (userId !== null) {
+                        const href = D.safeLinkUrl(`/user/${userId}`);
+                        if (href) link.setAttribute('href', href);
                     }
-                    html += `
-                        <div class="flex items-center justify-between p-2 rounded hover:bg-gray-700 transition-colors">
-                            <a href="/user/${item.id}" class="flex items-center gap-3 group">
-                                <img src="${profilePic}" class="w-12 h-12 rounded-full border-2 border-[var(--accent)] object-cover" onerror="this.src='/static/images/default_avatar.svg'">
-                                <div>
-                                    <div class="font-bold group-hover:text-[var(--accent)] transition-colors">${item.username}</div>
-                                    <div class="text-xs text-[var(--text-mid)]">${item.total_reviews} reviews • ${item.followers_count} followers</div>
-                                </div>
-                            </a>
-                            ${data.current_user_id != item.id ? `
-                                <button class="bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white text-xs px-3 py-1.5 rounded transition-all"
-                                        data-follow-button
-                                        data-user-id="${item.id}"
-                                        data-following="${item.is_following}"
-                                        data-authenticated="true">
-                                    ${item.is_following ? '<i class="fas fa-user-check mr-1"></i> Following' : '<i class="fas fa-user-plus mr-1"></i> Follow'}
-                                </button>
-                            ` : ''}
-                        </div>
-                    `;
+
+                    const avatar = D.el('img', {
+                        src: D.safeImageUrl(item.profile_picture,
+                            '/static/images/default_avatar.svg', '/static/'),
+                        alt: username,
+                        class: 'w-12 h-12 rounded-full border-2 border-[var(--accent)] object-cover',
+                    });
+                    avatar.addEventListener('error', function () {
+                        this.src = '/static/images/default_avatar.svg';
+                    });
+                    link.appendChild(avatar);
+
+                    const meta = D.el('div');
+                    meta.appendChild(D.el('div', {
+                        class: 'font-bold group-hover:text-[var(--accent)] transition-colors',
+                        text: username,
+                    }));
+                    meta.appendChild(D.el('div', {
+                        class: 'text-xs text-[var(--text-mid)]',
+                        text: (D.safeId(item.total_reviews) ?? 0) + ' reviews \u2022 ' +
+                              (D.safeId(item.followers_count) ?? 0) + ' followers',
+                    }));
+                    link.appendChild(meta);
+                    row.appendChild(link);
+
+                    if (userId !== null && data.current_user_id != userId) {
+                        const btn = D.el('button', {
+                            class: 'bg-[var(--accent)] hover:bg-[var(--accent-hi)] text-white ' +
+                                   'text-xs px-3 py-1.5 rounded transition-all',
+                            dataset: {
+                                followButton: '1',
+                                userId: String(userId),
+                                following: item.is_following ? 'true' : 'false',
+                                authenticated: 'true',
+                            },
+                        });
+                        btn.appendChild(D.icon(item.is_following ? 'user-check' : 'user-plus', 'mr-1'));
+                        btn.appendChild(document.createTextNode(item.is_following ? ' Following' : ' Follow'));
+                        row.appendChild(btn);
+                    }
+
+                    wrapper.appendChild(row);
                 });
-                html += '</div>';
-                container.innerHTML = html;
+
+                container.appendChild(wrapper);
 
                 // Initialize new follow buttons
                 const newButtons = container.querySelectorAll('[data-follow-button]');
                 newButtons.forEach(btn => new FollowButton(parseInt(btn.dataset.userId), btn));
 
             } catch (error) {
-                container.innerHTML = `<div class="text-center py-8 text-red-400">Failed to load list.</div>`;
+                D.clear(container);
+                container.appendChild(D.el('div', {
+                    class: 'text-center py-8 text-red-400',
+                    text: 'Failed to load list.',
+                }));
             }
         }
 

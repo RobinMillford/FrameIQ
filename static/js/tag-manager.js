@@ -1,6 +1,31 @@
 // File: static/js/tag-manager.js
 // Letterboxd-style tag management for FrameIQ
 
+/**
+ * Build the static "remove tag" icon with DOM APIs.
+ *
+ * F21: the previous implementation inlined this SVG through an innerHTML
+ * string. The markup is ours and contains no dynamic data, but building it
+ * with createElementNS means this file contains no innerHTML assignment at
+ * all — a property that is trivial to audit and cannot regress.
+ */
+function buildTrashIcon() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'w-3 h-3');
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('fill-rule', 'evenodd');
+    path.setAttribute('clip-rule', 'evenodd');
+    path.setAttribute('d',
+        'M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10' +
+        'l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414' +
+        'L8.586 10 4.293 5.707a1 1 0 010-1.414z');
+    svg.appendChild(path);
+    return svg;
+}
+
 class TagManager {
     constructor(mediaId, mediaType) {
         this.mediaId = mediaId;
@@ -118,25 +143,57 @@ class TagManager {
         }
     }
 
+    // F21 — helpers come from static/js/dom-safety.js, which must be loaded
+    // before this file. They place untrusted values via textContent and
+    // validate every URL, so no value here is ever parsed as markup.
+    dom() {
+        return window.FrameIQDOM;
+    }
+
+    createTagPill(tag) {
+        const D = this.dom();
+        const pill = D.el('span', {
+            class: 'tag-pill inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 ' +
+                   'text-white px-3 py-1 rounded-full text-sm transition-colors',
+        });
+        pill.appendChild(D.el('span', { text: tag.name }));
+
+        const tagId = D.safeId(tag.id);
+        const removeBtn = D.el('button', {
+            class: 'hover:text-red-300 transition-colors',
+            type: 'button',
+            'aria-label': 'Remove tag',
+            title: 'Remove tag',
+        });
+        removeBtn.appendChild(buildTrashIcon());
+        // Behaviour via a closure over the validated id — never an inline
+        // handler string, so the tag name can never reach an expression.
+        if (tagId !== null) {
+            removeBtn.addEventListener('click', () => this.removeTag(tagId));
+        } else {
+            removeBtn.disabled = true;
+            removeBtn.setAttribute('aria-disabled', 'true');
+        }
+        pill.appendChild(removeBtn);
+        return pill;
+    }
+
     renderTags() {
+        const D = this.dom();
         const container = document.getElementById('tags-display');
         if (!container) return;
 
+        D.clear(container);
+
         if (this.tags.length === 0) {
-            container.innerHTML = '<p class="text-gray-400 text-sm">No tags yet. Add tags to organize your media!</p>';
+            container.appendChild(D.el('p', {
+                class: 'text-gray-400 text-sm',
+                text: 'No tags yet. Add tags to organize your media!',
+            }));
             return;
         }
 
-        container.innerHTML = this.tags.map(tag => `
-            <span class="tag-pill inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-full text-sm transition-colors">
-                <span>${this.escapeHtml(tag.name)}</span>
-                <button onclick="tagManager.removeTag(${tag.id})" class="hover:text-red-300 transition-colors">
-                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                    </svg>
-                </button>
-            </span>
-        `).join('');
+        this.tags.forEach(tag => container.appendChild(this.createTagPill(tag)));
     }
 
     setupEventListeners() {
@@ -181,40 +238,52 @@ class TagManager {
     }
 
     async showSuggestions(query) {
+        const D = this.dom();
         const suggestionsDiv = document.getElementById('tag-suggestions');
         if (!suggestionsDiv) return;
 
         // Combine user's tags and search results
-        const userMatches = this.userTags.filter(t => 
-            t.name.includes(query.toLowerCase()) && 
+        const userMatches = this.userTags.filter(t =>
+            t.name.includes(query.toLowerCase()) &&
             !this.tags.some(existingTag => existingTag.id === t.id)
         ).slice(0, 5);
 
         const searchResults = await this.searchTags(query);
-        const popularMatches = searchResults.filter(t => 
+        const popularMatches = searchResults.filter(t =>
             !userMatches.some(ut => ut.id === t.id) &&
             !this.tags.some(existingTag => existingTag.id === t.id)
         ).slice(0, 5);
 
         const allSuggestions = [...userMatches, ...popularMatches];
 
+        D.clear(suggestionsDiv);
+
         if (allSuggestions.length === 0) {
-            suggestionsDiv.innerHTML = `
-                <div class="p-2 text-gray-400 text-sm">
-                    No suggestions. Press Enter to create "${this.escapeHtml(query)}"
-                </div>
-            `;
+            // The query is typed text — rendered as text, never as markup.
+            const empty = D.el('div', { class: 'p-2 text-gray-400 text-sm' });
+            empty.appendChild(document.createTextNode('No suggestions. Press Enter to create "'));
+            empty.appendChild(D.el('span', { text: query }));
+            empty.appendChild(document.createTextNode('"'));
+            suggestionsDiv.appendChild(empty);
             suggestionsDiv.classList.remove('hidden');
             return;
         }
 
-        suggestionsDiv.innerHTML = allSuggestions.map(tag => `
-            <button onclick="tagManager.addTag('${this.escapeHtml(tag.name)}')" 
-                    class="w-full text-left px-3 py-2 hover:bg-gray-700 flex items-center justify-between">
-                <span>${this.escapeHtml(tag.name)}</span>
-                <span class="text-xs text-gray-400">${tag.usage_count || 0} uses</span>
-            </button>
-        `).join('');
+        allSuggestions.forEach(tag => {
+            const name = D.text(tag.name);
+            const btn = D.el('button', {
+                class: 'w-full text-left px-3 py-2 hover:bg-gray-700 flex items-center justify-between',
+                type: 'button',
+            });
+            btn.appendChild(D.el('span', { text: tag.name }));
+            btn.appendChild(D.el('span', {
+                class: 'text-xs text-gray-400',
+                text: (D.safeId(tag.usage_count) ?? 0) + ' uses',
+            }));
+            // Closure over the tag object: the name never becomes code.
+            btn.addEventListener('click', () => this.addTag(name));
+            suggestionsDiv.appendChild(btn);
+        });
 
         suggestionsDiv.classList.remove('hidden');
     }
@@ -242,12 +311,6 @@ class TagManager {
             successDiv.classList.remove('hidden');
             setTimeout(() => successDiv.classList.add('hidden'), 2000);
         }
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 }
 
