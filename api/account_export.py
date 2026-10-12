@@ -137,6 +137,35 @@ def profile_section(user):
     }
 
 
+def notification_preferences_section(user_id):
+    """The user's EFFECTIVE notification preferences (Feature F15).
+
+    Exported as a flat top-level settings object rather than a CSV domain
+    because a preference is a single per-user record, not a list of events —
+    the same reason `account` and `profile` have no CSV file.
+
+    The values are the EFFECTIVE ones. F12 deliberately keeps
+    ``UserNotificationPreference`` sparse: a user who never opened the
+    settings page has no row and receives the documented defaults. Exporting
+    only stored rows would therefore misrepresent most users as having no
+    preferences at all, so the export goes through
+    ``api.notification_preferences.get_preferences()`` — the exact reader the
+    delivery path uses. Defaults are never invented here.
+
+    Keys come from ``api.notification_preferences.CATEGORIES``, so adding a
+    supported category in F12 extends this export automatically instead of
+    drifting from the delivery contract. The read never creates a row.
+
+    These are settings, not content: no internal ids, no other user's values,
+    and the two categories stay independent (no master switch is implied).
+    """
+    from api import notification_preferences as np
+
+    effective = np.get_preferences(user_id)
+    return {category: bool(effective.get(category, np.DEFAULTS[category]))
+            for category in np.CATEGORIES}
+
+
 def movie_history_rows(user_id):
     """Canonical movie watch history — ``DiaryEntry`` where type='movie'.
 
@@ -569,13 +598,47 @@ def tag_rows(user_id):
 
 
 def smart_list_rows(user_id):
-    """Saved Smart List *definitions*. Result rows are never stored or sent."""
+    """Saved Smart List *definitions*. Result rows are never stored or sent.
+
+    Feature F15: an F11 discovery preset and an ordinary Smart List are both
+    stored in this one table, but they are NOT the same kind of thing. A preset
+    holds validated TMDb /discover parameters; an ordinary list holds a local
+    query over the owner's watchlist/diary/tracking and is evaluated by
+    ``api.smart_lists.evaluate_smart_list``.
+
+    A preset's ``scope`` is a non-nullable compatibility placeholder (``all``)
+    that exists only to satisfy the column — it is never interpreted, because
+    every reader calls ``is_discovery_preset()`` first. Exporting that raw
+    ``scope`` without saying so made a saved discovery search look exactly like
+    an ordinary "Everything" list, which is misleading.
+
+    Three ADDITIVE fields fix that without breaking any existing consumer:
+
+    * ``list_kind``      — ``discovery_preset`` | ``smart_list``. The
+      discriminator, taken from the same helper the runtime uses.
+    * ``discovery_filters`` — the preset's validated discovery config as a real
+      JSON object (null for ordinary lists). The existing ``filters_json`` stays
+      byte-identical, so a preset can be reconstructed exactly.
+    * ``scope_is_compat_placeholder`` — true when ``scope`` is inert, so a
+      consumer that reads ``scope`` first is told plainly that it does not
+      describe the preset's behaviour.
+
+    ``scope`` and ``filters_json`` are deliberately left untouched for backward
+    compatibility.
+    """
+    from api.smart_lists import is_discovery_preset
+
     rows = db.session.execute(
         select(SmartList).where(SmartList.user_id == user_id)
         .order_by(SmartList.created_at, SmartList.id)
     ).scalars().all()
     out = []
     for row in rows:
+        preset = is_discovery_preset(row)
+        # The preset's validated /discover config — the nested 'discovery'
+        # document, NOT the whole {kind, discovery} wrapper, which is already
+        # available verbatim through filters_json.
+        config = row.filters.get('discovery') if preset else None
         out.append({
             'smart_list_id': row.id,
             'name': row.name,
@@ -586,6 +649,10 @@ def smart_list_rows(user_id):
             'is_public': bool(row.is_public),
             'created_at': _iso(row.created_at),
             'updated_at': _iso(row.updated_at),
+            # F15 — added above; existing keys unchanged.
+            'list_kind': 'discovery_preset' if preset else 'smart_list',
+            'discovery_filters': config,
+            'scope_is_compat_placeholder': bool(preset),
         })
     return out
 
@@ -955,9 +1022,13 @@ CSV_SCHEMAS = [
     _schema('tags',
             ['user_media_tag_id', 'tag_id', 'tag', 'tmdb_id', 'media_type',
              'created_at']),
+    # F15: list_kind / discovery_filters / scope_is_compat_placeholder are
+    # appended after the original columns, which keep their exact names and
+    # order, so an existing CSV consumer still parses the file unchanged.
     _schema('smart_lists',
             ['smart_list_id', 'name', 'description', 'scope', 'filters_json',
-             'sort', 'is_public', 'created_at', 'updated_at']),
+             'sort', 'is_public', 'created_at', 'updated_at',
+             'list_kind', 'discovery_filters', 'scope_is_compat_placeholder']),
     _schema('streaming_services',
             ['service_id', 'provider_id', 'region', 'created_at']),
     _schema('recommendation_feedback',
@@ -1102,6 +1173,8 @@ def build_export(user, generated_at=None):
         'generated_at': _iso(generated_at or datetime.utcnow()),
         'account': account_section(user),
         'profile': profile_section(user),
+        # F15: effective notification preferences (canonical user settings).
+        'notification_preferences': notification_preferences_section(user.id),
         'watch_history': {
             'movies': domains['movies'],
             'tv': domains['tv_diary'],
@@ -1346,7 +1419,10 @@ Canonical (source of truth, import these):
   list_items.csv       UserListItem (your own lists only)
   reviews.csv          Review (your authored, non-deleted)
   tags.csv             UserMediaTag (your own applications)
-  smart_lists.csv      SmartList definitions (results are recomputed)
+  smart_lists.csv      SmartList definitions (results are recomputed).
+                       list_kind marks F11 discovery presets, which store
+                       TMDb /discover parameters rather than a local query;
+                       their `scope` is an inert compatibility placeholder.
   streaming_services.csv, recommendation_feedback.csv
 
 Derived (recomputed; do NOT import as source):
@@ -1360,6 +1436,10 @@ Derived (recomputed; do NOT import as source):
   list_analytics       (JSON "derived" section only)
   taste_profile        (JSON "derived" section only) — recomputed from
                        recommendation_feedback.csv
+
+Settings (JSON only, one record per user):
+  notification_preferences   effective F12 preferences, including the
+                             documented defaults when the user never saved
 
 A field absent here was either server-generated display text, another user's
 data, or a credential. See the export-format documentation for the full
