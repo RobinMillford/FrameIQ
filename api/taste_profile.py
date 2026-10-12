@@ -58,6 +58,7 @@ Dimension-specific notes (verified against the current data model):
 """
 import logging
 import math
+import re
 from collections import defaultdict
 from datetime import date, datetime
 
@@ -1242,6 +1243,11 @@ DNA_TOP_GENRES = 8
 DNA_AVOID_GENRES = 5
 DNA_TOP_DIRECTORS = 5
 DNA_TOP_ERAS = 5
+DNA_TOP_ACTORS = 5  # F14 — same bound as directors, the closest analogue
+
+# F14 — the ONLY shape an actor link may take. Anything else is discarded, so
+# a resolver bug cannot smuggle an absolute or javascript: href into a page.
+_ACTOR_URL_RE = re.compile(r'^/actor/[0-9]+$')
 
 # Canonical thresholds reused for the confidence level (spec §6): For You's
 # audited personalized gate (titles >= 5, confidence >= 0.4) is the
@@ -1263,6 +1269,56 @@ def _strength_from_weight(weight):
     return 'low'
 
 
+# ── F14: canonical actor identity resolution ────────────────────────────────
+# The persisted actor dimension is keyed by Person.name (display name), because
+# _actor_affinity() aggregates the SAME signed evidence the director path uses
+# and deliberately keeps its own format. That format carries no TMDb id, and
+# this is a real, unreported limitation of F9 rather than something F14 can
+# invent away:
+#
+#   * two persisted Person rows may share a display name, so name -> id is
+#     ambiguous and a naive lookup would link the WRONG person;
+#   * a rename leaves the persisted affinity key stale until the next
+#     recompute, so a name lookup would MISS a person we do have.
+#
+# So resolution is strictly best-effort and UNAMBIGUOUS-ONLY: a name is linked
+# only when exactly one persisted Person carries it. Zero matches (renamed /
+# not yet enriched) or >1 matches (name collision) yield NO link, and the UI
+# renders an unlinked chip rather than a fake or inert link.
+#
+# One batched query for the whole set (name IN (...)), never one per actor, and
+# no TMDb request — the /actor/<tmdb_person_id> page fetches its own details.
+
+def resolve_actor_links(names):
+    """Map unambiguous display names to existing /actor/ URLs.
+
+    Returns ``{name: '/actor/<tmdb_person_id>'}`` for names that resolve to
+    EXACTLY ONE persisted Person. Ambiguous or unknown names are omitted, so
+    the caller can never render a link that points at the wrong person.
+    Cost: one batched query, or zero when there is nothing to resolve.
+    """
+    wanted = sorted({str(n) for n in (names or []) if n})
+    if not wanted:
+        return {}
+
+    from models.cast import Person
+    rows = (Person.query
+            .filter(Person.name.in_(wanted))
+            .with_entities(Person.name, Person.tmdb_person_id)
+            .all())
+
+    # name -> {ids}; a name with more than one distinct id stays unresolved.
+    candidates = defaultdict(set)
+    for name, tmdb_person_id in rows:
+        if tmdb_person_id is None:
+            continue
+        candidates[str(name)].add(int(tmdb_person_id))
+
+    return {name: '/actor/%d' % next(iter(ids))
+            for name, ids in candidates.items()
+            if name in wanted and len(ids) == 1}
+
+
 def _strength_from_share(share):
     """Map a 0..1 media-type share to a bounded strength label (pure)."""
     if share >= 0.65:
@@ -1272,13 +1328,74 @@ def _strength_from_share(share):
     return 'low'
 
 
-def taste_dna(profile):
+def _actors_status(entries, titles, affinity):
+    """Distinguish the actor section's three honest states (pure).
+
+    Returns ``'ready'`` | ``'no_qualifying_actors'`` | ``'no_cast'`` | None.
+
+    * ``ready``                — actors were computed and at least one qualifies.
+    * ``no_qualifying_actors`` — the dimension RAN and produced evidence, but
+      nothing scored positive (e.g. only negative cast evidence). The user's
+      cast metadata EXISTS; they simply have no clear actor signal yet. This is
+      a calculated result and must not be reported as missing metadata.
+    * ``no_cast``              — the user has watched titles yet the dimension
+      holds no evidence at all, i.e. cast metadata is still unenriched or too
+      limited. Says nothing about the user's preferences.
+
+    Neither empty state ever means "you have no actor preferences".
+    """
+    if entries:
+        return 'ready'
+    if not titles:
+        return None
+    return 'no_qualifying_actors' if affinity else 'no_cast'
+
+
+def _actor_entries(actors, actor_links):
+    """Format the actor dimension for presentation (pure, bounded).
+
+    Mirrors the director formatting exactly — deterministic order
+    (weight desc, then name), positive evidence only, top-N. ``actor_links``
+    supplies ready-made '/actor/<id>' URLs; a name with no URL is still shown,
+    just without a link, because an ambiguous or unresolved identity must never
+    become a link that points at the wrong person.
+    """
+    link_for = {}
+    for name, url in (actor_links or {}).items():
+        # Only a well-formed SAME-SITE actor path is usable. Anything else
+        # (absolute URL, javascript:, malformed path, non-string) is dropped so
+        # a resolver bug can never smuggle an href into the profile page.
+        if isinstance(url, str) and _ACTOR_URL_RE.match(url):
+            link_for[str(name)] = url
+
+    entries = []
+    for name, weight in sorted((actors or {}).items(),
+                               key=lambda kv: (-kv[1], kv[0])):
+        if weight <= 0:
+            continue
+        entry = {'name': name, 'strength': _strength_from_weight(weight)}
+        if name in link_for:
+            # A URL, not a raw id: the presentation contract exposes no ids.
+            entry['url'] = link_for[name]
+        entries.append(entry)
+        if len(entries) >= DNA_TOP_ACTORS:
+            break
+    return entries
+
+
+def taste_dna(profile, actor_links=None):
     """Presentation model for the authenticated user's own TasteProfile.
 
     Consumes a TasteProfile (model or to_dict()) — never recomputes, never
     touches RecommendationFeedback, never calls TMDb. Returns a compact
     JSON-safe dict with human-readable labels; no raw floats, no negative
-    numbers, no IDs, no profile_version.
+    numbers, no profile_version.
+
+    ``actor_links`` (F14, optional) is the pre-resolved ``{name: '/actor/<id>'}``
+    map from :func:`resolve_actor_links`. It is passed IN rather than looked up
+    here so this formatter stays PURE — the CineBot path calls it with no map
+    and behaves exactly as before. Names absent from the map are rendered
+    WITHOUT a link rather than with a wrong one.
 
     Shape (sections with no evidence are simply absent):
         {
@@ -1326,6 +1443,13 @@ def taste_dna(profile):
         if w > 0
     ][:DNA_TOP_DIRECTORS]
 
+    # F14: the actor dimension, presented exactly like directors (strength
+    # labels, positive evidence only, same top-N bound). Same signed evidence
+    # and same normalization as _actor_affinity(); this is presentation only and
+    # never re-derives or re-weights anything.
+    raw_actors = _as_float_map(data.get('actor_affinity') or {})
+    top_actors = _actor_entries(raw_actors, actor_links)
+
     decades = _as_float_map(data.get('decade_weights') or {})
     eras = [
         {'name': name, 'strength': _strength_from_weight(w)}
@@ -1367,9 +1491,19 @@ def taste_dna(profile):
     for key, value in (
             ('avoid_genres', avoid_genres),
             ('top_directors', top_directors),
+            ('top_actors', top_actors),
             ('eras', eras),
             ('media_preference', media_preference),
             ('runtime', runtime)):
         if value:
             response[key] = value
+
+    # F14: honest state for the actor section, so the UI never has to guess
+    # why the list is empty. See _actors_status() for the three meanings; the
+    # short version is that an empty list is either missing cast metadata
+    # ('no_cast') or a real calculated result with nothing positive yet
+    # ('no_qualifying_actors'), and those need DIFFERENT words.
+    status = _actors_status(top_actors, titles, raw_actors)
+    if status:
+        response['actors_status'] = status
     return response

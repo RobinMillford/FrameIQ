@@ -299,6 +299,17 @@
                             <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Directors you watch</dt>
                             <dd><ul id="taste-dna-directors" class="flex flex-wrap gap-2"></ul></dd>
                         </div>
+                        {# F14 — actor dimension. Hidden until the API supplies
+                           real entries, so old profiles with no actor data
+                           render exactly as before. #}
+                        <div id="taste-dna-actors-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Actors in your taste</dt>
+                            <dd><ul id="taste-dna-actors" class="flex flex-wrap gap-2"></ul></dd>
+                        </div>
+                        <div id="taste-dna-actors-empty-block" class="hidden">
+                            <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Actors in your taste</dt>
+                            <dd><p id="taste-dna-actors-empty" class="text-sm text-slate"></p></dd>
+                        </div>
                         <div id="taste-dna-eras-block" class="hidden">
                             <dt class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">Eras you watch</dt>
                             <dd><ul id="taste-dna-eras" class="flex flex-wrap gap-2"></ul></dd>
