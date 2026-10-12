@@ -6,8 +6,19 @@ verify the schema, following the project's manual-migration convention.
 
 Idempotent — safe to re-run. Run: python migrates/migrate_smart_lists.py
 """
-from app import app
-from models import db
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+import os as _f22_os  # F22: make `utils` importable regardless of cwd  # noqa: E402
+import sys as _f22_sys  # noqa: E402
+_f22_sys.path.insert(0, _f22_os.path.dirname(
+    _f22_os.path.dirname(_f22_os.path.abspath(__file__))))
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+from app import app  # noqa: E402
+from models import db  # noqa: E402
 
 
 def migrate():

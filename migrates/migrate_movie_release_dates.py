@@ -14,6 +14,13 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
 from app import app  # noqa: E402
 from models import db  # noqa: E402
 from sqlalchemy import inspect, text  # noqa: E402

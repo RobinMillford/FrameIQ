@@ -208,7 +208,15 @@ jobs:
 
             # 2. Legacy convergence: additive only, idempotent, bounded to an
             #    explicit 11-table allow-list, fail-closed on anything else.
-            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
+            #
+            #    `--allow-production` is required for the same reason as every
+            #    runner line above: the script authorizes its target through
+            #    utils.db_target before it imports `app`, and refuses a remote
+            #    database without that explicit flag. It is passed to the
+            #    script, not exported as an environment variable, so this step
+            #    cannot widen its own authority.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python migrates/migrate_schema_convergence.py --allow-production
 
             # 3. Prove that the ONLY schema drift is objects a registered,
             #    pending, non-destructive migration declares it owns.

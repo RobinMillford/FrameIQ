@@ -55,18 +55,57 @@ Safety properties
   ``DuplicateTable`` — into a legible error before anything is attempted.
 - **Self-verifying**: prints every table it created and re-inspects afterwards.
 - Skips the read-only startup guard via ``SKIP_SCHEMA_GUARD=1``.
+- **Target-authorized before anything else happens.** ``authorize_legacy_migration``
+  classifies ``DATABASE_URL`` through :mod:`utils.db_target` and refuses a
+  remote database unless an operator passed ``--allow-production``. It runs as
+  the first executable statement — before ``SKIP_SCHEMA_GUARD`` is set, before
+  ``app`` is imported, and therefore before any engine, connection or DDL.
+  See "Why the authorization comes first" below.
 
-Run (one-off container, before the web process is recreated):
+Why the authorization comes first
+---------------------------------
+``import app`` is not inert: :func:`app.create_app` builds the engine and runs
+the schema parity guard. A target check placed anywhere after that import is
+already too late — the process is connected. So the check must precede it, and
+placing it here (rather than inside :func:`migrate`) is deliberate: :func:`migrate`
+is only reached through ``__main__``, whereas a module-level call also covers
+any import of this module.
 
-    SKIP_SCHEMA_GUARD=1 python migrates/migrate_schema_convergence.py
+Authorization failures raise :class:`utils.db_target.UnsafeTargetError` and
+terminate the command. They are not caught and downgraded to a warning — a
+refusal that could be ignored would not be a refusal.
+
+Run (one-off container, before the web process is recreated). A remote target
+requires the explicit ``--allow-production`` flag, exactly as the approved
+runner requires it:
+
+    SKIP_SCHEMA_GUARD=1 python migrates/migrate_schema_convergence.py \
+        --allow-production
+
+Local databases need no flag.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# The guard would refuse to import against exactly the database this script
-# exists to repair, so it is disabled BEFORE `app` is imported.
+# F22.1: authorize the database target BEFORE any application import, engine
+# construction, connection or DDL/DML. `import app` below builds an engine and
+# runs the startup schema guard, so a check placed after it would already be
+# too late — it would run on a database the operator never approved.
+#
+# This is deliberately the first executable statement, ahead of the
+# SKIP_SCHEMA_GUARD setdefault: a refusal should not even mutate the
+# environment on its way out.
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+# The startup schema guard would refuse to import against exactly the database
+# this script exists to repair, so it is disabled BEFORE `app` is imported.
+# Note this is a DIFFERENT guard from the target authorization above: this one
+# asks "is the declared schema already present?", the other asks "am I allowed
+# to write here at all?".
 os.environ.setdefault('SKIP_SCHEMA_GUARD', '1')
 
 from app import app  # noqa: E402

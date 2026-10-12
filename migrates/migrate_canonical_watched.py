@@ -31,8 +31,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
 
-from app import app
-from models import db, DiaryEntry, user_viewed
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+from app import app  # noqa: E402
+from models import db, DiaryEntry, user_viewed  # noqa: E402
 
 
 def migrate_canonical_watched():

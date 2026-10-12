@@ -6,9 +6,20 @@ This script specifically adds the 'priority' column if it doesn't exist.
 Run this script: python migrate_priority_column.py
 """
 
-from app import app
-from models import db
-from sqlalchemy import text
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+import os as _f22_os  # F22: make `utils` importable regardless of cwd  # noqa: E402
+import sys as _f22_sys  # noqa: E402
+_f22_sys.path.insert(0, _f22_os.path.dirname(
+    _f22_os.path.dirname(_f22_os.path.abspath(__file__))))
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+from app import app  # noqa: E402
+from models import db  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 def migrate_priority_column():
     """Add priority column to user_watchlist table"""
@@ -48,7 +59,7 @@ def migrate_priority_column():
                 
         except Exception as e:
             print(f"❌ Error during migration: {e}")
-            import traceback
+            import traceback  # noqa: E402
             traceback.print_exc()
 
 if __name__ == '__main__':
