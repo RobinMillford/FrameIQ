@@ -215,6 +215,47 @@
      * empty state and guarantees a re-render cannot leave a stale block
      * behind. Both states reset to hidden first.
      */
+    /**
+     * Feature F19 — director chip.
+     *
+     * Visually identical to every other Taste DNA chip; the only difference is
+     * that a director which resolved to exactly one local record becomes a real
+     * link to their page. Without a url the chip stays plain text on purpose —
+     * never a fake or inert link.
+     */
+    function directorChip(item) {
+        var li = document.createElement('li');
+        li.className =
+            'inline-flex items-center gap-1 bg-black/40 rounded-full px-3 py-1';
+
+        if (item.url) {
+            var link = document.createElement('a');
+            link.href = item.url;
+            link.className =
+                'text-xs text-[var(--accent-hi)] hover:text-[var(--accent)] ' +
+                'hover:underline focus:outline-none ' +
+                'focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+                'focus-visible:ring-offset-2 focus-visible:rounded';
+            link.textContent = item.name;
+            link.setAttribute('data-taste-director-link', item.name);
+            li.appendChild(link);
+        } else {
+            var label = document.createElement('span');
+            label.className = 'text-xs text-[var(--text-hi)]';
+            label.textContent = item.name;
+            li.appendChild(label);
+        }
+
+        if (item.strength && item.strength !== 'high') {
+            var tag = document.createElement('span');
+            tag.className =
+                'font-slate text-[10px] uppercase text-[var(--text-low)]';
+            tag.textContent = item.strength;
+            li.appendChild(tag);
+        }
+        return li;
+    }
+
     function fillDirectors(items, status) {
         var block = el('taste-dna-directors-block');
         var empty = el('taste-dna-directors-empty-block');
@@ -226,7 +267,15 @@
         }
 
         if (items && items.length) {
-            fillList('taste-dna-directors', 'taste-dna-directors-block', items);
+            var list = el('taste-dna-directors');
+            if (list) {
+                items.forEach(function (item) {
+                    if (item && item.name) {
+                        list.appendChild(directorChip(item));
+                    }
+                });
+                show('taste-dna-directors-block');
+            }
             return;
         }
         var message = DIRECTOR_EMPTY_TEXT[status];

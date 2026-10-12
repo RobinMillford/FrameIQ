@@ -57,7 +57,13 @@ def api_taste_profile():
         # No user_id input, no network, no recompute — read-only as before.
         actor_links = taste_profile.resolve_actor_links(
             (profile.actor_affinity or {}).keys())
-        dna = taste_profile.taste_dna(profile, actor_links=actor_links)
+        # F19: one batched lookup for the whole director set (zero queries
+        # when there is no director affinity), each resolved to at most one
+        # LOCAL Director row so no ambiguous name can become a wrong link.
+        director_links = taste_profile.resolve_director_links(
+            (profile.director_affinity or {}).keys())
+        dna = taste_profile.taste_dna(
+            profile, actor_links=actor_links, director_links=director_links)
     except Exception:
         logger.error("Taste DNA presentation failed for user %s",
                      current_user.id, exc_info=True)

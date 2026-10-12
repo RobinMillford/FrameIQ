@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, abort, render_template, request
 from flask_login import current_user
 from api.tmdb_client import fetch_movie_details, fetch_tv_show_details, fetch_actor_details
 from api.user_view_state import tv_viewed_from_progress
 from datetime import datetime
 from models import UserListItem, DiaryEntry, Review, MediaItem
+from models.director import Director, MediaDirector
 from sqlalchemy.orm import joinedload
 from utils.request_guard import expensive_page_limit
 
@@ -183,6 +184,55 @@ def tv_detail(show_id):
     except Exception as e:
         print(f"Error fetching TV show details: {e}")
         return render_template('error.html', message="Could not fetch TV show details. Please try again later.")
+
+
+# ── Director detail (Feature F19) ────────────────────────────────────────────
+# Unlike /actor, this page is served ENTIRELY from local persisted rows and
+# makes NO TMDb call: the Director/MediaDirector relationships are already the
+# canonical local source, and a detail page that reached out to TMDb would add
+# an external dependency (and a failure mode) to a page that needs none.
+#
+# The URL takes the LOCAL Director primary key, not tmdb_person_id. That is
+# deliberate: nothing in the database exposes tmdb_person_id, the Taste DNA
+# payload resolves against the local row, and F14/F18 already established that
+# a name is only safe to link when it maps to exactly one local record.
+DIRECTOR_FILMOGRAPHY_PER_PAGE = 24
+
+
+@details.route('/director/<int:director_id>')
+@expensive_page_limit
+def director_detail(director_id):
+    """A director and their locally-linked film credits.
+
+    Public, like /actor and /movie: it renders public catalogue metadata only.
+    No viewer-specific state (watchlist, diary, ratings) is read, so a signed-in
+    visitor's private rows never touch this page.
+    """
+    director = Director.query.filter_by(id=director_id).first()
+    if director is None:
+        abort(404)
+
+    page = request.args.get('page', 1, type=int)
+    # ONE query for the director, ONE joined+paginated query for the films.
+    # MediaItem is the primary entity (joining from MediaDirector would leave
+    # the association rows as the result and the template would silently read
+    # the wrong columns). No per-movie accessor is touched -> no N+1.
+    pagination = (
+        MediaItem.query
+        .join(MediaDirector, MediaDirector.media_item_id == MediaItem.id)
+        .filter(
+            MediaDirector.director_id == director.id,
+            MediaItem.media_type == 'movie',
+        )
+        # Deterministic total order: newest first, then title, then id.
+        .order_by(MediaItem.release_date.desc().nullslast(),
+                  MediaItem.title, MediaItem.id)
+        .paginate(page=page, per_page=DIRECTOR_FILMOGRAPHY_PER_PAGE,
+                  error_out=False)
+    )
+
+    return render_template('director_detail.html', director=director,
+                           pagination=pagination)
 
 
 @details.route('/actor/<int:actor_id>')

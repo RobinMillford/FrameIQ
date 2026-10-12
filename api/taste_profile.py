@@ -1248,6 +1248,8 @@ DNA_TOP_ACTORS = 5  # F14 — same bound as directors, the closest analogue
 # F14 — the ONLY shape an actor link may take. Anything else is discarded, so
 # a resolver bug cannot smuggle an absolute or javascript: href into a page.
 _ACTOR_URL_RE = re.compile(r'^/actor/[0-9]+$')
+# F19 — the ONLY shape a director link may take.
+_DIRECTOR_URL_RE = re.compile(r'^/director/[0-9]+$')
 
 # Canonical thresholds reused for the confidence level (spec §6): For You's
 # audited personalized gate (titles >= 5, confidence >= 0.4) is the
@@ -1288,6 +1290,45 @@ def _strength_from_weight(weight):
 #
 # One batched query for the whole set (name IN (...)), never one per actor, and
 # no TMDb request — the /actor/<tmdb_person_id> page fetches its own details.
+
+def resolve_director_links(names):
+    """Map unambiguous display names to existing /director/<id> URLs.
+
+    Feature F19. The director-affinity map is keyed by display name, exactly
+    like the cast map was before F14, so linking needs the same guarded
+    resolution:
+
+    * a name is linked ONLY when exactly one persisted ``Director`` carries it
+      — two people sharing a display name must resolve to NEITHER, because
+      linking either would point at the wrong person;
+    * an unknown name (renamed, or never enriched) resolves to nothing and the
+      chip simply stays plain text;
+    * the target is the LOCAL Director primary key, so neither the TMDb person
+      id nor any database id ever has to appear in the Taste DNA payload.
+
+    Cost: one batched query for the whole set, or zero when there is nothing
+    to resolve. Never one query per displayed director.
+    """
+    wanted = sorted({str(n) for n in (names or []) if n})
+    if not wanted:
+        return {}
+
+    from models.director import Director
+    rows = (Director.query
+            .filter(Director.name.in_(wanted))
+            .with_entities(Director.name, Director.id)
+            .all())
+
+    candidates = defaultdict(set)
+    for name, director_id in rows:
+        if director_id is None:
+            continue
+        candidates[str(name)].add(int(director_id))
+
+    return {name: '/director/%d' % next(iter(ids))
+            for name, ids in candidates.items()
+            if name in wanted and len(ids) == 1}
+
 
 def resolve_actor_links(names):
     """Map unambiguous display names to existing /actor/ URLs.
@@ -1393,6 +1434,31 @@ def _actors_status(entries, titles, affinity):
     return 'no_qualifying_actors' if affinity else 'no_cast'
 
 
+def _director_entries(directors, director_links):
+    """Format the director dimension, optionally linked (pure, bounded).
+
+    Feature F19. Identical to the Phase 10 presentation except that a name
+    which resolved to exactly one local Director also carries a
+    ``/director/<id>`` URL. A URL, not an id: the presentation contract stays
+    id-free. An unresolved or ambiguous name is still shown, just without a
+    link — never with a wrong one.
+    """
+    link_for = {str(name): url for name, url in (director_links or {}).items()
+                if isinstance(url, str) and _DIRECTOR_URL_RE.match(url)}
+    entries = []
+    for name, weight in sorted(directors.items(),
+                               key=lambda kv: (-kv[1], kv[0])):
+        if weight <= 0:
+            continue
+        entry = {'name': name, 'strength': _strength_from_weight(weight)}
+        if name in link_for:
+            entry['url'] = link_for[name]
+        entries.append(entry)
+        if len(entries) >= DNA_TOP_DIRECTORS:
+            break
+    return entries
+
+
 def _actor_entries(actors, actor_links):
     """Format the actor dimension for presentation (pure, bounded).
 
@@ -1425,7 +1491,7 @@ def _actor_entries(actors, actor_links):
     return entries
 
 
-def taste_dna(profile, actor_links=None):
+def taste_dna(profile, actor_links=None, director_links=None):
     """Presentation model for the authenticated user's own TasteProfile.
 
     Consumes a TasteProfile (model or to_dict()) — never recomputes, never
@@ -1438,6 +1504,10 @@ def taste_dna(profile, actor_links=None):
     here so this formatter stays PURE — the CineBot path calls it with no map
     and behaves exactly as before. Names absent from the map are rendered
     WITHOUT a link rather than with a wrong one.
+
+    ``director_links`` (F19) is the same arrangement for directors, from
+    :func:`resolve_director_links`. Both are optional, so every existing caller
+    — including CineBot — is unaffected.
 
     Shape (sections with no evidence are simply absent):
         {
@@ -1479,12 +1549,7 @@ def taste_dna(profile, actor_links=None):
     ][:DNA_AVOID_GENRES]
 
     raw_directors = _as_float_map(data.get('director_affinity') or {})
-    top_directors = [
-        {'name': name, 'strength': _strength_from_weight(w)}
-        for name, w in sorted(raw_directors.items(),
-                              key=lambda kv: (-kv[1], kv[0]))
-        if w > 0
-    ][:DNA_TOP_DIRECTORS]
+    top_directors = _director_entries(raw_directors, director_links)
 
     # F14: the actor dimension, presented exactly like directors (strength
     # labels, positive evidence only, same top-N bound). Same signed evidence

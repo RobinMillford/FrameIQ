@@ -296,26 +296,40 @@ def test_api_does_no_network_call(auth_client, user, monkeypatch):
     assert _get(auth_client)['directors_status'] == 'ready'
 
 
-def test_api_adds_no_query_for_the_status(auth_client, user):
-    """F18 is presentation-only: it must add zero database statements."""
+def test_api_director_link_lookup_is_batched(auth_client, user):
+    """F19 (was: F18 adds no query) — now exactly ONE lookup, never per chip.
+
+    F18 needed no query at all. F19 resolves displayed names to local Director
+    rows, which legitimately costs one batched statement. The property that
+    matters is that the count does NOT scale with the number of directors.
+    """
     from sqlalchemy import event
 
+    from models import TasteProfile
+    from models.director import Director
     _profile(user[0], directors={'Villeneuve': 0.9})
+    for i in range(5):
+        d = Director(name='Dir %d' % i, tmdb_person_id=9_400_000 + i)
+        db.session.add(d)
+    db.session.commit()
+    directors = [d.name for d in Director.query.all()][:5]
+    p = TasteProfile.query.filter_by(user_id=user[0]).one()
+    p.director_affinity = {n: 0.9 - i * 0.1 for i, n in enumerate(directors)}
+    db.session.commit()
+
     statements = []
 
     def _record(_conn, _cur, stmt, *a, **k):
         statements.append(' '.join(stmt.split()).lower())
     event.listen(db.engine, 'before_cursor_execute', _record)
     try:
-        _get(auth_client)
+        body = _get(auth_client)
     finally:
         event.remove(db.engine, 'before_cursor_execute', _record)
-    # The status is derived from the profile row already loaded, so F18 adds
-    # no statement. Match the director TABLE, not the director_affinity_json
-    # column that taste_profile itself selects.
-    joined = [s for s in statements
-              if ' join director' in s or 'from director ' in s]
-    assert joined == [], joined
+    lookups = [s for s in statements if 'from director' in s]
+    # One statement for five displayed directors -> flat, not N+1.
+    assert len(lookups) == 1, lookups
+    assert len(body['top_directors']) == 5
 
 
 # ── UI ──────────────────────────────────────────────────────────────────────
@@ -356,8 +370,11 @@ def test_js_renders_directors_and_the_empty_state():
     js = _read('static/js/taste-dna.js')
     assert 'function fillDirectors' in js
     assert 'DIRECTOR_EMPTY_TEXT[status]' in js
-    # Chips still come from the existing, unchanged Phase 10 renderer.
-    assert "fillList('taste-dna-directors', 'taste-dna-directors-block'" in js
+    # F19: chips now go through directorChip(), which links when a url is
+    # present and renders plain text otherwise.
+    assert 'function directorChip' in js
+    assert 'directorChip(item)' in js
+    assert 'data-taste-director-link' in js
 
 
 def test_js_resets_both_director_blocks():
