@@ -147,6 +147,25 @@ def fetch_movie_details(movie_id, max_retries=3, retry_delay=2):
         elif person.get('job') in ['Screenplay', 'Writer']:
             movie['writer'] = person.get('name')
 
+    # Feature F16 — the normalized response previously kept only a director's
+    # DISPLAY NAME (and, because the loop above overwrites, only the last one),
+    # so scripts/enrich_directors.py could never recover a TMDb person id and
+    # models.Director.tmdb_person_id — unique and NOT NULL — could not be
+    # populated at all. This exposes the full, ordered director list with ids
+    # so the offline enrichment pipeline has the identity it needs.
+    #
+    # Purely additive: `director` above is left exactly as it was (every
+    # existing consumer and template is unaffected), and an entry is only
+    # emitted when it carries both an id and a non-empty name, so a malformed
+    # crew entry can never become a fabricated person.
+    movie['directors'] = [
+        {'id': person.get('id'), 'name': (person.get('name') or '').strip()}
+        for person in crew
+        if person.get('job') == 'Director'
+        and person.get('id') is not None
+        and (person.get('name') or '').strip()
+    ]
+
     movie['cast'] = [
         {
             'id': cast_member.get('id'),

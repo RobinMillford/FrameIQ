@@ -71,20 +71,108 @@ def _select_pending(db, limit):
     )
 
 
-def _extract_directors(credits_payload):
-    """credits payload → [(tmdb_person_id, name), ...] for DIRECTORS only.
+class DirectorContractError(RuntimeError):
+    """The details response did not carry usable director credits.
+
+    Feature F16. Raised instead of silently reporting "no director credited",
+    because an unreadable response and a genuinely uncredited film are very
+    different facts and only one of them may mark an item enriched.
+    """
+
+
+def _extract_directors(details_payload):
+    """details payload → [(tmdb_person_id, name), ...] for DIRECTORS only.
 
     Multiple directors supported (spec §9). Actors/writers/producers and
     every other crew role are filtered out here — nothing else is ever
     persisted (spec §8). Deterministic order: by person id.
+
+    TWO shapes are accepted, in priority order:
+
+    1. **Normalized** (what ``api.tmdb.movies.fetch_movie_details`` actually
+       returns): ``{'directors': [{'id': .., 'name': ..}, ...]}``. This is the
+       contract the enrichment pipeline really consumes.
+    2. **Raw TMDb** (kept for compatibility with existing callers and test
+       fixtures): ``{'credits': {'crew': [{'id', 'name', 'job'}, ...]}}``.
+
+    Shape 2 used to be the ONLY thing understood, while the function under
+    test never returned it — so every movie was marked enriched with zero
+    directors persisted. Accepting both keeps the existing fixtures meaningful
+    and fixes the real path.
+
+    Raises :class:`DirectorContractError` when NEITHER key is present: that is
+    an unreadable response, not an uncredited film, and the caller must not
+    mark it enriched.
     """
-    crew = (credits_payload or {}).get('credits', {}).get('crew', []) or []
-    found = {
-        int(c.get('id')): (c.get('name') or '').strip()
-        for c in crew
-        if c.get('job') == DIRECTOR_JOB and c.get('id') is not None
-        and (c.get('name') or '').strip()
-    }
+    if not isinstance(details_payload, dict):
+        raise DirectorContractError(
+            'movie details response was %s, not an object'
+            % type(details_payload).__name__)
+
+    if 'directors' in details_payload:
+        entries = details_payload.get('directors')
+        if entries is None:
+            raise DirectorContractError(
+                'movie details carried directors=None (unreadable credits)')
+        return _normalized_directors(entries)
+
+    # Legacy raw TMDb shape. Only taken when `credits` is genuinely PRESENT:
+    # an absent key means the response could not be read, not that the film
+    # is uncredited, so it must not be allowed to mark the item enriched.
+    if 'credits' in details_payload:
+        credits = details_payload.get('credits')
+        if not isinstance(credits, dict):
+            raise DirectorContractError(
+                'movie details carried credits=%s (unreadable)'
+                % type(credits).__name__)
+        return _raw_crew_directors(credits.get('crew') or [])
+
+    raise DirectorContractError(
+        'movie details carried neither "directors" nor "credits" '
+        '(present keys: %s)' % sorted(details_payload))
+
+
+def _normalized_directors(entries):
+    """``[{'id': .., 'name': ..}]`` → sorted [(person_id, name)].
+
+    Anything without a usable identity or a non-blank name is DROPPED — the
+    enrichment never invents a person.
+    """
+    found = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            person_id = int(entry.get('id'))
+        except (TypeError, ValueError):
+            continue            # no usable identity -> never fabricate one
+        name = (entry.get('name') or '').strip()
+        if name:
+            found[person_id] = name
+    return sorted(found.items())          # deterministic: by person id
+
+
+def _raw_crew_directors(crew):
+    """Legacy raw TMDb crew list → sorted [(person_id, name)].
+
+    Coerces ids exactly like the normalized path and skips entries it cannot
+    read, rather than letting a bare ``int()`` raise: a malformed legacy
+    payload is bad input, not a database fault, and the two shapes must not
+    diverge in how they behave.
+    """
+    found = {}
+    for entry in crew:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('job') != DIRECTOR_JOB:
+            continue
+        try:
+            person_id = int(entry.get('id'))
+        except (TypeError, ValueError):
+            continue            # no usable identity -> never fabricate one
+        name = (entry.get('name') or '').strip()
+        if name:
+            found[person_id] = name
     return sorted(found.items())  # [(person_id, name)] sorted by id
 
 
@@ -117,6 +205,13 @@ def enrich_media_item(db, models, media_item, fetch_details, now):
 
     Atomic per item: either the associations + enriched marker commit
     together, or nothing is written and the item stays retryable.
+
+    Feature F16: an unreadable details response raises
+    :class:`DirectorContractError` BEFORE the marker is written, so a
+    contract failure can never be recorded as a successful enrichment (which
+    is what silently produced zero-director rows before). A genuinely
+    uncredited film still returns 'empty' and IS marked — "enriched and
+    empty" stays distinguishable from "not yet enriched" (spec §13).
     """
     Director, MediaDirector = models
     data = fetch_details(media_item.tmdb_id)
