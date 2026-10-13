@@ -352,9 +352,20 @@
 
         try {
             const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            // F23.2: this token used to be read and thrown away, so the request
+            // relied entirely on the base.html fetch patch. That patch only
+            // exists on pages extending base.html, so CineBot was refused by
+            // CSRFProtect on every standalone page that loads this file (genre,
+            // diary, watchlist, my_lists, watch_tv, ...). Supply the header here
+            // too. On a base.html page both read the same meta tag, so they
+            // agree; the field is omitted when there is no token rather than sent
+            // empty, so a missing token can never clobber a valid one supplied by
+            // the patch.
+            const headers = { 'Content-Type': 'application/json' };
+            if (csrf) headers['X-CSRFToken'] = csrf;
             const resp = await fetch('/chat_api', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ message }),
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
