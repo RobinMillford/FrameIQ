@@ -777,6 +777,68 @@ def test_no_application_startup_ddl_was_introduced():
         'the application must not gain a migration guard')
 
 
+#: The last commit before the migration-guard work (F22/F22.1) landed.
+#:
+#: These boundary tests originally diffed against HEAD, which made them pass
+#: only while that work was still uncommitted — they broke the moment it was
+#: committed, and would equally break again for any later follow-up. Anchoring
+#: to a permanent baseline instead keeps the exact same assertion true
+#: regardless of how much has been committed since.
+PRE_F22_BASELINE = '700803d'
+
+_DEPLOY = '.github/workflows/deploy.yml'
+
+
+def _git(*args):
+    import subprocess
+    return subprocess.run(['git'] + list(args), shell=False,
+                          capture_output=True, text=True).stdout
+
+
+def _require_baseline():
+    """Skip only when the clone genuinely cannot see the baseline.
+
+    The skip exists for shallow clones, not to paper over a bad anchor. Every
+    test below additionally asserts that the diff is NON-EMPTY and that the
+    baseline really is pre-F22, so a wrong or missing baseline fails loudly
+    rather than passing vacuously. In a normal CI checkout the baseline is
+    present and this never skips.
+    """
+    import subprocess
+    if subprocess.run('git rev-parse --verify %s' % PRE_F22_BASELINE,
+                      shell=True, capture_output=True).returncode != 0:
+        pytest.skip('baseline commit %s is unavailable in this shallow clone; '
+                    'boundary coverage for the deploy change is not running'
+                    % PRE_F22_BASELINE)
+
+
+def test_the_baseline_is_genuinely_pre_f22():
+    """If this fails, every baseline-anchored assertion below is meaningless."""
+    _require_baseline()
+    baseline_deploy = _git('show', '%s:%s' % (PRE_F22_BASELINE, _DEPLOY))
+    assert 'migrate_schema_convergence.py' in baseline_deploy
+    # Pre-F22.1 the convergence command carried no authorization flag. If the
+    # baseline already had it, the "only change was the flag" claim is void.
+    assert ALLOW_PRODUCTION_FLAG not in [
+        ln for ln in baseline_deploy.splitlines()
+        if 'migrate_schema_convergence.py' in ln][0]
+    # And the current tree must differ from it, or the diff-based tests would
+    # pass without asserting anything.
+    assert _git('diff', PRE_F22_BASELINE, '--', _DEPLOY).strip(), (
+        'deploy.yml is identical to the baseline — the boundary tests would be '
+        'asserting against an empty diff')
+
+
+def _baseline_diff(path):
+    _require_baseline()
+    return _git('diff', PRE_F22_BASELINE, '--', path)
+
+
+def _baseline_changed_files():
+    _require_baseline()
+    return _git('diff', '--name-only', PRE_F22_BASELINE).split()
+
+
 def test_f22_touched_no_application_files_and_exactly_one_deploy_line():
     """Guard the boundary mechanically, so a later change cannot drift.
 
@@ -790,10 +852,7 @@ def test_f22_touched_no_application_files_and_exactly_one_deploy_line():
     deployment file is still forbidden, and the change to that file is
     separately pinned by the section-6 deployment-contract tests above.
     """
-    import subprocess
-    changed = subprocess.run(
-        'git diff --name-only HEAD', shell=True, capture_output=True,
-        text=True).stdout.split()
+    changed = _baseline_changed_files()
 
     still_forbidden_prefixes = ('app.py', 'routes/', 'api/', 'models/',
                                 'src/', 'nginx/', 'scripts/backup')
@@ -821,11 +880,11 @@ def test_the_single_deploy_change_is_only_the_convergence_authorization():
     This is the load-bearing check behind the boundary above: it proves the
     deployment file was widened for one reason only, and not, for example, to
     reorder steps, widen permissions, or authorize something unrelated.
+
+    Diffed against the pre-F22 baseline rather than HEAD, so it keeps meaning
+    the same whether the migration-guard work is committed or still in flight.
     """
-    import subprocess
-    diff = subprocess.run(
-        'git diff HEAD -- .github/workflows/deploy.yml',
-        shell=True, capture_output=True, text=True).stdout
+    diff = _baseline_diff('.github/workflows/deploy.yml')
 
     removed = [ln for ln in diff.splitlines()
                if ln.startswith('-') and not ln.startswith('---')]
