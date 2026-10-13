@@ -48,14 +48,35 @@ class ListAdvancedManager {
                 data.collaborators.forEach(collab => {
                     container.appendChild(this.createCollaboratorCard(collab));
                 });
-            } else {
+            } else if (response.ok) {
                 D.clear(container);
                 container.appendChild(D.el('p', {
                     class: 'text-gray-500 text-sm',
                     text: 'No collaborators yet',
                 }));
+            } else {
+                // F23 (C-11): the collaborator roster is now authenticated, so
+                // a 401/403 means "you may not see this", which is NOT the same
+                // claim as "this list has no collaborators". Saying the latter
+                // would misinform whoever can edit the list.
+                D.clear(container);
+                container.appendChild(D.el('p', {
+                    class: 'text-gray-500 text-sm',
+                    text: (response.status === 401 || response.status === 403)
+                        ? 'Sign in and be a collaborator to view this list.'
+                        : (data.error || 'Could not load collaborators.'),
+                }));
             }
         } catch (error) {
+            // Never leave the panel claiming an empty roster after a failure.
+            const container = document.getElementById('collaborators-list');
+            if (container) {
+                D.clear(container);
+                container.appendChild(D.el('p', {
+                    class: 'text-gray-500 text-sm',
+                    text: 'Could not load collaborators.',
+                }));
+            }
         }
     }
     

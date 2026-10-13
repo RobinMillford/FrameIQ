@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{# F23 (C-7): this page is a standalone document and does not extend
+   base.html, so it inherits neither the CSRF meta tag nor the global
+   fetch() patch that injects the header. The token is published using
+   the same convention as templates/list_detail.html. #}
+<meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ user.username }}'s Profile - FrameIQ</title>
     {# F13 — authenticated, user-specific page. Emits ONLY an explicit
        noindex directive: no description, no OG tags, no canonical, no JSON-LD.

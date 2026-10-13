@@ -5,6 +5,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# F23.1 (C-7 follow-up): this page is a standalone document and does not
+       extend base.html, so it published no CSRF token. It loads follow-button.js,
+       which self-initialises on every [data-follow-button] and POSTs to
+       /api/users/<id>/follow — so follow/unfollow from search results was
+       rejected by CSRFProtect. Same convention as base.html and
+       list_detail.html; placed after the viewport meta, before <title>,
+       matching the other F23 templates. #}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>Search Results for "{{ query }}" - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>

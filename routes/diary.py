@@ -3,6 +3,7 @@ Diary API Routes
 Handles user diary entries for logging watched movies/shows
 """
 import logging
+import re
 import threading
 import time
 
@@ -26,6 +27,62 @@ _EPOCH_DT = datetime(1970, 1, 1)  # sort fallback for NULL created_at
 diary = Blueprint('diary', __name__)
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+
+# ── F23 (C-10): TMDb request-input validation ─────────────────────────────
+# /api/diary/log builds an API-key-bearing TMDb URL out of request data. Both
+# the media type and the media id used to be interpolated unvalidated, so a
+# crafted value could add path segments, change the endpoint family, or append
+# query parameters and carry the API key somewhere unintended.
+#
+# The media type is the same two values routes/collections.py models
+# (VALID_MEDIA_TYPES); the id is a positive integer, matching the
+# MediaItem.tmdb_id column type.
+
+VALID_MEDIA_TYPES = frozenset({'movie', 'tv'})
+
+TMDB_API_BASE = 'https://api.themoviedb.org/3'
+
+# \Z, not $: in Python's re, `$` also matches immediately before a trailing
+# newline, so `^[0-9]+$` would accept '550\n'. int() would then normalise it and
+# nothing unsafe reaches the URL -- but the conversion is documented as exact
+# and whitespace-free, so the pattern is anchored to the true end of string.
+_TMDB_ID_PATTERN = re.compile(r'^[0-9]+\Z')
+
+
+def _validated_media_type(raw):
+    """Return the allowlisted media type, or None if it is not one.
+
+    An exact set membership test, not a sanitiser: a value is either one of the
+    two types this application models or it is rejected. There is no path in
+    which 'movie/../account' becomes 'movie'.
+    """
+    if not isinstance(raw, str) or raw not in VALID_MEDIA_TYPES:
+        return None
+    return raw
+
+
+def _validated_tmdb_id(raw):
+    """Return a positive integer TMDb id, or None.
+
+    Accepts an int, or a string of ASCII decimal digits. Rejects bool (which is
+    an int subclass), float, list, dict, None, signs, whitespace, and anything
+    non-numeric. The conversion is explicit and exact — no ``int(float(...))``
+    and no ``str.isdigit()``, because that also accepts non-ASCII digits and
+    would quietly reinterpret foreign input as a valid id.
+    """
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, str):
+        if not _TMDB_ID_PATTERN.match(raw):
+            return None
+        value = int(raw)
+    else:
+        return None
+    if value <= 0:
+        return None
+    return value
 
 
 # ── Quick log (Feature #1) ───────────────────────────────────────────────────
@@ -536,7 +593,21 @@ def log_diary_entry():
     media_type = data.get('media_type')
     watched_date_str = data.get('watched_date')
 
-    if not media_id or not media_type or not watched_date_str:
+    # F23 (C-10): validate before anything is derived from these values. Both
+    # feed the TMDb URL below, so an unvalidated value could add a path segment,
+    # change the endpoint family, or smuggle query parameters carrying the API
+    # key. Normalising up front means no outbound request is ever attempted for
+    # bad input.
+    #
+    # The validation folds into the existing required-field guard rather than
+    # adding branches: `log_diary_entry` already sits at the project's
+    # max-complexity of 10, so a second `if` would have introduced a C901
+    # finding that did not exist before. One guard keeps the original message
+    # and the original complexity.
+    media_type = _validated_media_type(media_type)
+    media_id = _validated_tmdb_id(media_id)
+
+    if not watched_date_str or media_id is None or media_type is None:
         return jsonify({'error': 'media_id, media_type, and watched_date are required'}), 400
 
     try:
@@ -547,8 +618,15 @@ def log_diary_entry():
         media_item = MediaItem.query.filter_by(tmdb_id=media_id, media_type=media_type).first()
         if not media_item:
             # Fetch from TMDB API
-            url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}"
-            response = requests.get(url, timeout=(3, 10))
+            # Both segments are now validated: media_type is one of two
+            # literals, media_id an int, so neither can contribute a path
+            # separator. The API key goes through requests' parameter
+            # mechanism rather than a hand-built query string, so it cannot
+            # be steered by request data even in principle.
+            url = f"{TMDB_API_BASE}/{media_type}/{media_id}"
+            response = requests.get(url,
+                                    params={'api_key': TMDB_API_KEY},
+                                    timeout=(3, 10))
             if response.status_code == 200:
                 tmdb_data = response.json()
                 title = tmdb_data.get('title') if media_type == 'movie' else tmdb_data.get('name')

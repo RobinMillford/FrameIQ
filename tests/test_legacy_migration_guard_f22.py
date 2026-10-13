@@ -777,14 +777,24 @@ def test_no_application_startup_ddl_was_introduced():
         'the application must not gain a migration guard')
 
 
-#: The last commit before the migration-guard work (F22/F22.1) landed.
+#: The last commit before the migration-guard work (F22/F22.1) landed, and the
+#: commit that work landed in.
 #:
 #: These boundary tests originally diffed against HEAD, which made them pass
 #: only while that work was still uncommitted — they broke the moment it was
-#: committed, and would equally break again for any later follow-up. Anchoring
-#: to a permanent baseline instead keeps the exact same assertion true
-#: regardless of how much has been committed since.
+#: committed, and would equally break again for any later follow-up.
+#:
+#: Replacing HEAD with PRE_F22_BASELINE alone was not enough. `git diff <commit>`
+#: with a single tree-ish compares against the WORKING TREE, so the assertion
+#: kept drifting: F23 (routes/diary.py, routes/lists_advanced.py) tripped
+#: "F22 must not touch routes/diary.py" even though F22 never touched it. The
+#: test names what F22 changed; it should therefore diff the range F22 actually
+#: occupies, F22_COMMIT included. Both endpoints are now fixed, so the assertion
+#: is true regardless of what is committed or staged afterwards — and is
+#: strictly more precise, because it now constrains the commit rather than
+#: everything ever built on top of it.
 PRE_F22_BASELINE = '700803d'
+F22_COMMIT = '9f7ecbd'
 
 _DEPLOY = '.github/workflows/deploy.yml'
 
@@ -796,20 +806,22 @@ def _git(*args):
 
 
 def _require_baseline():
-    """Skip only when the clone genuinely cannot see the baseline.
+    """Skip only when the clone genuinely cannot see the anchor commits.
 
     The skip exists for shallow clones, not to paper over a bad anchor. Every
-    test below additionally asserts that the diff is NON-EMPTY and that the
-    baseline really is pre-F22, so a wrong or missing baseline fails loudly
-    rather than passing vacuously. In a normal CI checkout the baseline is
-    present and this never skips.
+    test below additionally asserts that the diff is NON-EMPTY, that the
+    baseline really is pre-F22, and that F22_COMMIT descends from it, so a wrong
+    or missing anchor fails loudly rather than passing vacuously. In a normal CI
+    checkout both are present and this never skips.
     """
     import subprocess
-    if subprocess.run('git rev-parse --verify %s' % PRE_F22_BASELINE,
-                      shell=True, capture_output=True).returncode != 0:
-        pytest.skip('baseline commit %s is unavailable in this shallow clone; '
-                    'boundary coverage for the deploy change is not running'
-                    % PRE_F22_BASELINE)
+    for label, rev in (('baseline', PRE_F22_BASELINE),
+                       ('F22 commit', F22_COMMIT)):
+        if subprocess.run('git rev-parse --verify %s' % rev,
+                          shell=True, capture_output=True).returncode != 0:
+            pytest.skip('%s commit %s is unavailable in this shallow clone; '
+                        'boundary coverage for the deploy change is not running'
+                        % (label, rev))
 
 
 def test_the_baseline_is_genuinely_pre_f22():
@@ -822,21 +834,28 @@ def test_the_baseline_is_genuinely_pre_f22():
     assert ALLOW_PRODUCTION_FLAG not in [
         ln for ln in baseline_deploy.splitlines()
         if 'migrate_schema_convergence.py' in ln][0]
-    # And the current tree must differ from it, or the diff-based tests would
-    # pass without asserting anything.
-    assert _git('diff', PRE_F22_BASELINE, '--', _DEPLOY).strip(), (
-        'deploy.yml is identical to the baseline — the boundary tests would be '
-        'asserting against an empty diff')
+    # The diff-based tests are meaningless unless the range is a real range, so
+    # pin the relationship instead of trusting the hash to stay correct.
+    assert subprocess.run('git merge-base --is-ancestor %s %s'
+                          % (PRE_F22_BASELINE, F22_COMMIT),
+                          shell=True, capture_output=True).returncode == 0, (
+        '%s is not an ancestor of %s — the boundary range is not the F22 range'
+        % (PRE_F22_BASELINE, F22_COMMIT))
+    # And F22_COMMIT must differ from the baseline, or the diff-based tests
+    # would pass without asserting anything.
+    assert _git('diff', PRE_F22_BASELINE, F22_COMMIT, '--', _DEPLOY).strip(), (
+        'deploy.yml is identical across the F22 range — the boundary tests '
+        'would be asserting against an empty diff')
 
 
 def _baseline_diff(path):
     _require_baseline()
-    return _git('diff', PRE_F22_BASELINE, '--', path)
+    return _git('diff', PRE_F22_BASELINE, F22_COMMIT, '--', path)
 
 
 def _baseline_changed_files():
     _require_baseline()
-    return _git('diff', '--name-only', PRE_F22_BASELINE).split()
+    return _git('diff', '--name-only', PRE_F22_BASELINE, F22_COMMIT).split()
 
 
 def test_f22_touched_no_application_files_and_exactly_one_deploy_line():
