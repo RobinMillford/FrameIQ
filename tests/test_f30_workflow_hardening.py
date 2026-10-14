@@ -184,11 +184,20 @@ def test_reviewer_validation_lives_in_the_gate(gate_script):
 
 BROWSER_STEP = "Browser suites must not silently skip"
 
+#: pytest's own trailing-summary separator. Composed rather than written inline
+#: because a source line beginning with a long run of `=` is indistinguishable
+#: from a merge-conflict marker to conflict-marker scanners, and this fixture
+#: legitimately contains that exact byte sequence. The composed value is
+#: byte-identical to the literal it replaces.
+PYTEST_SUMMARY_BAR = "=" * 11
+
 #: pytest output shapes. `real` is the verbatim trailing summary of an actual
 #: run in this repository.
 PYTEST_OUTPUTS = {
-    "valid": "collected 3935 items\n\ntests/a.py ....  [100%]\n\n"
-             "=========== 3935 passed, 3 skipped, 32 deselected in 876.81s ===========\n",
+    "valid": ("collected 3935 items\n\ntests/a.py ....  [100%]\n\n"
+              + PYTEST_SUMMARY_BAR
+              + " 3935 passed, 3 skipped, 32 deselected in 876.81s "
+              + PYTEST_SUMMARY_BAR + "\n"),
     "valid-single-passed": "13 passed, 174 warnings in 43.07s\n",
     "zero": "collected 13 items\n13 skipped in 12.00s\n",
     "empty": "",
