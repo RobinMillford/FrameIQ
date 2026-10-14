@@ -43,20 +43,23 @@ models/schema_migration.py        the ledger table (schema_migrations)
 scripts/migrate.py                the runner: status | validate | upgrade | adopt-legacy-baseline
 ```
 
-Three migrations are registered:
+Five migrations are registered:
 
 | Version | Module | Destructive | Depends on |
 |---------|--------|-------------|------------|
 | `0001_canonical_watched_reconcile` | `migrations_0001_canonical_watched` | no | — |
 | `0002_remove_legacy_wishlist` | `migrations_0002_remove_legacy_wishlist` | **yes** | `0001` |
 | `0003_cast_persistence` | `migrations_0003_cast_persistence` | no | `0001` |
+| `0004_notification_preferences` | `migrations_0004_notification_preferences` | no | `0001` |
+| `0005_media_runtime` | `migrations_0005_media_runtime` | no | `0001` |
 
-**`0003` deliberately does not depend on `0002`.** `0002` is destructive and
-stays deferred until an operator records a verified restorable snapshot (§6a).
-A forward dependency is refused by the runner, so depending on `0002` would
-hold every purely additive schema change hostage to one unrelated blocked
-`DROP`. Because `0003` depends only on `0001`, an ordinary `upgrade` applies it
-while `0002` remains pending — which is the intended production sequence.
+**`0003`, `0004` and `0005` deliberately do not depend on `0002`.** `0002` is
+destructive and stays deferred until an operator records a verified restorable
+snapshot (§6a). A forward dependency is refused by the runner, so depending on
+`0002` would hold every purely additive schema change hostage to one unrelated
+blocked `DROP`. Because each depends only on `0001`, an ordinary `upgrade`
+applies them while `0002` remains pending — which is the intended production
+sequence.
 
 ### `0003_cast_persistence` (Feature F9)
 
@@ -131,6 +134,63 @@ set is for pre-ledger drift, and widening it would create tables outside the
 ledger — the mistake that produced `schema_migrations` in F8. On an *empty*
 database convergence still creates the full declared schema, because bootstrap
 is not drift.
+
+### `0004_notification_preferences` (Feature F12)
+
+Purely additive: one table, no column added to an existing table, no `DROP`, no
+backfill.
+
+    user_notification_preference  id, user_id UNIQUE, one column per
+                                 in-app notification category, timestamps
+
+Rows are never written by the migration. A user with no preference row resolves
+to documented defaults at read time, so a fresh install needs no backfill.
+
+### `0005_media_runtime` (Feature F32)
+
+Purely additive, one nullable column, no `DROP`, no default, no backfill.
+
+    media_item  + runtime INTEGER NULL      (runtime in minutes)
+
+**Why it needed registering at all.** `models/media.py` declares
+`runtime = db.Column(db.Integer)`, and tables created before Feature 05 do not
+have it — detail-page queries fail with `UndefinedColumn`. The column was
+repaired historically by the one-off script `migrates/migrate_media_runtime.py`,
+which is **not a deployment mechanism**: it is not registered, so it writes no
+ledger row, and `pending_migration_objects()` had no declared owner for the
+column it repairs. A deployed database missing the column therefore had no
+ledgered remedy — the guard refused to boot and the only fix was an unrecorded
+manual script. `0005` closes that gap.
+
+**`NULL` for every existing row, deliberately.** A runtime is known only where
+enrichment recorded one; backfilling a placeholder would store a fabricated
+value that `api/statistics.py` would then report as real. On PostgreSQL a
+nullable `ADD COLUMN` with no default is metadata-only, so existing rows are
+not rewritten.
+
+**Four outcomes, all deliberate.**
+
+| Live state | Behaviour |
+|---|---|
+| `runtime` absent | added as nullable `INTEGER` |
+| `runtime` present and correct | no-op, reports `present`, never duplicated |
+| `runtime` present but wrong type or `NOT NULL` | **refused** with an actionable error |
+| `media_item` absent | **refused**; creates nothing |
+
+The incompatible-column refusal exists because silently accepting it would be
+worse: a `VARCHAR` runtime would let non-numeric data through, and a `NOT NULL`
+one would make later row inserts fail in a way that looks like an application
+bug. `0005` is additive by declaration and owns no `ALTER COLUMN` and no
+`DROP COLUMN`, so it cannot repair the mismatch itself — rewriting a column an
+operator has not inspected is precisely the destructive behaviour it exists to
+avoid. It refuses and names the remedy instead.
+
+**It does not bootstrap.** A missing `media_item` is refused, not created:
+creating it here would mean one column's migration silently creating the whole
+application schema, which is the defect F32 removed from the legacy script. A
+fresh database belongs to `scripts/bootstrap_dev_schema.py`; a *deployed*
+database missing `media_item` is schema drift and must be converged first. Both
+remedies are named in the refusal message.
 
 The runner is the only supported way to change the schema. The web process
 performs no DDL, ever — including no implicit `create_all()`.
@@ -298,8 +358,23 @@ exist; nothing to do.
 | `migrate_lists_v2.py`, `migrate_lists_diary.py`, `migrate_week2_lists.py`, `migrate_week2b_lists.py` | Historical; tables already present |
 | `migrate_week1.py`, `migrate_week3_reviews.py` | Historical; tables already present |
 | `migrate_tv_tracking.py`, `migrate_tags.py`, `migrate_genres.py` | Historical; tables already present |
-| `migrate_media_runtime.py`, `migrate_priority_column.py`, `migrate_email_verified.py` | Historical; columns already present |
+| `migrate_media_runtime.py` | Historical. Its change is now owned by the registered `0005_media_runtime` — see the note below |
+| `migrate_priority_column.py`, `migrate_email_verified.py` | Historical; columns already present |
 | `migrate_comments.py`, `migrate_diary_statistics_indexes.py`, `migrate_userfollow_indexes.py`, `migrate_watch_progress_indexes.py` | Historical; indexes already present |
+
+**`migrate_media_runtime.py` is not the deployment mechanism.** It is retained
+for its historical purpose only. It is not registered, so it produces no ledger
+row and the schema guard has no declared owner for the column it repairs;
+running it by hand changes the database without recording that the change
+happened. `0005_media_runtime` is the registered owner and the supported path.
+
+The legacy script does not delegate to `0005`, and is not an alias for it. It
+keeps its own scoped `ALTER TABLE media_item ADD COLUMN runtime` because its
+whole contract is a standalone, operator-run repair. It refuses when `media_item`
+is absent — it used to fall back to an unscoped `db.create_all()`, which would
+create every table the models declare, for a change that owns one column. Its
+refusal directs an operator to `scripts/bootstrap_dev_schema.py` for a fresh
+database and to `python scripts/migrate.py upgrade` for a deployed one.
 
 ---
 
@@ -482,12 +557,25 @@ Audited and already applied, or a no-op.
 3. If the migration genuinely cannot be transactional, set
    `NON_TRANSACTIONAL = True`. The runner will then **refuse** it rather than
    record a row it cannot make atomic.
-4. Register it in `migrates/registry.py` with `depends_on` set correctly.
-5. Run `python scripts/migrate.py validate`, then `upgrade` on a scratch
+4. Register it in `migrates/registry.py` with `depends_on` set correctly. A
+   purely additive migration must depend on `0001` only, never on the deferred
+   destructive `0002` — see §2.
+5. **Declare every object it owns** in `CREATES_TABLES` and `ADDS_COLUMNS`.
+   These are not documentation: `utils/schema_guard.pending_migration_objects()`
+   reads them as the single definition of "who owns this object", and the
+   pre-upgrade guard tolerates a missing object **only** when a registered,
+   non-destructive, not-yet-applied migration declares it. A migration that
+   creates or adds something without declaring it will abort the deploy that was
+   supposed to create it.
+6. Run `python scripts/migrate.py validate`, then `upgrade` on a scratch
    database, then re-run `upgrade` to confirm it is a no-op.
 
 Version strings are zero-padded and sorted as whole strings. Do not reuse a
 version number, even for an identical migration.
+
+**An applied migration is immutable.** The ledger stores the sha256 of the whole
+file, so editing one — even a comment — after it has run makes every later
+`upgrade` refuse to start. Get it right before it ships.
 
 ---
 

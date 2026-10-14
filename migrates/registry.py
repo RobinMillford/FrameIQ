@@ -89,6 +89,20 @@ MIGRATIONS: Tuple['MigrationSpec', ...] = (
         summary='Add user_notification_preference (one row per user) for '
                 'in-app notification categories. Additive.',
     ),
+    # F32 media runtime. Same reasoning as 0003 and 0004: purely additive, and
+    # it depends on 0001 ONLY so the deferred destructive 0002 cannot block it.
+    # This gives media_item.runtime a registered owner. Previously the only
+    # remedy was the unledgered legacy script migrates/migrate_media_runtime.py,
+    # which is not a deployment mechanism and which the schema guard had no
+    # declared owner for.
+    MigrationSpec(
+        version='0005_media_runtime',
+        module='migrations_0005_media_runtime',
+        depends_on=('0001_canonical_watched_reconcile',),
+        summary='Add media_item.runtime (nullable INTEGER, minutes) so detail '
+                'queries stop failing on a database that predates the column. '
+                'Additive.',
+    ),
 )
 
 

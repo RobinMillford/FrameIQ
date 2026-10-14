@@ -620,20 +620,58 @@ def test_the_makefile_target_absent_is_not_a_regression():
 # ── 4. regressions this change must not have caused ────────────────────────
 
 
-def test_the_modern_framework_is_untouched():
-    """F22.2 must not have altered the shared guard or the runner."""
-    import subprocess
-    changed = subprocess.run(
-        'git diff --name-only HEAD', shell=True, capture_output=True,
-        text=True).stdout.split()
-    for forbidden in ('utils/db_target.py', 'scripts/migrate.py',
-                      'migrates/registry.py', 'app.py',
-                      'utils/schema_guard.py', 'utils/legacy_migration_guard.py'):
-        assert forbidden not in changed, \
-            'F22.2 must not modify %s' % forbidden
-    for path in changed:
-        assert not path.startswith('migrates/migrations_000'), \
-            'F22.2 must not modify a registered migration: %s' % path
+def test_the_shared_framework_still_refuses_a_remote_target():
+    """The durable invariant this section was reaching for, asserted behaviourally.
+
+    This replaces a diff-emptiness check that asserted *F22.2's own change* had
+    not touched ``utils/db_target.py``, ``scripts/migrate.py``,
+    ``migrates/registry.py`` or any registered migration. That was a task-scope
+    guard, not an invariant: it read ``git diff --name-only HEAD``, so it fired
+    against any later, legitimate change to the same files — F32 registering
+    ``0005_media_runtime`` tripped it even though no shared behaviour had
+    changed. A test that is red whenever the next feature lands protects
+    nothing.
+
+    What actually protects the framework is behaviour, asserted here and
+    throughout the rest of this file.
+    """
+    from utils.db_target import require_writable_target
+
+    remote = 'postgresql://user:pw@db.example.com:5432/db'
+    with pytest.raises(UnsafeTargetError):
+        require_writable_target('the migration runner', explicit_url=remote)
+
+    # ...and the opt-in stays explicit: nothing but this argument opens a
+    # remote write.
+    assert require_writable_target(
+        'the migration runner', explicit_url=remote,
+        allow_production=True).is_production_like is True
+
+
+def test_the_runner_still_classifies_its_target_before_writing(monkeypatch):
+    """``scripts/migrate.py`` must not have gained an ungated write path.
+
+    0005 (F32) added a registered migration, which is exactly the kind of change
+    that could plausibly have introduced a shortcut. This pins the runner's
+    actual behaviour rather than the emptiness of any one diff.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        'migrate_under_test', ROOT / 'scripts' / 'migrate.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    monkeypatch.setenv('DATABASE_URL',
+                       'postgresql://user:pw@db.example.com:5432/db')
+    # Every write command builds its engine through _engine_for, so a remote
+    # target is refused before a connection is ever opened.
+    with pytest.raises(UnsafeTargetError):
+        module._engine_for(allow_production=False)
+
+    engine, target = module._engine_for(allow_production=True)
+    engine.dispose()
+    assert target.is_production_like is True
 
 
 def test_the_shared_guard_still_refuses_a_remote_target(monkeypatch):
