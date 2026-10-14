@@ -510,9 +510,12 @@ independent levels**, so that a mistake in either one is caught by the other.
   1. rejects a `ref` that is not a full 40-character SHA, so the code that runs
      is pinned to a reviewed commit;
   2. rejects placeholder evidence;
-  3. **queries the `production-destructive` environment and fails closed if it
-     has no required reviewers** — an environment without reviewers admits
-     anyone, which would make the job self-authorising while appearing gated;
+  3. **queries the `production-destructive` environment and fails closed unless
+     it is fully protected** — it requires all three: at least one entry under
+     *Required reviewers*, *Prevent self-review* enabled, and *Allow
+     administrators to bypass configured protection rules* de-selected. Without
+     them the environment admits anyone, or admits whoever dispatched the run,
+     which would make the job self-authorising while appearing gated;
   4. shares the `production-deploy` concurrency group with the safe deploy, so
      an approval cannot race a deploy that is already migrating;
   5. re-verifies the VPS SHA and a clean worktree, then re-checks the backup
@@ -555,8 +558,20 @@ Design properties:
 1. Create a snapshot or `pg_dump` of production.
 2. **Restore it somewhere and confirm it works.** A file that exists is not a
    backup that restores.
-3. Add required reviewers to the `production-destructive` environment
-   (Settings → Environments) if that has not been done.
+3. Configure the `production-destructive` environment (Settings → Environments)
+   so that **all three** protections are in place:
+   - at least one entry under **Required reviewers** (a user or a team);
+   - **Prevent self-review** enabled, so whoever dispatched the run cannot be
+     the one who approves it;
+   - **Allow administrators to bypass configured protection rules** de-selected,
+     so a repository admin cannot skip the review.
+
+   **Creating the environment configures none of these.** GitHub creates
+   `production-destructive` automatically, with no protection rules, the first
+   time a workflow references it — so the first dispatch is expected to stop
+   and ask for this configuration. Reviewers on their own are not enough:
+   without *Prevent self-review* the dispatcher can approve their own run, and
+   with administrator bypass permitted the entire rule set can be overridden.
 4. Dispatch the `destructive` workflow with the SHA, the snapshot reference and
    your name.
 

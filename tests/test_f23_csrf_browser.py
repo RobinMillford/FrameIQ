@@ -28,8 +28,13 @@ import re
 
 import pytest
 
-playwright_api = pytest.importorskip(
-    'playwright.sync_api', reason='playwright not installed')
+# F24: the driver import is REQUIRED in CI and skippable locally.
+# See tests/browser_requirement.py for why this replaced a bare
+# pytest.importorskip.
+from tests.browser_requirement import require_playwright  # noqa: E402
+
+sync_playwright = require_playwright('test_f23_csrf_browser.py')
+playwright_api = sync_playwright
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 

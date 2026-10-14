@@ -12,21 +12,54 @@ on:
   pull_request:
     branches: [main]
 
+# F24: this workflow previously declared no permissions at all, so every job
+# inherited the repository/org default GITHUB_TOKEN scope, which is frequently
+# read/write. Both jobs here only check out code and run tests: neither uses
+# `github.token`, `gh api`, nor any GitHub API call, so read-only repository
+# content is the entire requirement.
+#
+# Declared once at workflow level because BOTH jobs need exactly this and
+# nothing more: `test` and `postgres-migrations` each run actions/checkout,
+# which needs `contents: read` to clone. Adding it per job would duplicate an
+# identical block without narrowing anything further.
+#
+# Do NOT add write scopes here for convenience. A test job has no legitimate
+# reason to push, open PRs, or mutate issues.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    env:
+      # F24: the browser suites skip locally when Playwright is absent, which is
+      # right for a developer and wrong for CI — a green job must never mean
+      # "the browser assertions were skipped". Setting this makes
+      # tests/browser_requirement.py raise instead of skip, so a missing driver
+      # or Chromium fails the job at collection with an actionable message.
+      # It affects ONLY the Playwright driver import; per-test skips elsewhere
+      # in the suite are untouched.
+      FRAMEIQ_REQUIRE_BROWSER: "1"
 
     steps:
       # Full history: the whitespace/diff gate compares against the pushed
       # commit's parent (github.event.before), which does not exist in a
       # default depth-1 checkout (fatal: bad object <parent-sha>).
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          # F30: nothing in this job talks to the remote after checkout. The
+          # whitespace gate resolves the base commit and diffs locally
+          # (git cat-file / git diff / git rev-list) against the full history
+          # fetched above, and no step uses the token, `gh`, or the API. Leaving
+          # the credential in .git/config would only widen what a compromised
+          # dependency could reach, so it is not persisted.
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -105,6 +138,93 @@ jobs:
             echo "retention and the 20-service cap are UNVERIFIED."
             exit 1
           fi
+
+      # F24: the step above only covered ONE browser suite. Six more ship with
+      # the same module-level `importorskip`, and they all run inside the
+      # "Full test suite" step below — where a skip is just a skip count and the
+      # job still goes green. That is how F21 stored-XSS rendering, F23/F23.2
+      # CSRF header delivery and the F14 actor detail page could silently stop
+      # being verified in CI.
+      #
+      # The primary mechanism is not this grep but tests/browser_requirement.py:
+      # with FRAMEIQ_REQUIRE_BROWSER=1 (set on the test job above) each suite
+      # RAISES instead of skipping when the Playwright driver is missing, so
+      # pytest reports a real collection error. This step is the belt-and-braces
+      # second check, scoped by suite name so an unrelated suite's legitimate
+      # skip can never fail the build.
+      - name: Browser suites must not silently skip
+        run: |
+          set -euo pipefail
+          # Every suite that gates on the Playwright driver. Kept explicit so a
+          # newly added browser suite is a deliberate decision, not an accident.
+          REQUIRED_BROWSER_SUITES=(
+            tests/test_director_detail_f19.py
+            tests/test_edit_profile_picker_browser.py
+            tests/test_explore_browser.py
+            tests/test_f23_2_chat_csrf_browser.py
+            tests/test_f23_csrf_browser.py
+            tests/test_taste_dna_actor_f14_browser.py
+            tests/test_xss_f21_browser.py
+          )
+          for suite in "${REQUIRED_BROWSER_SUITES[@]}"; do
+            [ -f "$suite" ] || {
+              echo "::error::Required browser suite ${suite} no longer exists; "
+              echo "update REQUIRED_BROWSER_SUITES in ci-cd.yml deliberately."
+              exit 1
+            }
+          done
+          echo "All ${#REQUIRED_BROWSER_SUITES[@]} required browser suites are present."
+
+          # Collect-time skip shows up as a collection error for the file; a
+          # module-level skip shows as "N skipped" with zero passed. Assert that
+          # each suite contributes at least one PASSING test, which is the claim
+          # that actually matters: coverage ran, it did not vanish.
+          #
+          # The count is extracted with bash's own regex rather than
+          # `grep | head | grep`. That pipeline could not be trusted: if `head`
+          # exited before `grep` finished, grep took SIGPIPE, the pipeline's
+          # status went non-zero, and `|| echo 0` appended to a PARTIAL capture
+          # — producing a multi-line value. `[ "$v" -lt 1 ]` returns 2 on that,
+          # which SKIPS the refusal body and passes the step. Here a captured
+          # value can only ever be digits, because `[0-9]+` cannot span a
+          # newline, and the `case` below rejects anything that is not a
+          # non-negative integer before any comparison happens.
+          for suite in "${REQUIRED_BROWSER_SUITES[@]}"; do
+            if ! out="$(pytest "$suite" -q -p no:cacheprovider --tb=line 2>&1)"; then
+              echo "${out}"
+              echo "::error::${suite} FAILED."
+              exit 1
+            fi
+            passed=""
+            # pytest's count is always on its final summary line. Taking that
+            # line with parameter expansion avoids a subprocess and, crucially,
+            # avoids the `grep | head | grep` pipeline this replaced: if `head`
+            # exited before `grep` finished, grep took SIGPIPE, the pipeline's
+            # status went non-zero, and `|| echo 0` appended to a PARTIAL
+            # capture — yielding a multi-line value. `[ "$v" -lt 1 ]` returns 2
+            # on such a value, which SKIPS the refusal body and passes the step.
+            # A capture can now only ever be digits from a single line, and the
+            # `case` below refuses anything else before any comparison happens.
+            summary="${out##*$'\n'}"
+            if [[ "${summary}" =~ ([0-9]+)\ passed ]]; then
+              passed="${BASH_REMATCH[1]}"
+            fi
+            case "${passed}" in
+              ''|*[!0-9]*)
+                echo "${out}"
+                echo "::error::Could not read a passing-test count from the output of ${suite}."
+                echo "::error::Playwright or Chromium is unavailable, so its coverage is UNVERIFIED."
+                exit 1
+                ;;
+            esac
+            if [ "${passed}" -lt 1 ]; then
+              echo "${out}"
+              echo "::error::${suite} contributed 0 passing tests — Playwright "
+              echo "or Chromium is unavailable, so its coverage is UNVERIFIED."
+              exit 1
+            fi
+            echo "${suite}: ${passed} passed"
+          done
 
       - name: Compile Python
         run: |
@@ -248,11 +368,15 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # The PG tests drop and recreate the public schema; a shallow or
           # wrong-ref checkout would run them against unintended code.
           fetch-depth: 0
+          # F30: this job runs the test suite against a local service
+          # container. It makes no git or API call after checkout, so the
+          # credential is not needed and is not persisted.
+          persist-credentials: false
 
       - name: Install dependencies
         run: |

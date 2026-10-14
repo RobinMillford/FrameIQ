@@ -492,8 +492,13 @@ def test_cinebot_call_signature_is_unchanged():
 # Browser rendering of linked vs unlinked chips (real markup + real JS)
 # ════════════════════════════════════════════════════════════════════════════
 
-playwright_api = pytest.importorskip(
-    'playwright.sync_api', reason='playwright not installed')
+# F24: the driver import is REQUIRED in CI and skippable locally.
+# See tests/browser_requirement.py for why this replaced a bare
+# pytest.importorskip.
+from tests.browser_requirement import require_playwright  # noqa: E402
+
+sync_playwright = require_playwright('test_director_detail_f19.py')
+playwright_api = sync_playwright
 
 
 def _render_chromium(taste_browser, payload):

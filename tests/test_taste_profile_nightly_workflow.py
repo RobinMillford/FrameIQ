@@ -181,8 +181,42 @@ def test_reuses_existing_deployment_secrets():
     assert "SSH_PRIVATE_KEY" in _DEPLOY.read_text()
 
 
-def test_ssh_action_version_matches_repo_convention(raw):
-    assert "appleboy/ssh-action@v1.0.3" in raw  # same pin as deploy.yml
+def test_ssh_action_version_matches_repo_convention(raw, wf):
+    """F24: the ssh-action pin must match deploy.yml and be an immutable commit.
+
+    This used to assert ``"appleboy/ssh-action@v1.0.3" in raw`` -- the mutable
+    tag F24 removes, so it failed once the workflow was correctly hardened and
+    proved nothing about the other three ssh-action steps in this file. It now
+    reads the SHA out of parsed YAML, requires all four steps here to agree with
+    it, and requires deploy.yml to agree too, so the nightly job can never drift
+    onto a different copy of the action than the deploy job.
+    """
+    import re
+
+    refs = [
+        step["uses"].split("@", 1)[1]
+        for job in wf["jobs"].values()
+        for step in job.get("steps") or []
+        if (step.get("uses") or "").startswith("appleboy/ssh-action@")
+    ]
+    assert len(refs) == 4, f"expected 4 ssh-action steps, found {len(refs)}"
+    for ref in refs:
+        assert re.fullmatch(r"[0-9a-f]{40}", ref), (
+            f"ssh-action ref is not an immutable commit SHA: {ref!r}")
+        assert f"appleboy/ssh-action@{ref} # v1.0.3" in raw, (
+            f"step {ref} lost its '# v1.0.3' version comment")
+    assert len(set(refs)) == 1, f"nightly workflow pins multiple SHAs: {set(refs)}"
+
+    deploy = yaml.safe_load(_DEPLOY.read_text())
+    deploy_refs = {
+        step["uses"].split("@", 1)[1]
+        for job in deploy["jobs"].values()
+        for step in job.get("steps") or []
+        if (step.get("uses") or "").startswith("appleboy/ssh-action@")
+    }
+    assert deploy_refs == set(refs), (
+        "nightly and deploy must pin the identical ssh-action commit; "
+        f"nightly={refs[0]} deploy={sorted(deploy_refs)}")
 
 
 def test_no_external_api_calls(raw):

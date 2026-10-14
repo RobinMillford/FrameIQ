@@ -49,6 +49,45 @@ def _scripts(wf):
     return out
 
 
+# ── F24: verified action pins ────────────────────────────────────────────────
+#
+# Every SHA below was resolved from the action's canonical GitHub repository via
+# the REST API (`/repos/{owner}/{repo}/commits/{tag}`, then the tag list to
+# recover the concrete semver behind a floating major tag) and confirmed twice:
+# the SHA must round-trip through `/commits/<sha>` and dereference from
+# `/git/ref/tags/<version>`. They are recorded in the workflow files as
+# `uses: owner/action@<sha> # <version>`.
+#
+# `EXPECTED_SSH_ACTION_USES` is the repo-wide count of appleboy/ssh-action
+# steps, so deleting one cannot pass unnoticed.
+SSH_ACTION_SHA = "029f5b4aeeeb58fdfe1410a5d17f967dacf36262"
+EXPECTED_SSH_ACTION_USES = 10
+
+
+@pytest.fixture(scope="module")
+def all_workflows():
+    """Every workflow in .github/workflows, parsed, keyed by filename.
+
+    Deliberately discovered by glob rather than listed: F24's guarantee is
+    "no workflow may reference a mutable action ref", and a hard-coded list
+    would silently exempt any workflow added later.
+    """
+    return {p.name: _load(p) for p in sorted(Path(".github/workflows").glob("*.yml"))}
+
+
+@pytest.fixture(scope="module")
+def all_workflows_raw():
+    """The same workflows as source text, keyed by filename.
+
+    YAML comments are not part of a parsed scalar, so the ``# vX.Y.Z``
+    provenance that F24 records alongside each pin is only observable in the
+    raw source. Parsed YAML proves the ref is immutable; raw text proves the
+    human-readable version is still attached to it.
+    """
+    return {p.name: p.read_text()
+            for p in sorted(Path(".github/workflows").glob("*.yml"))}
+
+
 @pytest.fixture(scope="module")
 def ci_raw():
     return _CI.read_text()
@@ -298,9 +337,20 @@ def test_destructive_job_fails_closed_without_required_reviewers(deploy_raw,
     An environment with no required reviewers admits anyone, so the job would be
     self-authorising while appearing gated. The workflow must verify the
     protection rule rather than assume it.
+
+    F25: this test previously asserted the literal "deployment_protection_rule"
+    was present in the workflow. That assertion encoded the BUG -- it demanded
+    the obsolete single-object API path, so it would have failed the moment the
+    gate was corrected while proving nothing about behaviour. The extraction
+    logic itself is now exercised against recorded API responses in
+    tests/test_f25_destructive_reviewer_gate.py.
     """
     code = _code(deploy_raw)
-    assert "deployment_protection_rule" in code
+    # The obsolete path must be GONE, so the bug cannot silently return.
+    assert "deployment_protection_rule.required_reviewers" not in code, (
+        "the reviewer gate must not read the obsolete single-object path again")
+    # It must read the documented array shape instead.
+    assert "protection_rules" in code
     assert "required_reviewers" in code
     assert "no required reviewers" in code
     step = next(s for s in _destructive(deploy)["steps"]
@@ -308,6 +358,13 @@ def test_destructive_job_fails_closed_without_required_reviewers(deploy_raw,
     run = step["run"]
     assert "gh api" in run
     assert "exit 1" in run
+    assert "set -euo pipefail" in run
+    # Strict mode plus a single refusal path is what makes refusal reliable.
+    assert run.count("refuse") >= 2, (
+        "each failure path must funnel through the refuse helper")
+    # Read-only: this gate must never mutate the environment it inspects.
+    for mutating in ("-X POST", "-X PUT", "-X PATCH", "-X DELETE"):
+        assert mutating not in run
 
 
 def test_destructive_job_requires_per_deployment_backup_evidence(deploy):
@@ -842,8 +899,60 @@ def test_remote_scripts_set_strict_mode(deploy_scripts):
         assert "set -euo pipefail" in script, name
 
 
-def test_ssh_action_pin_matches_repo_convention(deploy_raw):
-    assert "appleboy/ssh-action@v1.0.3" in deploy_raw
+def test_ssh_action_pin_matches_repo_convention(all_workflows, all_workflows_raw):
+    """F24: the ssh-action reference must be an immutable commit, not a tag.
+
+    This assertion used to be ``"appleboy/ssh-action@v1.0.3" in deploy_raw``.
+    That is exactly the mutable reference F24 removes, so asserting it fails the
+    moment the workflow is hardened correctly -- and it said nothing about the
+    other workflows that invoke the same action.
+
+    It is now structural: every ssh-action step, in every workflow, must name a
+    40-character commit SHA, must be the one SHA verified repo-wide, and must
+    still carry ``# v1.0.3`` (the version in use, deliberately not changed).
+    """
+    found = 0
+    for workflow_name, wf in all_workflows.items():
+        raw = all_workflows_raw[workflow_name]
+        for job_name, job in (wf.get("jobs") or {}).items():
+            for step in job.get("steps") or []:
+                uses = (step.get("uses") or "")
+                if not uses.startswith("appleboy/ssh-action@"):
+                    continue
+                found += 1
+                ref = uses.split("@", 1)[1].strip()
+                assert re.fullmatch(r"[0-9a-f]{40}", ref), (
+                    f"{workflow_name}:{job_name} ssh-action ref is not an "
+                    f"immutable commit SHA: {ref!r}")
+                assert ref == SSH_ACTION_SHA, (
+                    f"{workflow_name}:{job_name} pins a different ssh-action "
+                    f"commit than the rest of the repo: {ref}")
+                # YAML drops comments, so provenance is checked in the source.
+                assert f"appleboy/ssh-action@{ref} # v1.0.3" in raw, (
+                    f"{workflow_name}:{job_name} lost its '# v1.0.3' version "
+                    f"comment, so the pin no longer records which release it is")
+    assert found == EXPECTED_SSH_ACTION_USES, (
+        f"expected {EXPECTED_SSH_ACTION_USES} ssh-action steps repo-wide, "
+        f"found {found}")
+
+
+def test_deploy_still_passes_the_key_as_an_action_input(deploy):
+    """F24: pinning must not have moved the private key into a shell command."""
+    checked = 0
+    for job in deploy["jobs"].values():
+        for step in job.get("steps") or []:
+            uses = step.get("uses") or ""
+            if not uses.startswith("appleboy/ssh-action@"):
+                continue
+            checked += 1
+            with_obj = step.get("with") or {}
+            assert with_obj.get("key") == "${{ secrets.SSH_PRIVATE_KEY }}", (
+                "the SSH key must be passed as an action input")
+            assert with_obj.get("host") == "${{ secrets.VPS_HOST }}"
+            assert with_obj.get("username") == "${{ secrets.VPS_USER }}"
+            # No secret may appear inside the remote script.
+            assert "SSH_PRIVATE_KEY" not in (with_obj.get("script") or "")
+    assert checked == 3, f"expected 3 ssh steps in deploy.yml, found {checked}"
 
 
 def test_only_existing_secrets_are_used(deploy_raw):
@@ -899,18 +1008,53 @@ def test_ci_does_not_deploy(ci_raw):
 # silent instant `exit 1` before any diagnostic or skip-note can run.
 # `bash -n` on the file cannot catch it because the corruption happens at
 # transmission, not in the source file. The same applies to lines ending in
-# &&/||/| (the injected check severs the continuation). Both workflows'
-# scripts must therefore avoid all such line shapes.
+# &&/||/| (the injected check severs the continuation). Every workflow that
+# carries a remote script must therefore avoid all such line shapes.
 
-_ALL_WORKFLOWS = (_CI, _DEPLOY, _SYNC)
+# F30: discovered by glob, not listed. The previous hard-coded triple
+# (_CI, _DEPLOY, _SYNC) silently exempted taste-profile-nightly.yml and
+# sync-upcoming-episodes.yml, which together carry 6 of the 12 remote scripts
+# in this repository — so the guard was checking half of what it claimed to
+# cover. A glob also means a newly added workflow is covered the moment it
+# lands, instead of needing a second, separate edit to be reviewed here.
+_WORKFLOW_DIR = Path(".github/workflows")
+
+
+def _all_workflow_paths():
+    """Every workflow file, .yml and .yaml alike."""
+    return sorted(_WORKFLOW_DIR.glob("*.yml")) + sorted(_WORKFLOW_DIR.glob("*.yaml"))
 
 
 def _ssh_scripts_all():
+    """Every remote SSH script, keyed by `workflow::step`.
+
+    Only `with.script` is read, never a `run:` block. The drone-ssh hazard is a
+    property of the `script:` input to appleboy/ssh-action; ordinary runner
+    shell is not transmitted through drone-ssh and must not be flagged here,
+    which is why the two are kept distinct rather than pattern-matched on the
+    word "script".
+    """
     out = {}
-    for path in _ALL_WORKFLOWS:
+    for path in _all_workflow_paths():
         for name, script in _scripts(_load(path)).items():
             out[f"{path.name}::{name}"] = script
     return out
+
+
+def test_ssh_guard_covers_every_workflow_carrying_remote_scripts():
+    """Guards the coverage itself, so the guard cannot silently narrow again."""
+    paths = _all_workflow_paths()
+    assert len(paths) >= 5, f"expected at least 5 workflow files, found {paths}"
+    covered = {key.split("::", 1)[0] for key in _ssh_scripts_all()}
+    with_scripts = set()
+    for path in paths:
+        if _scripts(_load(path)):
+            with_scripts.add(path.name)
+    assert with_scripts <= covered, (
+        f"workflows carrying remote scripts that the guard never inspects: "
+        f"{sorted(with_scripts - covered)}")
+    # The two that were previously missed must be present.
+    assert {"sync-upcoming-episodes.yml", "taste-profile-nightly.yml"} <= covered
 
 
 def test_no_bare_else_in_any_ssh_script():
