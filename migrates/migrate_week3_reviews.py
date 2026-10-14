@@ -2,7 +2,18 @@
 Database migration script for Week 3: Reviews System Enhancement  
 Adds ReviewHelpful table and updates existing Review model
 """
-from app import app, db
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+import os as _f22_os  # F22: make `utils` importable regardless of cwd  # noqa: E402
+import sys as _f22_sys  # noqa: E402
+_f22_sys.path.insert(0, _f22_os.path.dirname(
+    _f22_os.path.dirname(_f22_os.path.abspath(__file__))))
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+from app import app, db  # noqa: E402
 
 def migrate():
     """Enhance existing Review system with helpful votes"""
@@ -12,7 +23,7 @@ def migrate():
         
         try:
             # Add ReviewHelpful model if it doesn't exist
-            from sqlalchemy import inspect, text
+            from sqlalchemy import inspect, text  # noqa: E402
             inspector = inspect(db.engine)
             existing_tables = inspector.get_table_names()
             
@@ -58,7 +69,7 @@ def migrate():
                 print("✅ All review columns already exist")
             
             # Get stats
-            from models import Review, ReviewLike, ReviewComment
+            from models import Review, ReviewLike, ReviewComment  # noqa: E402
             review_count = Review.query.count()
             like_count = ReviewLike.query.count()
             comment_count = ReviewComment.query.count()
@@ -92,7 +103,7 @@ def migrate():
         except Exception as e:
             print(f"\n❌ Error during migration: {e}")
             db.session.rollback()
-            import traceback
+            import traceback  # noqa: E402
             traceback.print_exc()
             raise
 

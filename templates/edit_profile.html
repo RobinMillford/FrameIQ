@@ -503,6 +503,9 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
+    {# F21 — edit_profile.html does not extend base.html, so it loads the
+       shared DOM-safety helpers itself, before my-services.js. #}
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/my-services.js') }}"></script>
     <script src="{{ url_for('static', filename='js/account-export.js') }}"></script>
     <script src="{{ url_for('static', filename='js/account-import.js') }}"></script>

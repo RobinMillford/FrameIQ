@@ -35,56 +35,110 @@ class ListAdvancedManager {
     }
     
     async loadCollaborators() {
+        const D = window.FrameIQDOM;
         const container = document.getElementById('collaborators-list');
         if (!container) return;
-        
+
         try {
             const response = await fetch(`/api/lists/${this.listId}/collaborators`);
             const data = await response.json();
             
             if (response.ok && data.collaborators.length > 0) {
-                container.innerHTML = '';
+                D.clear(container);
                 data.collaborators.forEach(collab => {
                     container.appendChild(this.createCollaboratorCard(collab));
                 });
+            } else if (response.ok) {
+                D.clear(container);
+                container.appendChild(D.el('p', {
+                    class: 'text-gray-500 text-sm',
+                    text: 'No collaborators yet',
+                }));
             } else {
-                container.innerHTML = '<p class="text-gray-500 text-sm">No collaborators yet</p>';
+                // F23 (C-11): the collaborator roster is now authenticated, so
+                // a 401/403 means "you may not see this", which is NOT the same
+                // claim as "this list has no collaborators". Saying the latter
+                // would misinform whoever can edit the list.
+                D.clear(container);
+                container.appendChild(D.el('p', {
+                    class: 'text-gray-500 text-sm',
+                    text: (response.status === 401 || response.status === 403)
+                        ? 'Sign in and be a collaborator to view this list.'
+                        : (data.error || 'Could not load collaborators.'),
+                }));
             }
         } catch (error) {
+            // Never leave the panel claiming an empty roster after a failure.
+            const container = document.getElementById('collaborators-list');
+            if (container) {
+                D.clear(container);
+                container.appendChild(D.el('p', {
+                    class: 'text-gray-500 text-sm',
+                    text: 'Could not load collaborators.',
+                }));
+            }
         }
     }
     
     createCollaboratorCard(collab) {
-        const div = document.createElement('div');
-        div.className = 'flex items-center justify-between p-3 bg-gray-700 rounded-lg';
-        
-        const roleIcon = collab.role === 'editor' ? 'fa-pen' : 'fa-eye';
+        const D = window.FrameIQDOM;
+        const div = D.el('div', { class: 'flex items-center justify-between p-3 bg-gray-700 rounded-lg' });
+
         const roleColor = collab.role === 'editor' ? 'text-green-400' : 'text-blue-400';
-        
-        div.innerHTML = `
-            <div class="flex items-center gap-3">
-                <img src="${collab.user.profile_picture || '/static/images/default-avatar.png'}" 
-                     alt="${collab.user.username}" 
-                     class="w-10 h-10 rounded-full">
-                <div>
-                    <p class="font-semibold text-white">${collab.user.username}</p>
-                    <p class="text-xs ${roleColor}">
-                        <i class="fas ${roleIcon}"></i> ${collab.role}
-                    </p>
-                </div>
-            </div>
-            <div class="flex gap-2">
-                <button onclick="listAdvancedManager.changeCollaboratorRole(${collab.user.id})" 
-                        class="text-sm text-indigo-400 hover:text-indigo-300">
-                    <i class="fas fa-user-edit"></i>
-                </button>
-                <button onclick="listAdvancedManager.removeCollaborator(${collab.user.id}, '${collab.user.username}')" 
-                        class="text-sm text-red-400 hover:text-red-300">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        `;
-        
+
+        // F21 — the username is user-supplied free text (registration applies
+        // no charset rule). It is placed with textContent and is NEVER
+        // interpolated into an attribute or a handler string.
+        const username = D.text(collab.user && collab.user.username);
+
+        const left = D.el('div', { class: 'flex items-center gap-3' });
+        left.appendChild(D.el('img', {
+            src: D.safeImageUrl(
+                collab.user && collab.user.profile_picture,
+                '/static/images/default-avatar.png',
+                '/static/'),
+            alt: username,
+            class: 'w-10 h-10 rounded-full',
+        }));
+        const meta = D.el('div');
+        meta.appendChild(D.el('p', { class: 'font-semibold text-white', text: username }));
+        const roleLine = D.el('p', { class: 'text-xs ' + roleColor });
+        roleLine.appendChild(D.icon(collab.role === 'editor' ? 'pen' : 'eye'));
+        roleLine.appendChild(document.createTextNode(' ' + D.text(collab.role)));
+        meta.appendChild(roleLine);
+        left.appendChild(meta);
+        div.appendChild(left);
+
+        const actions = D.el('div', { class: 'flex gap-2' });
+
+        const userId = D.safeId(collab.user && collab.user.id);
+        if (userId === null) {
+            // Without a validated id we cannot address the API safely, so we
+            // render no action buttons rather than guessing.
+            return div;
+        }
+
+        const roleBtn = D.el('button', {
+            class: 'text-sm text-indigo-400 hover:text-indigo-300',
+            type: 'button',
+            'aria-label': 'Change role for ' + username,
+            title: 'Change role',
+        });
+        roleBtn.appendChild(D.icon('user-edit'));
+        roleBtn.addEventListener('click', () => this.changeCollaboratorRole(userId));
+        actions.appendChild(roleBtn);
+
+        const removeBtn = D.el('button', {
+            class: 'text-sm text-red-400 hover:text-red-300',
+            type: 'button',
+            'aria-label': 'Remove ' + username,
+            title: 'Remove collaborator',
+        });
+        removeBtn.appendChild(D.icon('times'));
+        removeBtn.addEventListener('click', () => this.removeCollaborator(userId, username));
+        actions.appendChild(removeBtn);
+
+        div.appendChild(actions);
         return div;
     }
     
@@ -198,20 +252,25 @@ class ListAdvancedManager {
     }
     
     async loadCategories() {
+        const D = window.FrameIQDOM;
         const container = document.getElementById('list-categories');
         if (!container) return;
-        
+
         try {
             const response = await fetch(`/api/lists/${this.listId}/categories`);
             const data = await response.json();
             
             if (response.ok && data.categories.length > 0) {
-                container.innerHTML = '';
+                D.clear(container);
                 data.categories.forEach(cat => {
                     container.appendChild(this.createCategoryBadge(cat, true));
                 });
             } else {
-                container.innerHTML = '<span class="text-gray-500 text-sm">No categories</span>';
+                D.clear(container);
+                container.appendChild(D.el('span', {
+                    class: 'text-gray-500 text-sm',
+                    text: 'No categories',
+                }));
             }
         } catch (error) {
         }
@@ -230,49 +289,79 @@ class ListAdvancedManager {
     }
     
     createCategoryBadge(category, removable = false) {
-        const span = document.createElement('span');
-        span.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold';
-        span.style.backgroundColor = category.color || '#6366f1';
+        const D = window.FrameIQDOM;
+        const span = D.el('span', {
+            class: 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold',
+        });
+        // The colour is a stored field — validated so it cannot inject extra
+        // CSS declarations or a url() fetch.
+        span.style.backgroundColor = D.safeCssColor(category.color, '#6366f1');
         span.style.color = '#ffffff';
-        
-        span.innerHTML = `
-            <i class="fas ${category.icon || 'fa-tag'}"></i>
-            <span>${category.name}</span>
-            ${removable ? `
-                <button onclick="listAdvancedManager.removeCategory(${category.id}, '${category.name}')" 
-                        class="ml-1 hover:text-red-200">
-                    <i class="fas fa-times text-xs"></i>
-                </button>
-            ` : ''}
-        `;
-        
+
+        span.appendChild(D.icon(category.icon || 'tag'));
+        // F21 — category name is stored text: textContent, never markup.
+        span.appendChild(D.el('span', { text: category.name }));
+
+        if (removable) {
+            const categoryId = D.safeId(category.id);
+            if (categoryId !== null) {
+                const name = D.text(category.name);
+                const btn = D.el('button', {
+                    class: 'ml-1 hover:text-red-200',
+                    type: 'button',
+                    'aria-label': 'Remove category ' + name,
+                    title: 'Remove category',
+                });
+                btn.appendChild(D.icon('times', 'text-xs'));
+                btn.addEventListener('click', () => this.removeCategory(categoryId, name));
+                span.appendChild(btn);
+            }
+        }
+
         return span;
     }
     
     openCategoryModal() {
+        const D = window.FrameIQDOM;
         const modal = document.getElementById('category-modal');
         if (!modal) return;
-        
+
         // Populate category grid
         const grid = document.getElementById('category-grid');
         if (grid && this.availableCategories) {
-            grid.innerHTML = '';
+            D.clear(grid);
             this.availableCategories.forEach(cat => {
-                const btn = document.createElement('button');
-                btn.className = 'p-4 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-left';
-                btn.onclick = () => this.addCategory(cat.id, cat.name);
-                
-                btn.innerHTML = `
-                    <div class="flex items-center gap-3 mb-2">
-                        <i class="fas ${cat.icon || 'fa-tag'} text-2xl" style="color: ${cat.color}"></i>
-                        <span class="font-semibold text-white">${cat.name}</span>
-                    </div>
-                    <p class="text-xs text-gray-400">${cat.description || ''}</p>
-                    <p class="text-xs text-gray-500 mt-2">
-                        <i class="fas fa-list"></i> ${cat.usage_count} lists
-                    </p>
-                `;
-                
+                const catId = D.safeId(cat.id);
+                const btn = D.el('button', {
+                    class: 'p-4 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors text-left',
+                    type: 'button',
+                });
+
+                const head = D.el('div', { class: 'flex items-center gap-3 mb-2' });
+                const glyph = D.icon(cat.icon || 'tag', 'text-2xl');
+                glyph.style.color = D.safeCssColor(cat.color, '');
+                head.appendChild(glyph);
+                head.appendChild(D.el('span', { class: 'font-semibold text-white', text: cat.name }));
+                btn.appendChild(head);
+
+                btn.appendChild(D.el('p', {
+                    class: 'text-xs text-gray-400',
+                    text: cat.description || '',
+                }));
+
+                const usage = D.el('p', { class: 'text-xs text-gray-500 mt-2' });
+                usage.appendChild(D.icon('list'));
+                usage.appendChild(document.createTextNode(
+                    ' ' + (D.safeId(cat.usage_count) ?? 0) + ' lists'));
+                btn.appendChild(usage);
+
+                if (catId !== null) {
+                    const name = D.text(cat.name);
+                    btn.addEventListener('click', () => this.addCategory(catId, name));
+                } else {
+                    btn.disabled = true;
+                }
+
                 grid.appendChild(btn);
             });
         }
@@ -367,51 +456,64 @@ class ListAdvancedManager {
     }
     
     displayAnalytics(data) {
+        const D = window.FrameIQDOM;
         const container = document.getElementById('analytics-panel');
         if (!container) return;
-        
-        const analytics = data.analytics;
-        
-        container.innerHTML = `
-            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                <h3 class="text-xl font-bold text-indigo-400 mb-4">
-                    <i class="fas fa-chart-line"></i> List Analytics
-                </h3>
-                
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="text-center">
-                        <p class="text-3xl font-bold text-white">${analytics.view_count}</p>
-                        <p class="text-sm text-gray-400">Total Views</p>
-                    </div>
-                    <div class="text-center">
-                        <p class="text-3xl font-bold text-white">${analytics.unique_viewers}</p>
-                        <p class="text-sm text-gray-400">Unique Viewers</p>
-                    </div>
-                    <div class="text-center">
-                        <p class="text-3xl font-bold text-white">${analytics.share_count}</p>
-                        <p class="text-sm text-gray-400">Shares</p>
-                    </div>
-                    <div class="text-center">
-                        <p class="text-3xl font-bold text-white">${analytics.fork_count}</p>
-                        <p class="text-sm text-gray-400">Forks</p>
-                    </div>
-                </div>
-                
-                ${data.recent_viewers && data.recent_viewers.length > 0 ? `
-                    <div>
-                        <h4 class="font-semibold text-gray-300 mb-3">Recent Viewers</h4>
-                        <div class="space-y-2">
-                            ${data.recent_viewers.slice(0, 5).map(viewer => `
-                                <div class="flex items-center justify-between text-sm">
-                                    <span class="text-gray-400">${viewer.username}</span>
-                                    <span class="text-gray-500">${new Date(viewer.viewed_at).toLocaleString()}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
-        `;
+
+        const analytics = data.analytics || {};
+        D.clear(container);
+
+        const panel = D.el('div', {
+            class: 'bg-gray-800 rounded-lg p-6 border border-gray-700',
+        });
+
+        const heading = D.el('h3', { class: 'text-xl font-bold text-indigo-400 mb-4' });
+        heading.appendChild(D.icon('chart-line'));
+        heading.appendChild(document.createTextNode(' List Analytics'));
+        panel.appendChild(heading);
+
+        const stat = (value, label) => {
+            const cell = D.el('div', { class: 'text-center' });
+            cell.appendChild(D.el('p', {
+                class: 'text-3xl font-bold text-white',
+                text: D.safeId(value) ?? 0,
+            }));
+            cell.appendChild(D.el('p', { class: 'text-sm text-gray-400', text: label }));
+            return cell;
+        };
+
+        const grid = D.el('div', { class: 'grid grid-cols-2 md:grid-cols-4 gap-4 mb-6' });
+        grid.appendChild(stat(analytics.view_count, 'Total Views'));
+        grid.appendChild(stat(analytics.unique_viewers, 'Unique Viewers'));
+        grid.appendChild(stat(analytics.share_count, 'Shares'));
+        grid.appendChild(stat(analytics.fork_count, 'Forks'));
+        panel.appendChild(grid);
+
+        const viewers = Array.isArray(data.recent_viewers) ? data.recent_viewers : [];
+        if (viewers.length > 0) {
+            const wrap = D.el('div');
+            wrap.appendChild(D.el('h4', {
+                class: 'font-semibold text-gray-300 mb-3',
+                text: 'Recent Viewers',
+            }));
+            const list = D.el('div', { class: 'space-y-2' });
+            viewers.slice(0, 5).forEach(viewer => {
+                const row = D.el('div', {
+                    class: 'flex items-center justify-between text-sm',
+                });
+                // Viewer usernames are user-set: textContent only.
+                row.appendChild(D.el('span', { class: 'text-gray-400', text: viewer.username }));
+                row.appendChild(D.el('span', {
+                    class: 'text-gray-500',
+                    text: new Date(viewer.viewed_at).toLocaleString(),
+                }));
+                list.appendChild(row);
+            });
+            wrap.appendChild(list);
+            panel.appendChild(wrap);
+        }
+
+        container.appendChild(panel);
     }
     
     async trackShare() {
@@ -432,18 +534,24 @@ class ListAdvancedManager {
     // ============================================================================
     
     showMessage(message, type = 'info') {
-        const alertClass = type === 'success' ? 'bg-green-500' : 
+        const D = window.FrameIQDOM;
+        const alertClass = type === 'success' ? 'bg-green-500' :
                           type === 'error' ? 'bg-red-500' : 'bg-blue-500';
-        
-        const alert = document.createElement('div');
-        alert.className = `fixed top-4 right-4 ${alertClass} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all transform`;
-        alert.innerHTML = `
-            <div class="flex items-center gap-3">
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                <span>${message}</span>
-            </div>
-        `;
-        
+
+        // F21 — `message` embeds usernames and category names supplied by
+        // other users. It is rendered as TEXT; the previous innerHTML build
+        // was a stored-XSS sink reachable from this toast alone.
+        const alert = D.el('div', {
+            class: `fixed top-4 right-4 ${alertClass} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all transform`,
+            role: type === 'error' ? 'alert' : 'status',
+        });
+        const row = D.el('div', { class: 'flex items-center gap-3' });
+        row.appendChild(D.icon(
+            type === 'success' ? 'check-circle'
+                : type === 'error' ? 'exclamation-circle' : 'info-circle'));
+        row.appendChild(D.el('span', { text: message }));
+        alert.appendChild(row);
+
         document.body.appendChild(alert);
         
         setTimeout(() => alert.classList.add('scale-100'), 10);

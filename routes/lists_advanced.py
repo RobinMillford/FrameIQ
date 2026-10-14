@@ -20,12 +20,27 @@ lists_advanced = Blueprint('lists_advanced', __name__)
 # ============================================================================
 
 @lists_advanced.route('/api/lists/<int:list_id>/collaborators', methods=['GET'])
+@login_required
 def get_collaborators(list_id):
-    """Get all collaborators on a list"""
+    """Get all collaborators on a list.
+
+    F23 (C-11): this endpoint was reachable anonymously for any *public* list
+    and returned each collaborator's username, profile-picture URL and role.
+    A list's public flag describes who may read the list's CONTENTS; it is not
+    consent to publish the roster of people editing it. Anyone could therefore
+    walk public list IDs and enumerate usernames and avatars at scale.
+
+    It now requires authentication, matching the add/remove/update_role
+    siblings below. The membership check is retained and is still meaningful:
+    an authenticated user who is neither owner nor collaborator is refused, so
+    this is not merely a 'logged in' gate.
+    """
     user_list = UserList.query.get_or_404(list_id)
     
-    # Check permissions
-    if not user_list.is_public and (not current_user.is_authenticated or current_user.id != user_list.user_id):
+    # Ownership and collaborator membership are decided server-side. The list
+    # owner is never taken from the request.
+    if current_user.id != user_list.user_id and not ListCollaborator.query.filter_by(
+            list_id=list_id, user_id=current_user.id).first():
         return jsonify({'error': 'Permission denied'}), 403
     
     collaborators = user_list.collaborators.all()

@@ -1,0 +1,137 @@
+{# Director detail (Feature F19).
+
+   Served entirely from LOCAL persisted rows — this page never calls TMDb, so
+   everything it shows is whatever the local database actually holds.
+
+   Deliberately read-only and viewer-agnostic: no watchlist, diary, rating or
+   other signed-in state is passed in, so nothing private can reach it.
+
+   Empty states are worded carefully. Because of the historical enrichment
+   defect (fixed in F16, data still unrecovered), a director with no linked
+   credits here does NOT mean the person directed nothing — it means this
+   local database has no credits for them yet. The copy says exactly that and
+   makes no completeness claim in either direction. #}
+{% extends 'base.html' %}
+
+{# Feature F19 — public director page, so it opts INTO indexing like
+   /actor does. No `image` is declared on purpose: FrameIQ stores no portrait,
+   biography or artwork for directors, and inventing one (or pointing the
+   preview at a generic placeholder) would misrepresent the page. The
+   description says what the list actually is — FrameIQ's own linked credits,
+   which are partial by design. #}
+{% set _share_url = url_for('main.index', _external=True).rstrip('/')
+      ~ '/director/' ~ director.id %}
+{% set _share_desc = ('Films by %s in FrameIQ.' % director.name)
+      ~ (' ' ~ pagination.total ~ ' locally-linked titles.'
+         if pagination.total else
+         ' No films are linked to this director in FrameIQ yet.') %}
+{% set meta = {
+    'title': director.name ~ ' — Directors — FrameIQ',
+    'description': _share_desc,
+    'canonical': _share_url,
+    'type': 'profile',
+    'indexable': True,
+} %}
+
+{% block title %}{{ director.name }} — Directors — FrameIQ{% endblock %}
+
+{% block content %}
+<div class="surface-primary rounded-lg p-6 mb-6">
+    <nav class="text-xs text-[var(--text-low)] mb-3" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.index') }}" class="hover:text-[var(--accent)]">Home</a>
+        <span aria-hidden="true">/</span>
+        <span class="text-[var(--text-mid)]">Directors</span>
+    </nav>
+
+    <h1 class="text-2xl md:text-3xl font-bold text-[var(--text-hi)] mb-1">
+        {{ director.name }}
+    </h1>
+    <p class="text-sm text-[var(--text-low)]">
+        Director
+        {%- if pagination.total %}
+            &middot; {{ pagination.total }} locally-linked
+            {{ 'film' if pagination.total == 1 else 'films' }}
+        {%- endif %}
+    </p>
+</div>
+
+<section aria-labelledby="director-films-heading" class="mb-8">
+    <h2 id="director-films-heading"
+        class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-3">
+        Films in FrameIQ
+    </h2>
+
+    {% if pagination.total == 0 %}
+        <div class="glass-effect rounded-lg p-6">
+            <p class="text-sm text-[var(--text-hi)]">
+                No films are linked to this director in FrameIQ yet.
+            </p>
+            <p class="text-xs text-[var(--text-low)] mt-2">
+                This reflects FrameIQ's own library coverage, not the director's
+                career — credits are recorded locally as titles are added, so
+                this list is partial by design and grows over time.
+            </p>
+        </div>
+    {% else %}
+        <ul class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {% for item in pagination.items %}
+                <li>
+                    <a href="/movie/{{ item.tmdb_id }}"
+                       class="block glass-effect rounded-lg overflow-hidden h-full hover:ring-1 hover:ring-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 rounded-lg">
+                        <img src="{{ item.poster_path }}"
+                             alt="{{ item.title }}"
+                             loading="lazy"
+                             class="w-full aspect-[2/3] object-cover"
+                             onerror="this.src='/static/images/no-poster.svg'" />
+                        <div class="p-3">
+                            <h3 class="font-semibold text-sm text-[var(--text-hi)]">
+                                {{ item.title }}
+                            </h3>
+                            {% if item.release_date %}
+                                <p class="text-xs text-[var(--text-low)] mt-1">
+                                    {{ item.release_date.year }}
+                                </p>
+                            {% endif %}
+                        </div>
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+
+        {% if pagination.pages > 1 %}
+            <nav class="flex items-center gap-2 mt-6" aria-label="Filmography pages">
+                {% if pagination.has_prev %}
+                    <a href="{{ url_for('details.director_detail', director_id=director.id, page=pagination.prev_num) }}"
+                       class="px-3 py-1 rounded glass-effect text-sm text-[var(--text-hi)] hover:text-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
+                        Previous
+                    </a>
+                {% endif %}
+                <span class="text-xs text-[var(--text-low)]">
+                    Page {{ pagination.page }} of {{ pagination.pages }}
+                </span>
+                {% if pagination.has_next %}
+                    <a href="{{ url_for('details.director_detail', director_id=director.id, page=pagination.next_num) }}"
+                       class="px-3 py-1 rounded glass-effect text-sm text-[var(--text-hi)] hover:text-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
+                        Next
+                    </a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% endif %}
+</section>
+
+<section class="glass-effect rounded-lg p-6">
+    <h2 class="text-xs font-semibold uppercase tracking-wide font-slate text-[var(--text-low)] mb-2">
+        About this page
+    </h2>
+    <p class="text-sm text-[var(--text-mid)]">
+        Everything shown comes from FrameIQ's own local records. No biography,
+        imagery or awards are stored for directors yet, so nothing is invented
+        to fill the gap.
+    </p>
+    <a href="{{ url_for('main.index') }}"
+       class="inline-block mt-3 text-sm text-[var(--accent)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
+        Back to browsing
+    </a>
+</section>
+{% endblock %}

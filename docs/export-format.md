@@ -78,6 +78,7 @@ Every model was inspected. This table is the audit record.
 | `UserFollow` | `follower_id` | who the user follows | **yes** — username + created_at | **canonical** (relationship) | `social.csv` | **no — no email/bio/profile** | no |
 | `SmartList` | `user_id` | saved filter definition, scope, sort, visibility | **yes** | **canonical** (definition) | `smart_lists.csv` | no | no |
 | `UserStreamingService` | `user_id` | provider id + region | **yes** | **canonical** | `streaming_services.csv` | no | no |
+| `UserNotificationPreference` | `user_id` (1:1) | which in-app notification categories are enabled | **yes**, as **effective** values (F15) | **canonical** (settings) | — (JSON section only) | no | no |
 | `RecommendationFeedback` | `user_id` | append-only interaction events | **yes** | **canonical** (source events) | `recommendation_feedback.csv` | no | no |
 | `TasteProfile` | `user_id` (1:1) | computed weights, confidence, counts | **yes**, under `derived` | **derived** | — | no | no |
 | `WatchProgress` | `user_id` | in-progress playback position | **yes** | **canonical** (resume point) | `continue_watching.csv` | no | no |
@@ -137,6 +138,11 @@ Every model was inspected. This table is the audit record.
   "reviews": [ /* Review */ ],
   "ratings": [ /* denormalised rating ledger */ ],
   "tags": [ /* UserMediaTag joined to Tag */ ],
+  "notification_preferences": {
+    // F15 — EFFECTIVE values, not raw stored rows. See §3.1.
+    "new_episode": true,
+    "season_premiere": false
+  },
   "smart_lists": [ /* SmartList definitions */ ],
   "streaming_services": [ /* provider_id + region */ ],
   "recommendation_data": {
@@ -298,7 +304,36 @@ with a BOM-free `\n` line terminator.
 
 ### `smart_lists.csv` — source: `SmartList`
 
-`smart_list_id,name,description,scope,filters_json,sort,is_public,created_at,updated_at`
+`smart_list_id,name,description,scope,filters_json,sort,is_public,created_at,updated_at,list_kind,discovery_filters,scope_is_compat_placeholder`
+
+`list_kind`, `discovery_filters` and `scope_is_compat_placeholder` were added
+in **F15** and are **append-only**: the nine original columns keep their exact
+names and order, so an existing CSV consumer parses the file unchanged (see
+[§11.1](#111-f15-additive-changes-within-version-1)).
+
+`scope` is **not** reliable on its own. An ordinary Smart List stores a real
+scope (`watchlist` / `diary` / `tracked_tv` / `all`) that the engine evaluates.
+An F11 discovery preset stores **validated TMDb `/discover` parameters** and
+carries `scope: "all"` purely as a non-nullable compatibility placeholder,
+because `smart_list.scope` is `NOT NULL`. Exporting that placeholder raw made a
+saved discovery search indistinguishable from an ordinary "Everything" list.
+Read `list_kind` first:
+
+| Field | Meaning |
+|---|---|
+| `list_kind` | `discovery_preset` when the row is an F11 saved discovery search; `smart_list` otherwise. Derived from the same `is_discovery_preset()` helper the runtime uses, i.e. from `filters_json.kind == "discovery"` — **not** from `scope`. |
+| `discovery_filters` | The preset's canonical `/discover` configuration as a real JSON object (`media_type`, `genres`, `year_from`, `year_to`, `min_rating`, `sort`), or empty for an ordinary Smart List. Genres are the canonical TMDb slugs already stored, so a saved search can be reconstructed exactly. |
+| `scope_is_compat_placeholder` | `true` when `scope` is inert. A consumer that reads `scope` before `list_kind` should use this to avoid treating a preset's placeholder as its behaviour. |
+
+`filters_json` remains the untouched raw document, so an exact round-trip is
+still possible from the original columns alone.
+
+### `notification_preferences` — source: `UserNotificationPreference`
+
+JSON section only — there is **no** `notification_preferences.csv`, because a
+preference is a single per-user record rather than a list of events. This is
+the same treatment `account` and `profile` receive. (`notifications.csv`
+still exists and holds Notification **records**; it is a different thing.)
 
 ### `streaming_services.csv` — source: `UserStreamingService`
 
@@ -553,6 +588,23 @@ entries, reviews, watched episodes) is exported normally.
   known version, so that additive changes do not break them.
 - `format` is a constant string; a different `format` value means the file is
   not a FrameIQ export at all.
+
+### 11.1 F15 additive changes within version 1
+
+F15 added two things without bumping `version`, which §11 permits because no
+existing field changed meaning:
+
+1. **`notification_preferences`** — a new top-level JSON section. F12's
+   `UserNotificationPreference` row is deliberately **sparse**: a user who
+   never opened the settings page has no row and receives the documented
+   defaults (`new_episode: true`, `season_premiere: false`). Exporting stored
+   rows alone would have reported most users as having no preferences, so the
+   export resolves the **effective** values through
+   `api.notification_preferences.get_preferences()` — the same reader the
+   delivery path uses. The read never creates a row, no internal identifiers
+   are emitted, and the categories remain independent (no master switch).
+2. **`smart_list`** — three appended fields (§4). The nine original columns
+   keep their names and order, so existing consumers are unaffected.
 
 ---
 

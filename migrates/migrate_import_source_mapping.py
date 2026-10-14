@@ -30,6 +30,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
 from app import app  # noqa: E402
 from models import db  # noqa: E402
 from sqlalchemy import inspect, text  # noqa: E402
@@ -49,7 +56,7 @@ def migrate():
         # Single source of truth for the DDL: the model's own metadata. A
         # hand-written CREATE TABLE would drift from models/import_mapping.py
         # the first time a column is added there.
-        from models.import_mapping import ImportSourceMapping
+        from models.import_mapping import ImportSourceMapping  # noqa: E402
         ImportSourceMapping.__table__.create(bind=db.engine, checkfirst=True)
         db.session.commit()
 

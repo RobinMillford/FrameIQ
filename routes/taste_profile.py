@@ -9,9 +9,12 @@ The route adds only:
   no user_id/username/profile_id parameter, so inspecting another user's
   taste is impossible by construction
 - a bounded rate limit (single cached profile read per request — cheap)
+- one batched read resolving actor display names to existing /actor/ URLs
+  (F14); skipped entirely when the profile has no actor affinity
 
 The response is a PRESENTATION MODEL: strength labels instead of raw
-weights, no IDs, no profile_version, no feedback rows, no raw JSON. A user
+weights, no raw JSON. Actors are exposed as a ready-made relative URL, not a
+raw person id, so the presentation contract stays id-free. A user
 without a profile gets 200 {available: false, state: "cold_start"} — that
 is a normal state, not an error. Nothing is computed, mutated, or fetched
 from the network here.
@@ -48,7 +51,19 @@ def api_taste_profile():
         return jsonify({'available': False, 'state': 'cold_start'})
 
     try:
-        dna = taste_profile.taste_dna(profile)
+        # F14: resolve actor names to existing /actor/ URLs BEFORE formatting,
+        # so the formatter stays pure. One extra batched query at most, and
+        # zero when the profile carries no actor affinity (the common case).
+        # No user_id input, no network, no recompute — read-only as before.
+        actor_links = taste_profile.resolve_actor_links(
+            (profile.actor_affinity or {}).keys())
+        # F19: one batched lookup for the whole director set (zero queries
+        # when there is no director affinity), each resolved to at most one
+        # LOCAL Director row so no ambiguous name can become a wrong link.
+        director_links = taste_profile.resolve_director_links(
+            (profile.director_affinity or {}).keys())
+        dna = taste_profile.taste_dna(
+            profile, actor_links=actor_links, director_links=director_links)
     except Exception:
         logger.error("Taste DNA presentation failed for user %s",
                      current_user.id, exc_info=True)

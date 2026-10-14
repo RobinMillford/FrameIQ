@@ -1,69 +1,88 @@
-"""Migration: consolidate Wishlist into the canonical Watchlist.
+"""RETIRED — use the registered migration instead (Feature F22).
 
-Idempotent — safe to run multiple times. On the first run it:
+This script used to merge the ``user_wishlist`` rows into ``user_watchlist``
+and then drop the legacy table outright. It is retired and now does nothing.
 
-    1. copies every ``user_wishlist`` row that does NOT already exist in
-       the same user's ``user_watchlist`` into ``user_watchlist``
-       (preserving ``priority`` and ``date_added``; an existing
-       Watchlist row always wins — it is never overwritten), then
-    2. drops the ``user_wishlist`` table.
+Why it was retired
+------------------
+It was a SECOND, INDEPENDENT way to run that destructive operation, and a
+strictly less safe one:
 
-On every later run (or a fresh database where the table never existed)
-it is a no-op. After this migration the application metadata and the
-live database agree: ``user_watchlist`` only, no ``user_wishlist``.
+* It dropped the legacy table with **no target authorization** —
+  no :func:`utils.db_target.require_writable_target` call, so running it with a
+  production ``DATABASE_URL`` reached a live database through a plain module
+  import.
+* It carried **none** of the controls the registered migration has: no
+  ``--allow-production``, no operator-verified backup, no checksum in the
+  ledger, no dependency ordering.
+* It merged rows **silently discarding** ``priority``/``date_added`` whenever a
+  conflicting Watchlist row already existed. The registered migration refuses
+  to drop the table at all when any source row cannot be preserved
+  (``migrations_0002_remove_legacy_wishlist.py``), and raises with the verdict
+  and the at-risk columns so an operator sees WHICH rows are in danger.
 
-Run with SKIP_SCHEMA_GUARD=1 (the schema guard blocks the app import
-while the legacy table still exists in models metadata terms):
+So the legacy path was not merely redundant — running it could lose data that
+the supported path protects.
 
-    SKIP_SCHEMA_GUARD=1 python migrates/migrate_remove_wishlist.py
+What to use instead
+-------------------
+The registered, ledger-tracked, backup-gated migration:
+
+    python scripts/migrate.py upgrade --allow-production
+
+It applies ``0002_remove_legacy_wishlist``. Because that migration is marked
+``DESTRUCTIVE``, the runner additionally requires ``--authorize-destructive``
+together with ``--backup-ref`` and ``--backup-verified-by``. See
+``docs/migration-inventory.md`` and ``scripts/migrate.py --help``.
+
+Running this file deliberately does NOT invoke the replacement. Translating a
+legacy invocation into a production-authorized one would be exactly the
+unsafe shortcut this retirement exists to remove: the authorization, the
+backup verification, and the destructive approval all have to be chosen
+deliberately by whoever performs them.
 """
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Deliberately no imports at all — not `app`, not `models`, not SQLAlchemy.
+# This module must be inert on import: no application initialisation, no engine,
+# no connection, no DDL/DML. tests/test_legacy_migration_guard_f22.py asserts
+# this structurally with an AST check rather than by trusting this comment.
 
-from app import app  # noqa: E402
-from models import db  # noqa: E402
-from sqlalchemy import inspect, text  # noqa: E402
+#: Exit status used for "this operation has been retired".
+EXIT_RETIRED = 2
+
+RETIREMENT_MESSAGE = """\
+RETIRED: migrates/migrate_remove_wishlist.py no longer performs this migration.
+
+It used to DROP the user_wishlist table without target authorization and
+without a verified backup, and it could silently discard priority/date_added.
+That operation is now owned by the registered migration
+'0002_remove_legacy_wishlist', which refuses to drop the table when any source
+row cannot be preserved.
+
+Use the supported runner instead (it will NOT run automatically):
+
+    python scripts/migrate.py upgrade --allow-production
+
+That migration is DESTRUCTIVE and additionally requires:
+    --authorize-destructive --backup-ref <snapshot> --backup-verified-by <who>
+
+Docs: docs/migration-inventory.md ; runner help: scripts/migrate.py --help
+"""
 
 
-def migrate():
-    with app.app_context():
-        inspector = inspect(db.engine)
-        tables = inspector.get_table_names()
+def migrate(*args, **kwargs):
+    """Present so old imports fail loudly instead of silently doing nothing.
 
-        if 'user_wishlist' not in tables:
-            print("[OK] user_wishlist does not exist — nothing to do.")
-            return
-
-        # ── Step 1: merge wishlist-only rows into user_watchlist ──
-        # Existing Watchlist rows win: a (user_id, media_id, media_type)
-        # already present in user_watchlist is left untouched. Wishlist-
-        # only rows are inserted with their original priority and
-        # date_added preserved (COALESCE guards legacy NULLs).
-        merge_sql = text("""
-            INSERT INTO user_watchlist
-                (user_id, media_id, media_type, date_added, priority)
-            SELECT w.user_id, w.media_id, w.media_type,
-                   COALESCE(w.date_added, CURRENT_TIMESTAMP),
-                   COALESCE(w.priority, 'medium')
-            FROM user_wishlist w
-            WHERE NOT EXISTS (
-                SELECT 1 FROM user_watchlist wl
-                WHERE wl.user_id = w.user_id
-                  AND wl.media_id = w.media_id
-                  AND wl.media_type = w.media_type
-            )
-        """)
-        result = db.session.execute(merge_sql)
-        merged = result.rowcount or 0
-        print(f"[OK] Merged {merged} wishlist-only row(s) into user_watchlist.")
-
-        # ── Step 2: drop the legacy table ──
-        db.session.execute(text("DROP TABLE user_wishlist"))
-        db.session.commit()
-        print("[OK] Dropped user_wishlist table.")
+    Returning quietly would let a caller believe the consolidation had happened
+    when it had not, so this raises rather than returning a falsy value.
+    """
+    raise NotImplementedError(
+        'migrate_remove_wishlist.migrate() was removed in F22. Use '
+        'scripts/migrate.py upgrade, which applies the registered '
+        '0002_remove_legacy_wishlist migration under full authorization.')
 
 
 if __name__ == '__main__':
-    migrate()
+    import sys
+    sys.stderr.write(RETIREMENT_MESSAGE)
+    raise SystemExit(EXIT_RETIRED)

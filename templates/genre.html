@@ -5,6 +5,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# F23.2: this standalone page loads chrome.js, which builds the CineBot
+       slide-over globally (⌘J or the nav button). The widget posts to
+       /chat_api, which CSRFProtect protects, so the page must publish a
+       token -- there is no base.html fetch patch here to supply one. Same
+       convention and placement as the other standalone templates. #}}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>{{ genre_name }} Movies - FrameIQ</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -181,7 +187,13 @@
                 mobileMenu.classList.toggle('hidden');
             });
         }
-});
+
+        // F21 — the previously-orphaned `});` made this whole block fail to
+        // parse, so setupMobileMenu() was dead. The closing token is removed;
+        // the function body itself is unchanged and contains only static markup.
+        if (document.getElementById('mobile-menu-button')) {
+            setupMobileMenu();
+        }
     </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>

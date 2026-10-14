@@ -53,7 +53,7 @@ jobs:
 
     steps:
       - name: Enrich director credits (bounded)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -76,7 +76,7 @@ jobs:
 
       - name: Recompute taste profiles
         # Default step semantics: runs ONLY if enrichment succeeded.
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -92,7 +92,7 @@ jobs:
       - name: Verify feedback pipeline
         # Default step semantics: runs ONLY if the previous step succeeded.
         # A failed recomputation never reaches verification.
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -108,7 +108,7 @@ jobs:
         # A failed verification never reaches analytics. The CLI is
         # read-only, aggregate-only, network-free, and uses its default
         # 7-day window (no --days override); exit 0/1/2 propagate as-is.
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

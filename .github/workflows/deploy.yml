@@ -93,7 +93,7 @@ jobs:
 
       # ── 1. Pre-flight: VPS tree must be clean before anything is reset ──
       - name: Pre-flight check (clean VPS working tree)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -118,7 +118,7 @@ jobs:
       # fails boot, which fails the container check below. SKIP_SCHEMA_GUARD
       # is never set for the running application.
       - name: Deploy and verify (exact SHA)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           VERIFIED_SHA: ${{ steps.sha.outputs.sha }}
         with:
@@ -208,7 +208,15 @@ jobs:
 
             # 2. Legacy convergence: additive only, idempotent, bounded to an
             #    explicit 11-table allow-list, fail-closed on anything else.
-            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web python migrates/migrate_schema_convergence.py
+            #
+            #    `--allow-production` is required for the same reason as every
+            #    runner line above: the script authorizes its target through
+            #    utils.db_target before it imports `app`, and refuses a remote
+            #    database without that explicit flag. It is passed to the
+            #    script, not exported as an environment variable, so this step
+            #    cannot widen its own authority.
+            SKIP_SCHEMA_GUARD=1 docker compose run --rm --no-deps web \
+              python migrates/migrate_schema_convergence.py --allow-production
 
             # 3. Prove that the ONLY schema drift is objects a registered,
             #    pending, non-destructive migration declares it owns.
@@ -423,10 +431,22 @@ jobs:
   #   1. a deliberate `workflow_dispatch` with a per-run backup reference and a
   #      named operator (inputs, not repository variables — a stale variable is
   #      not evidence that today's snapshot exists);
-  #   2. approval of the `production-destructive` environment, which MUST be
-  #      configured with required reviewers in repository settings. If no
-  #      reviewer is configured the environment applies no protection, so the
-  #      preflight below fails closed in that case;
+  #   2. approval of the `production-destructive` environment, which MUST be fully
+  #      protected in repository settings. All THREE protections are required:
+  #        - at least one entry under 'Required reviewers';
+  #        - 'Prevent self-review' ENABLED, so whoever dispatched the run cannot
+  #          be the one who approves it;
+  #        - 'Allow administrators to bypass configured protection rules'
+  #          DESELECTED, so a repository admin cannot skip the review.
+  #      Reviewers alone are not enough: without 'Prevent self-review' the
+  #      dispatcher can approve their own run, and with administrator bypass
+  #      permitted the whole rule set can be overridden. The preflight step
+  #      below reads the environment and fails closed unless all three hold.
+  #
+  #      Creating the environment configures none of this. GitHub creates
+  #      `production-destructive` automatically, with no protection rules, the
+  #      first time any workflow references it, so the first dispatch is
+  #      expected to stop and ask for this configuration;
   #   3. the runner's own per-migration authorization check, which re-verifies
   #      the backup reference and refuses on placeholders.
   #
@@ -441,7 +461,12 @@ jobs:
       group: production-deploy
       cancel-in-progress: false
     if: github.event_name == 'workflow_dispatch'
-    # Required reviewers MUST be configured here in repository settings.
+    # This environment MUST be fully protected in repository settings
+    # (Settings > Environments): at least one entry under 'Required reviewers',
+    # 'Prevent self-review' ENABLED, and 'Allow administrators to bypass
+    # configured protection rules' DESELECTED. Creating the environment alone
+    # configures none of them — the preflight step below fails closed until all
+    # three are in place.
     environment:
       name: production-destructive
       url: https://frameiq.studio/health
@@ -493,21 +518,257 @@ jobs:
           # This is checked rather than assumed. Declaring `environment:` in the
           # job is necessary but not sufficient evidence of a human gate.
           ENV_NAME="production-destructive"
-          PROTECTION="$(gh api "repos/${GITHUB_REPOSITORY}/environments/${ENV_NAME}" \
-            --jq '{reviewers: (.deployment_protection_rule.required_reviewers // [] | length),
-                   wait_timer: (.deployment_protection_rule.wait_timer // 0),
-                   branch_policy: (.deployment_branch_policy // null)}')"
-          echo "Environment protection: ${PROTECTION}"
 
-          REVIEWERS="$(echo "$PROTECTION" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reviewers"])')"
-          if [ "${REVIEWERS}" -lt 1 ]; then
-            echo "::error::Environment '${ENV_NAME}' has no required reviewers, so this step is self-authorising. Add required reviewers in repository settings (Settings > Environments) before running a destructive migration."
+          # Every refusal ends here, so the operator is told both that nothing
+          # destructive ran and exactly what to configure. Creating the
+          # environment is deliberately called out as insufficient on its own.
+          refuse() {
+            echo "::error::Destructive migration STOPPED SAFELY — no production change was made."
+            echo "::error::Reason: ${1}"
+            echo "::error::To fix, open repository settings (Settings > Environments > ${ENV_NAME}):"
+            echo "::error::   1. The '${ENV_NAME}' environment must exist."
+            echo "::error::   2. It must have a 'Required reviewers' protection rule."
+            echo "::error::   3. That rule must list at least one reviewer (a user or a team)."
+            echo "::error::   4. That rule must have 'Prevent self-review' ENABLED, so whoever"
+            echo "::error::      dispatched this run cannot be the one who approves it."
+            echo "::error::   5. 'Allow administrators to bypass configured protection rules' must be"
+            echo "::error::      DESELECTED, so a repository admin cannot skip the review entirely."
+            echo "::error::Creating the environment alone is NOT sufficient: an environment with no"
+            echo "::error::required reviewers, with reviewers but no independent-approval rule, or"
+            echo "::error::with administrator bypass still enabled, applies no protection against a"
+            echo "::error::destructive migration that nobody independent had to agree to."
             exit 1
+          }
+
+          RESPONSE="$(mktemp)"
+          trap 'rm -f "${RESPONSE}"' EXIT
+
+          # `if !` rather than a bare command: errexit does not apply inside a
+          # condition, so the failure is caught here and turned into advice
+          # instead of an opaque gh error. A missing environment is a 404 and an
+          # unreadable one is a 403; both must refuse, never pass.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/environments/${ENV_NAME}" > "${RESPONSE}"; then
+            refuse "the environments API request failed — '${ENV_NAME}' does not exist, or the workflow token could not read it."
           fi
-          echo "Required reviewers are configured (${REVIEWERS}). Approval must come from one of them."
+          echo "Environment response: $(wc -c < "${RESPONSE}" | tr -d ' ') bytes."
+
+          # F25: the documented response exposes protection rules as an ARRAY:
+          #   protection_rules: [ { type: "required_reviewers",
+          #                            prevent_self_review: <bool>,
+          #                            reviewers: [ {type, reviewer}, ... ] }, ... ]
+          # The old filter read `.deployment_protection_rule.required_reviewers`, a
+          # single-object shape the API no longer returns, so the `// []` fallback
+          # silently produced zero on every run and this gate could never pass.
+          #
+          # Only a `required_reviewers` rule counts. A wait timer or a deployment
+          # branch policy is not a human gate and must not be mistaken for one,
+          # and a missing property is never treated as proof of configuration.
+          #
+          # The heredoc body below is written at this block's indentation on
+          # purpose: the YAML block scalar dedents the whole run block uniformly,
+          # so these lines land at column 0 where Python requires top-level
+          # statements. Re-indent the run block as a unit, never these alone.
+          # Two facts come back on one line: "<reviewer count> <self-review enabled?>".
+          FACTS="$(
+            REVIEWER_RESPONSE="${RESPONSE}" python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          RESPONSE = os.environ["REVIEWER_RESPONSE"]
+
+          # Distinguishes "key absent" from "key present and null". Both are
+          # rejected below, but only the distinct report makes the two
+          # misconfigurations diagnosable from the CI log.
+          _MISSING = object()
+
+          def refuse(reason):
+              sys.stderr.write(f"::error::{reason}\n")
+              sys.exit(1)
+
+          try:
+              with open(RESPONSE, encoding="utf-8") as handle:
+                  environment = json.load(handle)
+          except Exception as exc:
+              refuse(f"the environments API response was not readable JSON ({exc}). "
+                     f"An unreadable response is not evidence of a reviewer gate.")
+              raise AssertionError("unreachable")  # keeps the failure explicit
+
+          if not isinstance(environment, dict):
+              refuse("the environments API response was not a JSON object.")
+
+          rules = environment.get("protection_rules")
+          if rules is None:
+              refuse(f"the response has no 'protection_rules' property, so no reviewer "
+                     f"gate can be confirmed. (An older single-object "
+                     f"'deployment_protection_rule' shape is no longer returned "
+                     f"and is deliberately NOT treated as configured.)")
+          if not isinstance(rules, list):
+              refuse(f"'protection_rules' was {type(rules).__name__}, expected a list.")
+
+          reviewers_found = 0
+          present_types = []
+          self_review_raw = _MISSING
+          self_review_seen = False
+          for rule in rules:
+              if not isinstance(rule, dict):
+                  refuse("a protection rule was not a JSON object; refusing.")
+              rule_type = rule.get("type")
+              present_types.append(str(rule_type))
+              # Wait timers and deployment branch policies are not human gates,
+              # and must not be mistaken for one even if a future API revision
+              # attaches a reviewers array to them.
+              if rule_type != "required_reviewers":
+                  continue
+              if self_review_seen:
+                  # GitHub returns one rule per type, so a second
+                  # required_reviewers entry is a structure this gate cannot
+                  # reason about. Refuse rather than guess which one the UI
+                  # would actually enforce.
+                  refuse("the response contains more than one "
+                         "'required_reviewers' rule; refusing to guess which "
+                         "one applies.")
+              self_review_raw = rule.get("prevent_self_review", _MISSING)
+              self_review_seen = True
+              reviewers = rule.get("reviewers")
+              if reviewers is None:
+                  continue  # rule present but unconfigured -> contributes zero
+              if not isinstance(reviewers, list):
+                  refuse(f"'reviewers' on the required_reviewers rule was "
+                         f"{type(reviewers).__name__}, expected a list.")
+              # F30: the LENGTH of this array is not evidence that approvable
+              # reviewers exist. Every entry must match the documented response
+              # shape:
+              #   { "type": "User" | "Team", "reviewer": { "id": <int>, ... } }
+              # where the identity is `login` for a user and `slug` for a team,
+              # per GitHub's `simple-user` and `team` response schemas, which
+              # the OpenAPI description composes as
+              # deployment-reviewer-type + anyOf[simple-user, team].
+              #
+              # The WHOLE list is refused if any entry is malformed, rather than
+              # counting the survivors. Counting survivors is how a response
+              # like ["x", null, {}] would otherwise report a reviewer gate that
+              # nobody can actually satisfy.
+              for position, entry in enumerate(reviewers):
+                  if not isinstance(entry, dict):
+                      refuse(f"reviewer entry {position} was "
+                             f"{type(entry).__name__}, expected an object.")
+                  entry_type = entry.get("type")
+                  if entry_type not in ("User", "Team"):
+                      refuse(f"reviewer entry {position} declared type "
+                             f"{entry_type!r}; the documented values are "
+                             f"'User' and 'Team'.")
+                  identity = entry.get("reviewer")
+                  if not isinstance(identity, dict):
+                      refuse(f"reviewer entry {position} ({entry_type}) has no "
+                             f"'reviewer' object (got {type(identity).__name__}).")
+                  identity_id = identity.get("id")
+                  # bool is a subclass of int in Python, so a JSON `true`
+                  # would otherwise pass as an identity.
+                  if isinstance(identity_id, bool) or not isinstance(identity_id, int):
+                      refuse(f"reviewer entry {position} ({entry_type}) has no "
+                             f"integer 'id' (got {identity_id!r}).")
+                  identity_field = "login" if entry_type == "User" else "slug"
+                  handle = identity.get(identity_field)
+                  if not isinstance(handle, str) or not handle:
+                      refuse(f"reviewer entry {position} ({entry_type}) has no "
+                             f"non-empty {identity_field!r}.")
+              reviewers_found += len(reviewers)
+
+          # F26: a non-empty reviewer list is NOT independent approval. The
+          # person who dispatched the run could otherwise sit on that list and
+          # approve their own destructive migration. GitHub models independence
+          # as `prevent_self_review` on the rule, and it must be the JSON
+          # boolean true.
+          #
+          # `is True` is deliberate identity against the True singleton, not
+          # equality and not truthiness. In Python `True == 1` and
+          # `False == 0`, so an equality test would accept the number 1, and a
+          # truthiness test would additionally accept null, 0 and the string
+          # "true". None of those mean "enabled" in this API, so all are
+          # rejected here.
+          self_review_enabled = self_review_seen and self_review_raw is True
+          self_review_shown = ("<absent>" if self_review_raw is _MISSING
+                               else repr(self_review_raw))
+
+          # F27: administrator bypass. GitHub's reference documentation is
+          # explicit that "By default, administrators can bypass the protection
+          # rules and force deployments to specific environments", and that the
+          # hardened state is configured by de-selecting "Allow administrators
+          # to bypass configured protection rules". So `true` is the unsafe
+          # default and `false` is the state this gate demands.
+          #
+          # `is False` is identity against the False singleton for the same
+          # reason as `is True` above: in Python `0 == False` and
+          # `"" == False` is false but `bool("false")` is True, so neither an
+          # equality test nor a truthiness test distinguishes the JSON boolean
+          # false from the number 0 or the string "false". Absent is rejected
+          # outright, because a field GitHub stopped sending is not evidence
+          # that bypass is disabled.
+          #
+          # Note: `can_admins_bypass` is NOT declared in GitHub's published
+          # `environment` OpenAPI schema, so this relies on a field the REST
+          # schema omits. It was observed as a JSON boolean in 31/31 live
+          # environment responses across 16 repositories, with both values
+          # present. If it were ever withdrawn the gate would refuse, which is
+          # the safe direction, but the destructive path would need updating.
+          admins_raw = environment.get("can_admins_bypass", _MISSING)
+          admins_bypass_disabled = admins_raw is False
+          admins_shown = ("<absent>" if admins_raw is _MISSING
+                          else repr(admins_raw))
+
+          # Transported as pipe-delimited fields, so an embedded space or pipe
+          # would shift the fields after it. These two are diagnostic only -- the
+          # accept/reject decisions use the dedicated booleans ahead of them.
+          def wire(value):
+              return value.replace(" ", "_").replace("|", "/")
+
+          sys.stderr.write(f"Protection rule types present: {present_types or ['<none>']}\n")
+          sys.stderr.write(f"Configured required reviewers: {reviewers_found}\n")
+          sys.stderr.write(
+              f"prevent_self_review: {self_review_shown} "
+              f"(independent approval: {'yes' if self_review_enabled else 'NO'})\n")
+          sys.stderr.write(
+              f"can_admins_bypass: {admins_shown} "
+              f"(administrator bypass: {'DISABLED' if admins_bypass_disabled else 'permitted'})\n")
+          # Five fields. Each observed value rides along so the CI annotation
+          # can say which of false, absent, null or wrong-typed actually
+          # occurred, instead of collapsing every misconfiguration into one word.
+          print("|".join([
+              str(reviewers_found),
+              "true" if self_review_enabled else "false",
+              wire(self_review_shown),
+              "true" if admins_bypass_disabled else "false",
+              wire(admins_shown),
+          ]))
+          PYTHON
+          )" || refuse "the environment response could not be evaluated into a reviewer count."
+
+          IFS='|' read -r REVIEWERS SELF_REVIEW SELF_REVIEW_VALUE ADMINS_DISABLED ADMINS_VALUE <<<"${FACTS}"
+
+          # Guard the comparison itself. `[ x -lt 1 ]` returns 2 on a
+          # non-numeric operand, and inside an `if` condition that skips the
+          # body rather than refusing, so a malformed count would otherwise
+          # walk straight past the gate.
+          case "${REVIEWERS}" in
+              ''|*[!0-9]*) refuse "internal error: reviewer count was not a non-negative integer ('${REVIEWERS}')." ;;
+          esac
+
+          if [ "${REVIEWERS}" -lt 1 ]; then
+            refuse "environment '${ENV_NAME}' has no required reviewers configured, so this job would be self-authorising while appearing to be gated."
+          fi
+          if [ "${SELF_REVIEW}" != "true" ]; then
+            refuse "environment '${ENV_NAME}' has required reviewers but does NOT enforce independent approval: its required-reviewers rule reports prevent_self_review=${SELF_REVIEW_VALUE}. Without it, whoever dispatched this run could approve their own destructive migration. Enable 'Prevent self-review' on the '${ENV_NAME}' environment."
+          fi
+          if [ "${ADMINS_DISABLED}" != "true" ]; then
+            refuse "environment '${ENV_NAME}' does NOT forbid administrator bypass: it reports can_admins_bypass=${ADMINS_VALUE}. Repository admins can override protection rules and force a deployment to this environment, which makes the required-reviewers rule advisory rather than binding. De-select 'Allow administrators to bypass configured protection rules' on the '${ENV_NAME}' environment."
+          fi
+          echo "Required reviewers are configured (${REVIEWERS}), self-review is prevented,"
+          echo "and administrators cannot bypass the protection rules."
+          echo "Approval must come from a reviewer other than the person who dispatched this run."
 
       - name: Destructive migration (backup-approved)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

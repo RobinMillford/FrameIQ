@@ -186,7 +186,8 @@ def test_fresh_database_plans_every_registered_migration_pending():
     report = runner.plan({})
     assert [s.version for s in report['pending']] == [
         '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist',
-        '0003_cast_persistence', '0004_notification_preferences']
+        '0003_cast_persistence', '0004_notification_preferences',
+        '0005_media_runtime']
     assert report['mismatched'] == []
 
 
@@ -196,7 +197,7 @@ def test_applied_migration_is_not_pending_again():
                                                                'migration')})
     assert [s.version for s in report['pending']] == [
         '0002_remove_legacy_wishlist', '0003_cast_persistence',
-        '0004_notification_preferences']
+        '0004_notification_preferences', '0005_media_runtime']
 
 
 def test_edited_applied_migration_is_reported_as_mismatched():
@@ -314,12 +315,14 @@ def test_upgrade_applies_all_and_records_each(engine):
     assert applied == ['0001_canonical_watched_reconcile',
                        '0003_cast_persistence',
                        '0004_notification_preferences',
+                       '0005_media_runtime',
                        '0002_remove_legacy_wishlist']
     rows = _ledger_rows(engine)
     assert set(rows) == {'0001_canonical_watched_reconcile',
                          '0002_remove_legacy_wishlist',
                          '0003_cast_persistence',
-                         '0004_notification_preferences'}
+                         '0004_notification_preferences',
+                         '0005_media_runtime'}
     for version, (checksum, kind) in rows.items():
         assert kind == 'migration'
         assert checksum == runner.checksum_for(_spec(version))
@@ -329,7 +332,7 @@ def test_upgrade_is_idempotent(engine):
     _run_all(engine)
     assert runner.apply_pending(engine) == []
     assert _run_0002(engine) == []
-    assert len(_ledger_rows(engine)) == 4
+    assert len(_ledger_rows(engine)) == 5
 
 
 def test_ledger_table_is_created_by_the_runner_not_a_migration(engine):
@@ -512,7 +515,8 @@ def test_baseline_does_not_mark_migrations_as_applied(engine):
     report = runner.plan(_ledger_rows(engine))
     assert [s.version for s in report['pending']] == [
         '0001_canonical_watched_reconcile', '0002_remove_legacy_wishlist',
-        '0003_cast_persistence', '0004_notification_preferences']
+        '0003_cast_persistence', '0004_notification_preferences',
+        '0005_media_runtime']
 
 
 # ── locking ──────────────────────────────────────────────────────────────────
@@ -1248,7 +1252,7 @@ def test_cli_upgrade_applies_ordinary_migrations_and_defers_the_destructive(
     assert 'no rows written' in result.stdout
 
     status = _run_cli(db_path, 'status')
-    assert 'Recorded migrations : 3' in status.stdout
+    assert 'Recorded migrations : 4' in status.stdout
     assert 'Baseline            : NOT ADOPTED' in status.stdout
     assert 'Schema guard        : OK' in status.stdout
 
@@ -1301,7 +1305,7 @@ def test_cli_applies_the_destructive_migration_with_valid_evidence(tmp_path):
     assert result.returncode == 0, result.stderr
 
     status = _run_cli(db_path, 'status')
-    assert 'Recorded migrations : 4' in status.stdout
+    assert 'Recorded migrations : 5' in status.stdout
     assert 'Checksum mismatches : none' in status.stdout
     assert 'Schema guard        : OK' in status.stdout
 

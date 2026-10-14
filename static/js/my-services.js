@@ -75,6 +75,22 @@
         return d.innerHTML;
     }
 
+    /**
+     * F21 — escape for a QUOTED ATTRIBUTE context.
+     *
+     * `esc()` above is the textContent->innerHTML variant, which encodes only
+     * `& < >`. A quote therefore survives it and can terminate a double-quoted
+     * attribute. Every value placed inside quotes below uses this instead.
+     */
+    function escAttr(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function showError(msg) {
         if (!errorEl) return;
         errorEl.textContent = msg;
@@ -99,11 +115,32 @@
 
     function logoHtml(p) {
         if (!p || !p.logo) return '<span class="text-xs">' + esc(p && p.name) + '</span>';
-        return '<img src="https://image.themoviedb.org/t/p/w92' + esc(p.logo) +
-               '" alt="" aria-hidden="true" loading="lazy" ' +
-               'style="height:1rem;width:auto;border-radius:.2rem;flex:none" ' +
-               'onerror="this.outerHTML=\'<span class=\\\'text-xs\\\'>' +
-               esc(p.name) + '</span>\'">';
+        // F21 — the fallback is applied by a delegated 'error' listener
+        // installed in bindLogoFallbacks(). The previous inline
+        // `onerror="this.outerHTML='<span ...>' + name + '</span>'"` spliced a
+        // provider name into a JS string nested inside an HTML attribute, so a
+        // name containing a quote could terminate the string early. The name is
+        // now carried as a data attribute and read back as text.
+        return '<img src="' + escAttr('https://image.themoviedb.org/t/p/w92' + p.logo) +
+               '" alt="" aria-hidden="true" loading="lazy"' +
+               ' style="height:1rem;width:auto;border-radius:.2rem;flex:none"' +
+               ' data-ms-logo="' + escAttr(p && p.name) + '">';
+    }
+
+    /**
+     * F21 — delegated logo-fallback listener, installed once per render.
+     */
+    function bindLogoFallbacks(root) {
+        var images = (root || document).querySelectorAll('img[data-ms-logo]:not([data-ms-bound])');
+        Array.prototype.forEach.call(images, function (img) {
+            img.setAttribute('data-ms-bound', '1');
+            img.addEventListener('error', function () {
+                var span = document.createElement('span');
+                span.className = 'text-xs';
+                span.textContent = img.getAttribute('data-ms-logo') || '';
+                if (img.parentNode) img.parentNode.replaceChild(span, img);
+            });
+        });
     }
 
     function selectedIds() {
@@ -212,7 +249,7 @@
         listEl.innerHTML = visible.length ? visible.map(function (p) {
             var on = !!selected[p.id];
             return '<label class="svc-row" data-selected="' + (on ? 'true' : 'false') + '">' +
-                   '<input type="checkbox" data-provider="' + p.id + '" ' +
+                   '<input type="checkbox" data-provider="' + escAttr(p.id) + '" ' +
                    'class="flex-none accent-[var(--accent)]" ' + (on ? 'checked' : '') + '>' +
                    '<span class="flex min-w-0 items-center gap-2">' + logoHtml(p) +
                    '<span class="truncate text-xs">' + esc(p.name) + '</span></span>' +
@@ -220,6 +257,8 @@
         }).join('') :
             '<p class="py-3 text-xs text-gray-400">No services match “' +
             esc(query.trim()) + '”. Your existing selection is unaffected.</p>';
+
+        bindLogoFallbacks(listEl);
 
         if (searchStatusEl) {
             searchStatusEl.textContent = q

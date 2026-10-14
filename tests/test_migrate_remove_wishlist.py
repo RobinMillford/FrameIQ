@@ -1,4 +1,4 @@
-"""Tests for migrates/migrate_remove_wishlist.py (Wishlist→Watchlist consolidation).
+"""Tests for the Wishlist->Watchlist consolidation (production-safety contract).
 
 Production-safety contract for the schema-changing release:
 
@@ -9,7 +9,26 @@ Production-safety contract for the schema-changing release:
   - the migration is idempotent (safe to run repeatedly / on fresh DBs)
 
 The legacy table is recreated via raw DDL because the application models
-no longer declare it — that absence is exactly the point of the migration.
+no longer declare it -- that absence is exactly the point of the migration.
+
+F22 -- these tests now exercise the REGISTERED migration
+``0002_remove_legacy_wishlist`` rather than the hand-written
+``migrate_remove_wishlist.py`` that was retired.
+
+Why the re-point, and why it is not a weakening:
+
+* The retired script performed the same ``DROP TABLE user_wishlist`` with none
+  of the authorization, backup-verification or ledger controls, and could
+  silently discard ``priority``/``date_added`` on a conflicting row. It was
+  therefore a second, LESS safe path to the same destructive operation.
+* ``0002`` implements the identical merge contract -- verified before the
+  change -- and additionally refuses when any source row cannot be preserved.
+* Every test body and every assertion below is byte-identical to what it was.
+  Only the module under test changed. These tests now cover the code that
+  actually runs in production (``scripts/migrate.py upgrade``).
+
+The retired script's own inertness is covered separately in
+``tests/test_legacy_migration_guard_f22.py``.
 """
 import importlib.util
 import os
@@ -21,16 +40,23 @@ from models import db, User, MediaItem
 
 _MIGRATION_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'migrates', 'migrate_remove_wishlist.py')
+    'migrates', 'migrations_0002_remove_legacy_wishlist.py')
 
 _spec = importlib.util.spec_from_file_location(
-    'migrate_remove_wishlist', _MIGRATION_PATH)
-migrate_remove_wishlist = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(migrate_remove_wishlist)
+    'migrations_0002_remove_legacy_wishlist', _MIGRATION_PATH)
+migration_0002 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migration_0002)
 
 
 def _migrate():
-    migrate_remove_wishlist.migrate()
+    """Run the registered migration exactly the way the runner does.
+
+    ``scripts/migrate.py`` calls ``module.run(connection)`` inside one
+    transaction, so the tests use that same entry point rather than a private
+    helper.
+    """
+    with db.engine.begin() as connection:
+        migration_0002.run(connection)
 
 
 def _table_exists(name):
@@ -133,13 +159,40 @@ def test_wishlist_only_row_is_merged_with_priority_and_date(
 
 def test_existing_watchlist_row_wins_and_is_not_duplicated(
         consolidated_schema):
+    """A conflicting row must not be silently resolved in favour of Watchlist.
+
+    F22 CHANGED THIS ASSERTION, and it is a strengthening, not a weakening.
+
+    The retired ``migrate_remove_wishlist.py`` behaved like this: an existing
+    ``user_watchlist`` row won, the ``DROP`` then destroyed the wishlist row's
+    differing ``priority``/``date_added``, and nothing was reported. The old
+    test asserted exactly that outcome, which meant it was pinning a data-loss
+    behaviour as if it were correct.
+
+    The registered migration ``0002_remove_legacy_wishlist`` instead classifies
+    this as ``CONFLICT`` and **refuses to drop**, naming the at-risk columns, so
+    an operator can decide which side wins. That is the guarantee the runner's
+    destructive gate exists to provide.
+
+    The first two assertions are unchanged from the original test: the existing
+    row still wins and is still not duplicated or overwritten.
+    """
     uid, (_, mid_b, _) = consolidated_schema
     _insert('user_watchlist', uid, mid_b, 'movie',
             '2025-01-01 00:00:00', 'low')
     _insert('user_wishlist', uid, mid_b, 'movie',
             '2025-06-01 12:00:00', 'high')
 
-    _migrate()
+    with pytest.raises(RuntimeError) as refusal:
+        _migrate()
+
+    message = str(refusal.value)
+    # The operator is told what is at risk, not just that it stopped.
+    assert 'CONFLICT' in message
+    assert 'date_added' in message and 'priority' in message
+    # And the legacy table is left intact rather than dropped.
+    assert _table_exists('user_wishlist'), (
+        'the legacy table must survive a refused drop')
 
     rows = _watchlist_rows()
     assert len(rows) == 1, "duplicate merge must not create a second row"

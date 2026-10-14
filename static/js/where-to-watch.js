@@ -24,6 +24,45 @@
         return d.innerHTML;
     }
 
+    /**
+     * F21 — escape for a QUOTED ATTRIBUTE context.
+     *
+     * The `esc()` above is the textContent->innerHTML variant, which encodes
+     * only `& < >`; a quote survives it and can terminate a double-quoted
+     * attribute. Values placed inside quotes use this instead.
+     */
+    function escAttr(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // F21 — shared DOM-safety helpers (static/js/dom-safety.js). Resolved LAZILY
+    // rather than captured at IIFE time: where-to-watch.js is loaded by the
+    // detail templates and must not depend on whether the helper happened to
+    // execute first.
+    function dom() {
+        return window.FrameIQDOM || null;
+    }
+
+    /**
+     * F21 — URL policy for provider links.
+     *
+     * `p.link` is `data.results.<REGION>.link` taken verbatim from the TMDb
+     * watch-providers response. `esc()` does NOT help here: HTML-encoding does
+     * not prevent `href="javascript:..."` from being followed. The scheme must
+     * be validated independently, so the link is parsed and only http/https
+     * survive. An unsafe or missing link degrades to a non-navigating chip,
+     * which is exactly how a provider without a link already renders.
+     */
+    function safeProviderLink(link) {
+        var D = dom();
+        return (D && typeof D.safeLinkUrl === 'function') ? D.safeLinkUrl(link) : '';
+    }
+
     /* ── State renderers ───────────────────────────────────────────────── */
 
     function stateLoading() {
@@ -62,20 +101,43 @@
         var label = esc(p.name);
         var inner;
         if (p.logo) {
-            // onerror falls back to the name chip — no permanent skeleton.
-            inner = '<img src="' + esc(IMG_BASE + p.logo) + '" alt="' + label +
-                    '" class="wtw-logo" style="height:1.5rem;width:auto;max-width:5rem;border-radius:.25rem" ' +
-                    'onerror="this.outerHTML=\'<span class=&quot;wtw-fallback&quot;>' + label + '</span>\'">';
+            // F21 — the fallback is applied by a real 'error' listener
+            // installed in attachImageFallbacks() after insertion. The previous
+            // `onerror="this.outerHTML='...'"` spliced a provider name into a
+            // JS string nested inside an HTML attribute, which a name containing
+            // a quote could terminate early.
+            inner = '<img src="' + escAttr(IMG_BASE + p.logo) + '" alt="' + escAttr(p.name) +
+                    '" class="wtw-logo" style="height:1.5rem;width:auto;max-width:5rem;border-radius:.25rem"' +
+                    ' data-wtw-logo="' + escAttr(p.name) + '">';
         } else {
             inner = '<span class="wtw-fallback">' + label + '</span>';
         }
         var cls = 'wtw-chip inline-flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs ' +
                   (extraClass || '');
-        if (p.link) {
-            return '<a href="' + esc(p.link) + '" target="_blank" rel="noopener" class="' + cls +
+        var href = safeProviderLink(p.link);
+        if (href) {
+            return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer" class="' + cls +
                    ' hover:border-white/25" title="View on ' + label + '">' + inner + '</a>';
         }
         return '<span class="' + cls + '">' + inner + '</span>';
+    }
+
+    /**
+     * F21 — install logo-fallback behaviour with event listeners rather than
+     * inline attributes. Delegated on the section so it survives every
+     * subsequent re-render.
+     */
+    function attachImageFallbacks(root) {
+        var images = (root || document).querySelectorAll('img[data-wtw-logo]:not([data-wtw-bound])');
+        Array.prototype.forEach.call(images, function (img) {
+            img.setAttribute('data-wtw-bound', '1');
+            img.addEventListener('error', function () {
+                var span = document.createElement('span');
+                span.className = 'wtw-fallback';
+                span.textContent = img.getAttribute('data-wtw-logo') || '';
+                if (img.parentNode) img.parentNode.replaceChild(span, img);
+            });
+        });
     }
 
     function renderGroup(name, providers) {
@@ -119,6 +181,7 @@
             renderGroup('Buy', data.providers.buy);
 
         body.innerHTML = groups + renderMatchBanner(data);
+        attachImageFallbacks(body);
     }
 
     /* ── Dispatch: map a response/error to exactly one terminal state ──── */

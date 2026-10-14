@@ -2,8 +2,19 @@
 Database migration script for Week 2b: List Collaboration, Categories, and Analytics
 Adds new tables and relationships for enhanced list features
 """
-from app import app, db
-from models import ListCollaborator, ListCategory, UserListCategory, ListAnalytics, ListView
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+import os as _f22_os  # F22: make `utils` importable regardless of cwd  # noqa: E402
+import sys as _f22_sys  # noqa: E402
+_f22_sys.path.insert(0, _f22_os.path.dirname(
+    _f22_os.path.dirname(_f22_os.path.abspath(__file__))))
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
+
+from app import app, db  # noqa: E402
+from models import ListCollaborator, ListCategory, UserListCategory, ListAnalytics, ListView  # noqa: E402
 
 def migrate():
     """Create new tables for Week 2b features"""
@@ -110,7 +121,7 @@ def migrate():
             
             # Initialize analytics for existing lists
             print("\n📊 Initializing analytics for existing lists...")
-            from models import UserList
+            from models import UserList  # noqa: E402
             
             lists_without_analytics = UserList.query.outerjoin(ListAnalytics).filter(
                 ListAnalytics.id.is_(None)
@@ -139,7 +150,7 @@ def migrate():
         except Exception as e:
             print(f"\n❌ Error during migration: {e}")
             db.session.rollback()
-            import traceback
+            import traceback  # noqa: E402
             traceback.print_exc()
             raise
 

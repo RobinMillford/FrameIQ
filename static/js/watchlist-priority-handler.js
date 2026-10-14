@@ -1,3 +1,20 @@
+/**
+ * F23 (C-7): headers for a mutating request.
+ *
+ * Only sets X-CSRFToken when the page actually publishes one. This component is
+ * loaded by standalone pages (no meta tag) *and* by pages extending base.html,
+ * where a global fetch() patch already injects the header. Setting an empty
+ * header here would override that patch with an empty value and break a page
+ * that currently works, so the field is omitted when there is no token.
+ */
+function csrfJsonHeaders() {
+    const token =
+        document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['X-CSRFToken'] = token;
+    return headers;
+}
+
 // Handle priority changes for the watchlist page
 document.addEventListener('DOMContentLoaded', function() {
     // Get all priority selects
@@ -20,9 +37,7 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const response = await fetch(`/api/update_priority/${listType}/${mediaId}/${mediaType}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: csrfJsonHeaders(),
                     body: JSON.stringify({ priority: newPriority })
                 });
                 

@@ -317,17 +317,19 @@ def test_concurrent_runners_cannot_apply_the_same_migration(pg_engine, capsys):
     # Either the second runner found nothing pending, or it could not proceed.
     # What must never happen is both applying the same migration.
     # The ordinary (non-destructive) stage applies every additive migration —
-    # 0001, F9's 0003_cast_persistence and F12's 0004_notification_preferences —
-    # and the approval-gated stage applies 0002. So the ledger holds four rows.
+    # 0001, F9's 0003_cast_persistence, F12's 0004_notification_preferences and
+    # F32's 0005_media_runtime — and the approval-gated stage applies 0002. So
+    # the ledger holds five rows.
     # Kept as an EXACT list: a stray extra row is as much a bug as a missing one.
     assert sorted(versions) == ['0001_canonical_watched_reconcile',
                                 DESTRUCTIVE_VERSION,
                                 '0003_cast_persistence',
-                                '0004_notification_preferences']
+                                '0004_notification_preferences',
+                                '0005_media_runtime']
     succeeded = [v for v in outcomes.values() if v[0] == 'ok']
     assert succeeded, 'no runner succeeded at all: %r' % outcomes
     total_applied = sum(len(v[1]) for v in succeeded)
-    assert total_applied == 4, 'migrations were applied more than once: %r' % outcomes
+    assert total_applied == 5, 'migrations were applied more than once: %r' % outcomes
 
 
 # ── transactional DDL ────────────────────────────────────────────────────────
@@ -393,9 +395,12 @@ def test_failed_migration_is_not_recorded_and_retry_succeeds(pg_engine,
     assert '0003_cast_persistence' in applied
     # F12's additive 0004 is ordinary too, so it is recorded in the same stage.
     assert '0004_notification_preferences' in applied
+    # F32's additive 0005 is ordinary too.
+    assert '0005_media_runtime' in applied
     assert set(_ledger(pg_engine)) == {'0001_canonical_watched_reconcile',
                                        '0003_cast_persistence',
                                        '0004_notification_preferences',
+                                       '0005_media_runtime',
                                        DESTRUCTIVE_VERSION}
 
 
@@ -973,3 +978,244 @@ def test_f9_adds_not_null_column_to_populated_profile_on_postgres(pg_engine):
         assert default is not None and '{}' in str(default), (
             'a database-side default is what lets ADD COLUMN backfill existing '
             'rows on PostgreSQL; got %r' % (default,))
+
+
+# ── F32: 0005_media_runtime ───────────────────────────────────────────────────
+#
+# The SQLite suite proves what the column DOES. It cannot prove the two things
+# that only matter on a real server: that 0005's DDL is transactional, and that
+# a failed 0005 leaves neither schema nor ledger behind. Those are asserted here
+# against PostgreSQL 17 — the same major version as production.
+#
+# `pg_engine` builds the declared schema from the models, and the models declare
+# `runtime`, so each test that needs the pre-0005 state removes it first to
+# simulate the database this migration exists to repair. The idempotency test is
+# the deliberate exception: it must START with the column already present.
+
+
+def _media_runtime_module():
+    import importlib
+    return importlib.import_module('migrations_0005_media_runtime')
+
+
+F32_VERSION = '0005_media_runtime'
+
+
+def _strip_runtime_column(connection):
+    """Return media_item to its pre-F32 shape."""
+    connection.execute(text('ALTER TABLE media_item DROP COLUMN runtime'))
+
+
+def _runtime_nullable_flag(connection):
+    return connection.execute(text(
+        "SELECT is_nullable FROM information_schema.columns "
+        "WHERE table_name = 'media_item' AND column_name = 'runtime'")).scalar()
+
+
+def test_f32_adds_nullable_runtime_column_on_postgres(pg_engine):
+    """The intended change, on the engine that matters."""
+    module = _media_runtime_module()
+    with pg_engine.begin() as connection:
+        _strip_runtime_column(connection)
+        connection.execute(text(
+            "INSERT INTO media_item (tmdb_id, media_type, title) "
+            "VALUES (17287, 'tv', 'Legacy Show')"))
+
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            assert module.verify(connection) != []   # really missing first
+            module.run(connection)
+            assert module.verify(connection) == []
+
+    with pg_engine.connect() as connection:
+        columns = [c['name'] for c in
+                   inspect(connection).get_columns('media_item')]
+        assert columns.count('runtime') == 1
+        assert _runtime_nullable_flag(connection) == 'YES', (
+            'runtime must be nullable so existing rows need no value')
+        row = connection.execute(text(
+            'SELECT title, runtime FROM media_item WHERE tmdb_id = 17287'
+        )).fetchone()
+
+    assert row.title == 'Legacy Show', 'existing rows must survive'
+    assert row.runtime is None, (
+        'runtime must stay NULL; a backfilled value would be fabricated data')
+
+
+def test_f32_is_idempotent_when_runtime_already_exists_on_postgres(pg_engine):
+    """Re-running against an already-correct database must be a safe no-op."""
+    module = _media_runtime_module()
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            module.run(connection)
+    for _ in range(2):
+        with pg_engine.connect() as connection:
+            with connection.begin():
+                module.run(connection)
+                assert module.verify(connection) == []
+
+    with pg_engine.connect() as connection:
+        columns = [c['name'] for c in
+                   inspect(connection).get_columns('media_item')]
+    assert columns.count('runtime') == 1, (
+        'the column must not be duplicated; got %r' % columns)
+
+
+def test_f32_refuses_a_missing_media_item_on_postgres(pg_engine):
+    """The bootstrap case, refused rather than created.
+
+    Renamed rather than dropped so foreign keys pointing at media_item stay
+    valid and the assertion can show the table was neither recreated nor lost.
+    """
+    module = _media_runtime_module()
+    with pg_engine.begin() as connection:
+        _strip_runtime_column(connection)
+        connection.execute(text(
+            'ALTER TABLE media_item RENAME TO media_item_f33_staged'))
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError, match='does not exist'):
+            module.run(connection)
+        names = set(inspect(connection).get_table_names())
+
+    assert 'media_item' not in names, 'the refusal must not create the table'
+    assert 'media_item_f33_staged' in names, 'the refusal must change nothing'
+
+
+def test_f32_refuses_an_incompatible_runtime_column_on_postgres(pg_engine):
+    """A wrongly-typed column is refused, not silently accepted."""
+    module = _media_runtime_module()
+    with pg_engine.begin() as connection:
+        _strip_runtime_column(connection)
+        connection.execute(text(
+            'ALTER TABLE media_item ADD COLUMN runtime VARCHAR(20)'))
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError, match='not the column 0005 declares'):
+            module.run(connection)
+        column = [c for c in inspect(connection).get_columns('media_item')
+                  if c['name'] == 'runtime'][0]
+
+    assert 'VARCHAR' in str(column['type']).upper(), (
+        'the refusal must not rewrite the incompatible column')
+
+
+def test_f32_refuses_a_not_null_runtime_column_on_postgres(pg_engine):
+    """NOT NULL is a different schema, and PostgreSQL is where that bites."""
+    module = _media_runtime_module()
+    with pg_engine.begin() as connection:
+        _strip_runtime_column(connection)
+        connection.execute(text(
+            'ALTER TABLE media_item ADD COLUMN runtime INTEGER NOT NULL '
+            'DEFAULT 0'))
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError, match='NOT NULL'):
+            module.run(connection)
+        assert _runtime_nullable_flag(connection) == 'NO', (
+            'the refusal must leave the column exactly as it found it')
+
+
+def test_f32_ddl_is_transactional_on_postgres(pg_engine, monkeypatch):
+    """The guarantee SQLite cannot give, for 0005 specifically.
+
+    The migration issues a real ``ALTER TABLE ... ADD COLUMN`` and *then* fails.
+    Because DDL is transactional on PostgreSQL, the column must be rolled back —
+    and the ledger must not claim the migration ran. Both halves matter: a
+    surviving column with no ledger row is drift nothing will ever repair.
+    """
+    module = _media_runtime_module()
+    spec = runner.registry.by_version()[F32_VERSION]
+    with pg_engine.begin() as connection:
+        runner.ensure_ledger_table(connection)
+        _strip_runtime_column(connection)
+
+    original_add = module._add_column
+
+    def _add_then_explode(connection):
+        original_add(connection)        # the real DDL genuinely happens
+        raise RuntimeError('simulated failure after the column was added')
+
+    monkeypatch.setattr(module, '_add_column', _add_then_explode)
+
+    with pytest.raises(runner.MigrationError) as excinfo:
+        runner.apply_one(pg_engine, spec, runner.checksum_for(spec))
+    assert 'simulated failure' in str(excinfo.value)
+    monkeypatch.undo()
+
+    with pg_engine.connect() as connection:
+        columns = {c['name'] for c in
+                   inspect(connection).get_columns('media_item')}
+        recorded = connection.execute(
+            text('SELECT COUNT(*) FROM schema_migrations WHERE version = :v'),
+            {'v': F32_VERSION}).scalar()
+
+    assert 'runtime' not in columns, (
+        'the ALTER survived a failed migration; PostgreSQL DDL is '
+        'transactional, so it must have rolled back')
+    assert recorded == 0, 'a failed migration was recorded as applied'
+
+
+def test_f32_verify_failure_records_no_ledger_row_on_postgres(
+        pg_engine, monkeypatch):
+    """The post-run gate must also leave both schema and ledger clean.
+
+    Distinct path from the one above: here ``run`` succeeds and the runner's
+    ``verify`` step is what rejects it, so a migration that half-worked can
+    never be recorded as complete.
+    """
+    module = _media_runtime_module()
+    spec = runner.registry.by_version()[F32_VERSION]
+    with pg_engine.begin() as connection:
+        runner.ensure_ledger_table(connection)
+        _strip_runtime_column(connection)
+
+    monkeypatch.setattr(module, 'verify',
+                        lambda connection: ['forced: simulating partial apply'])
+    with pytest.raises(runner.MigrationError):
+        runner.apply_one(pg_engine, spec, runner.checksum_for(spec))
+    monkeypatch.undo()
+
+    with pg_engine.connect() as connection:
+        columns = {c['name'] for c in
+                   inspect(connection).get_columns('media_item')}
+        recorded = connection.execute(
+            text('SELECT COUNT(*) FROM schema_migrations WHERE version = :v'),
+            {'v': F32_VERSION}).scalar()
+
+    assert 'runtime' not in columns
+    assert recorded == 0, (
+        'a migration whose verify() reported problems must not be recorded')
+
+
+def test_f32_applies_by_ordinary_upgrade_while_0002_stays_deferred(pg_engine):
+    """0005 must not drag the deferred destructive migration into scope.
+
+    The additive column has to be reachable without backup evidence, or a
+    blocked DROP would hold up unrelated schema forever.
+    """
+    from migrates import registry
+
+    with pg_engine.begin() as connection:
+        runner.ensure_ledger_table(connection)
+        _strip_runtime_column(connection)
+
+    applied = runner.apply_pending(pg_engine)
+
+    assert '0005_media_runtime' in applied
+    assert registry.by_version()['0005_media_runtime'].depends_on == (
+        '0001_canonical_watched_reconcile',)
+
+    with pg_engine.connect() as connection:
+        rows = {row[0]: row[1] for row in connection.execute(text(
+            'SELECT version, kind FROM schema_migrations'))}
+    assert '0002_remove_legacy_wishlist' not in rows, (
+        'the destructive migration must stay deferred')
+
+    # A second upgrade finds nothing: recorded once, applied once.
+    assert runner.apply_pending(pg_engine) == []
+    with pg_engine.connect() as connection:
+        count = connection.execute(text(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = "
+            "'0005_media_runtime'")).scalar()
+    assert count == 1

@@ -299,21 +299,52 @@ function loadTrendingMedia() {
         .then(response => response.json())
         .then(data => {
             if (data.success && data.items.length > 0) {
-                container.innerHTML = data.items.map((item, index) => `
-                    <div class="media-card" data-card-id="${item.tmdb_id}" data-card-type="${item.media_type}" onclick="window.location.href='/${item.media_type}/${item.tmdb_id}'">
-                        <div class="trending-badge">#${index + 1}</div>
-                        <img src="https://image.tmdb.org/t/p/w300${item.poster_path}" 
-                             alt="${item.title}" 
-                             class="media-poster"
-                             onerror="this.src='/static/images/no-poster.png'">
-                        <div class="media-title">${item.title}</div>
-                        <div class="media-stats">
-                            <span>❤️ ${item.like_count}</span>
-                            <span>💬 ${item.comment_count}</span>
-                            <span>⭐ ${item.review_count}</span>
-                        </div>
-                    </div>
-                `).join('');
+                // F21 - TMDb titles/poster paths are third-party data. Cards are
+                // built as DOM nodes so a title is text and the poster src is
+                // scheme-validated; navigation uses a closure, not an inline
+                // onclick assembled from item fields.
+                const D = window.FrameIQDOM;
+                D.clear(container);
+                data.items.forEach((item, index) => {
+                    const mediaType = ['movie', 'tv'].includes(item.media_type) ? item.media_type : null;
+                    const tmdbId = D.safeId(item.tmdb_id);
+
+                    const card = D.el('div', {
+                        class: 'media-card',
+                        dataset: { cardId: D.text(tmdbId), cardType: D.text(mediaType) },
+                    });
+
+                    if (mediaType && tmdbId !== null) {
+                        const href = D.safeLinkUrl(`/${mediaType}/${tmdbId}`);
+                        if (href) {
+                            card.style.cursor = 'pointer';
+                            card.addEventListener('click', () => { window.location.href = href; });
+                        }
+                    }
+
+                    card.appendChild(D.el('div', { class: 'trending-badge', text: '#' + (index + 1) }));
+
+                    const poster = D.el('img', {
+                        src: D.safeImageUrl('https://image.tmdb.org/t/p/w300' + D.text(item.poster_path),
+                                            '/static/images/no-poster.png'),
+                        alt: D.text(item.title),
+                        class: 'media-poster',
+                    });
+                    poster.addEventListener('error', function () {
+                        this.src = '/static/images/no-poster.png';
+                    });
+                    card.appendChild(poster);
+
+                    card.appendChild(D.el('div', { class: 'media-title', text: item.title }));
+
+                    const stats = D.el('div', { class: 'media-stats' });
+                    stats.appendChild(D.el('span', { text: '\u2764\uFE0F ' + (D.safeId(item.like_count) ?? 0) }));
+                    stats.appendChild(D.el('span', { text: '\uD83D\uDCAC ' + (D.safeId(item.comment_count) ?? 0) }));
+                    stats.appendChild(D.el('span', { text: '\u2B50 ' + (D.safeId(item.review_count) ?? 0) }));
+                    card.appendChild(stats);
+
+                    container.appendChild(card);
+                });
                 // Task C: canonical user view state on trending cards.
                 if (window.FrameIQViewState) window.FrameIQViewState.syncCards(container);
             } else {
@@ -333,12 +364,22 @@ function loadTrendingTags() {
         .then(response => response.json())
         .then(data => {
             if (data.success && data.tags.length > 0) {
-                container.innerHTML = data.tags.map(tag => `
-                    <a href="/tags/${tag.name}" class="trending-tag">
-                        ${tag.name}
-                        <span class="tag-count">${tag.recent_usage}</span>
-                    </a>
-                `).join('');
+                // F21 - tag names are created by users. The name is placed as
+                // text, and the link is only emitted when the encoded slug
+                // survives URL validation.
+                const D = window.FrameIQDOM;
+                D.clear(container);
+                data.tags.forEach(tag => {
+                    const name = D.text(tag.name);
+                    const href = D.safeLinkUrl('/tags/' + encodeURIComponent(name));
+                    const chip = D.el(href ? 'a' : 'span', { class: 'trending-tag', text: name });
+                    if (href) chip.setAttribute('href', href);
+                    chip.appendChild(D.el('span', {
+                        class: 'tag-count',
+                        text: D.safeId(tag.recent_usage) ?? 0,
+                    }));
+                    container.appendChild(chip);
+                });
             } else {
                 container.innerHTML = '<p style="color: rgba(255,255,255,0.7);">No trending tags found</p>';
             }
@@ -356,19 +397,38 @@ function loadTrendingUsers() {
         .then(response => response.json())
         .then(data => {
             if (data.success && data.users.length > 0) {
-                container.innerHTML = data.users.map(user => `
-                    <div class="user-card" onclick="window.location.href='/profile/${user.id}'">
-                        <img src="${user.profile_picture || '/static/images/default-avatar.png'}" 
-                             alt="${user.username}" 
-                             class="user-avatar">
-                        <div class="user-info">
-                            <div class="user-name">${user.username}</div>
-                            <div class="user-activity">
-                                ${user.review_count} reviews • ${user.comment_count} comments
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
+                // F21 - usernames and avatars are user-controlled.
+                const D = window.FrameIQDOM;
+                D.clear(container);
+                data.users.forEach(user => {
+                    const username = D.text(user.username);
+                    const card = D.el('div', { class: 'user-card' });
+
+                    const userId = D.safeId(user.id);
+                    const href = userId === null ? '' : D.safeLinkUrl(`/profile/${userId}`);
+                    if (href) {
+                        card.style.cursor = 'pointer';
+                        card.addEventListener('click', () => { window.location.href = href; });
+                    }
+
+                    card.appendChild(D.el('img', {
+                        src: D.safeImageUrl(user.profile_picture,
+                            '/static/images/default-avatar.png', '/static/'),
+                        alt: username,
+                        class: 'user-avatar',
+                    }));
+
+                    const info = D.el('div', { class: 'user-info' });
+                    info.appendChild(D.el('div', { class: 'user-name', text: username }));
+                    info.appendChild(D.el('div', {
+                        class: 'user-activity',
+                        text: (D.safeId(user.review_count) ?? 0) + ' reviews \u2022 ' +
+                              (D.safeId(user.comment_count) ?? 0) + ' comments',
+                    }));
+                    card.appendChild(info);
+
+                    container.appendChild(card);
+                });
             } else {
                 container.innerHTML = '<p style="color: rgba(255,255,255,0.7); text-align: center;">No active users found</p>';
             }

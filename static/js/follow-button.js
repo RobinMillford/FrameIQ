@@ -3,6 +3,24 @@
  * Reusable component for follow/unfollow functionality
  */
 
+/**
+ * F23 (C-7): headers for a mutating request.
+ *
+ * Only sets X-CSRFToken when the page actually publishes one. This component is
+ * loaded by standalone pages (no meta tag) *and* by pages extending base.html,
+ * where a global fetch() patch already injects the header. Setting an empty
+ * header here would override that patch with an empty value and break a page
+ * that currently works, so the field is omitted when there is no token.
+ */
+function csrfJsonHeaders() {
+    const token =
+        document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['X-CSRFToken'] = token;
+    return headers;
+}
+
+
 class FollowButton {
     constructor(userId, buttonElement) {
         this.userId = userId;
@@ -33,9 +51,7 @@ class FollowButton {
         try {
             const response = await fetch(`/api/users/${this.userId}/follow`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                headers: csrfJsonHeaders()
             });
             
             const data = await response.json();

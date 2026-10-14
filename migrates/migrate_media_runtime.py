@@ -14,6 +14,14 @@ Idempotent — safe to run any number of times. No data is touched: the
 column is added NULL, nothing is backfilled, and existing rows are not
 rewritten (a nullable ADD COLUMN is metadata-only in PostgreSQL).
 
+Scope
+-----
+This script owns exactly one column: ``media_item.runtime``. It adds a
+column to a table that already exists and creates nothing else. If
+``media_item`` is absent it refuses and names the mechanism that does own
+fresh-database bootstrap (``scripts/bootstrap_dev_schema.py``) rather than
+bootstrapping the schema itself — see ``migrate()`` for why.
+
 Run: python migrates/migrate_media_runtime.py
 """
 import sys
@@ -29,6 +37,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # keep their existing behavior (they create/alter only on missing objects,
 # so the guard passes on their target databases).
 os.environ.setdefault("SKIP_SCHEMA_GUARD", "1")
+
+# F22: authorize the database target BEFORE any application import, engine
+# construction or DDL/DML. `import app` builds an engine and runs the schema
+# guard, so a check placed after it would already be too late.
+from utils.legacy_migration_guard import authorize_legacy_migration  # noqa: E402
+
+authorize_legacy_migration(__file__)
 
 from app import app  # noqa: E402
 from models import db  # noqa: E402
@@ -67,9 +82,34 @@ def migrate():
     with app.app_context():
         inspector = inspect(db.engine)
         if 'media_item' not in inspector.get_table_names():
-            print("[..] media_item table not found — fresh database;")
-            print("     running db.create_all() (creates it WITH runtime).")
-            db.create_all()
+            # F31: this used to fall back to `db.create_all()`. That call is
+            # unscoped — it creates EVERY table the models declare — for a
+            # migration whose entire subject is one column on one existing
+            # table. Being authorized to write to a target (the
+            # `authorize_legacy_migration` call above) is permission to perform
+            # THIS alteration, not permission to bootstrap a database from it.
+            #
+            # A database with no `media_item` is also not the incident this
+            # script exists for: the documented failure was a deployed
+            # PostgreSQL database that HAD media_item and lacked only
+            # `runtime`. So refusing here loses nothing, and it matches
+            # migrations_0003_cast_persistence, which refuses the same way when
+            # the table it alters does not exist.
+            #
+            # Each failure mode below is named, because they need different
+            # remedies and "it failed" would not tell an operator which.
+            print("[FAIL] media_item does not exist on this database, so there "
+                  "is no table to add the column to.")
+            print("       This script adds ONE column to an EXISTING table. It "
+                  "does not bootstrap the application schema, and it will not "
+                  "create every table the models declare as a side effect.")
+            print("       * fresh / scratch database -> python "
+                  "scripts/bootstrap_dev_schema.py")
+            print("       * deployed database        -> python scripts/migrate.py "
+                  "upgrade")
+            print("       * already has the column    -> nothing to do; this "
+                  "script is historical")
+            return 1
 
         added = _ensure_runtime_column(db.engine)
         if added:
