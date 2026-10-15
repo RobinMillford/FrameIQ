@@ -149,6 +149,10 @@
 </div>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
 function tmdbUrl(path, params) {
     const q = new URLSearchParams(Object.assign({path}, params || {}));
     return '/api/tmdb/proxy?' + q.toString();
@@ -263,11 +267,11 @@ function renderCredits() {
     // Show top guest stars
     const html = cast.slice(0, 8).map(person => `
         <div class="text-center">
-            <img src="${person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : '/static/images/no-avatar.png'}" 
-                 alt="${person.name}"
+            <img src="${DOM.escapeAttr(DOM.tmdbImageUrl(person.profile_path, 'w185', '/static/images/no-avatar.png'))}"
+                 alt="${DOM.escapeAttr(person.name)}"
                  class="w-full h-32 object-cover rounded-lg mb-2">
-            <p class="text-white text-sm font-semibold">${person.name}</p>
-            <p class="text-[var(--text-mid)] text-xs">${person.character}</p>
+            <p class="text-white text-sm font-semibold">${DOM.escapeText(person.name)}</p>
+            <p class="text-[var(--text-mid)] text-xs">${DOM.escapeText(person.character)}</p>
         </div>
     `).join('');
     

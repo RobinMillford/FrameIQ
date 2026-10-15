@@ -71,9 +71,13 @@
 
     <div class="container mx-auto px-4 py-8 max-w-6xl">
         <!-- Cover Image -->
-        {% if user_list.cover_image %}
+        {# F39: `cover_src` is validated in the route (routes/lists.py), so a
+           value stored before the write-path policy existed cannot make this
+           page fetch an arbitrary host. `|e` still applies: validation decides
+           *whether* to render, escaping decides *how* it is written. Both. #}
+        {% if cover_src %}
         <div class="mb-8 rounded-lg overflow-hidden relative">
-            <img id="list-cover" src="{{ user_list.cover_image }}" alt="{{ user_list.title }}"
+            <img id="list-cover" src="{{ cover_src | e }}" alt="{{ user_list.title | e }}"
                  class="w-full h-64 object-cover">
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
         </div>

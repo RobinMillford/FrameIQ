@@ -127,6 +127,26 @@
 </style>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html loads dom-safety.js BEFORE
+    // the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
+    /**
+     * Escape for a QUOTED ATTRIBUTE (F35).
+     *
+     * Show names come from TMDb and are persisted into media_item, so they are
+     * not trustworthy merely because they came from a catalogue API. Unescaped,
+     * a quote in a name closed the attribute and the remainder became markup.
+     */
+    function escapeAttr(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
 let currentFilter = 'all';
 
 // Filter buttons
@@ -193,8 +213,8 @@ async function renderShows(shows) {
         
         card.innerHTML = `
             <div class="relative">
-                <img src="https://image.tmdb.org/t/p/w500${showDetails.poster_path}" 
-                     alt="${showDetails.name}"
+                <img src="${escapeAttr(DOM.tmdbImageUrl(showDetails.poster_path, 'w500', '/static/images/no-poster.png'))}"
+                     alt="${escapeAttr(showDetails.name)}"
                      class="w-full h-80 object-cover"
                      onerror="this.src='/static/images/no-poster.png'">
                 <div class="absolute top-2 right-2">
@@ -205,7 +225,7 @@ async function renderShows(shows) {
             </div>
             <div class="p-4">
                 <h3 class="text-white font-semibold text-lg mb-2 truncate">
-                    ${showDetails.name}
+                    ${escapeAttr(showDetails.name)}
                 </h3>
                 
                 <div class="space-y-2 text-sm text-gray-300">

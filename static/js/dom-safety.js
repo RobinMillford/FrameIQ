@@ -242,6 +242,208 @@
         return fb;
     }
 
+    /**
+     * Escape a value for interpolation into HTML TEXT.
+     *
+     * Use this ONLY when the surrounding code is already assembling an HTML
+     * string and cannot be switched to `textContent`. Where the markup can be
+     * built as real nodes, prefer `el()` / `textContent`: that is immune to
+     * context confusion, whereas an escaper is not. `escapeText` and
+     * `escapeAttr` escape the same character set and differ only in intent —
+     * use `escapeAttr` inside a quoted attribute so the call site documents
+     * which context it reasoned about.
+     *
+     * This is the ONE shared escaper. F38 consolidated the per-file copies that
+     * had accumulated so there is a single implementation to audit.
+     */
+    function escapeText(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /** Escape a value for a double-quoted HTML attribute. See escapeText. */
+    function escapeAttr(value) {
+        return escapeText(value);
+    }
+
+    // ── TMDb image policy ──────────────────────────────────────────────────
+    //
+    // Shared because seven templates need the identical rule, and a per-file
+    // copy is a per-file chance to get the host allowlist wrong.
+
+    var TMDB_IMAGE_ORIGIN = 'https://image.tmdb.org';
+    var TMDB_IMAGE_HOST = 'image.tmdb.org';
+    var LOOKS_LIKE_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.\-]*:/;
+
+    /**
+     * Build a TMDb image URL from a stored poster / still / profile value.
+     *
+     * `safeImageUrl()` deliberately cannot be used here: it enforces a SCHEME
+     * allowlist and is host-agnostic, so it would return
+     * `https://attacker.example/pixel.png` unchanged. An `<img src>` is a
+     * request the browser makes on the visitor's behalf, so the host has to be
+     * pinned.
+     *
+     * Policy:
+     *   1. empty / non-string / control chars / spaces   -> fallback
+     *   2. protocol-relative `//host`                    -> fallback
+     *   3. absolute URL: accepted only when it parses, is `https:`, has host
+     *      exactly `image.tmdb.org`, and carries no credentials
+     *   4. root-relative TMDb path: rejected if it contains `..`, a
+     *      backslash, `?`, `#`, or a leading segment that looks like a scheme;
+     *      otherwise prefixed with the fixed origin
+     *   5. anything else                                 -> fallback
+     *
+     * Absolute values are legitimate — `api/continue_watching.py` stores and
+     * re-emits them — so case 3 is a compatibility requirement.
+     *
+     * The relative branch builds the full URL and then parses it, so the URL
+     * parser percent-encodes anything unsafe. Plain concatenation let `/a"b.jpg`
+     * through with the quote intact.
+     */
+    function tmdbImageUrl(value, size, fallback) {
+        var fb = typeof fallback === 'string'
+            ? fallback : '/static/images/no-poster.png';
+        if (typeof value !== 'string') return fb;
+
+        var raw = value.trim();
+        if (!raw) return fb;
+        // Browsers strip control characters and spaces before resolving, so
+        // they are used to smuggle schemes past prefix checks.
+        if (URL_SMUGGLING_RE.test(raw)) return fb;
+
+        // Protocol-relative: resolves to another origin.
+        if (raw.slice(0, 2) === '//') return fb;
+
+        if (LOOKS_LIKE_SCHEME_RE.test(raw)) {
+            var parsed;
+            try {
+                parsed = new URL(raw);
+            } catch (err) {
+                return fb;
+            }
+            if (parsed.protocol !== 'https:') return fb;
+            if (parsed.hostname !== TMDB_IMAGE_HOST) return fb;
+            // F41: `hostname` excludes the port, so the host allowlist alone
+            // would admit a non-default port on an approved host.
+            if (parsed.port && parsed.port !== '443') return fb;
+            if (parsed.username || parsed.password) return fb;
+            return parsed.href;
+        }
+
+        if (raw.charAt(0) === '/') {
+            if (raw.indexOf('\\') !== -1) return fb;
+            if (raw.indexOf('..') !== -1) return fb;
+            // A poster path never carries a query or fragment; allowing them
+            // would silently truncate the request at the first one.
+            if (raw.indexOf('?') !== -1) return fb;
+            if (raw.indexOf('#') !== -1) return fb;
+            if (LOOKS_LIKE_SCHEME_RE.test(raw.slice(1))) return fb;
+
+            // The size segment is part of the string being parsed:
+            // `new URL(path, base)` would resolve against `base` and drop it.
+            var built;
+            try {
+                built = new URL(TMDB_IMAGE_ORIGIN + '/t/p/' + size + raw);
+            } catch (err) {
+                return fb;
+            }
+            if (built.protocol !== 'https:') return fb;
+            if (built.hostname !== TMDB_IMAGE_HOST) return fb;
+            if (built.port && built.port !== '443') return fb;
+            return built.href;
+        }
+
+        return fb;
+    }
+
+    /**
+     * Image URL restricted to a fixed set of hosts, or to this origin.
+     *
+     * `safeImageUrl()` cannot be used for user-supplied image URLs: it is a
+     * scheme allowlist, so `https://anywhere.example/pixel.png` passes. For a
+     * list cover — which `PUT /api/lists/<id>/cover` stores verbatim from the
+     * request body with no server-side validation — that hands the list owner a
+     * way to make every visitor's browser fetch a URL of their choosing, which
+     * is a tracking / visitor-IP disclosure vector rather than script
+     * execution.
+     *
+     * POLICY
+     *   - root-relative path        -> accepted (same origin by construction)
+     *   - absolute URL              -> accepted only when it is `https:`, has a
+     *                                  host in `hosts`, and has no credentials
+     *   - protocol-relative / other -> `fallback`
+     */
+    function safeImageUrlFromHosts(value, hosts, fallback) {
+        var fb = typeof fallback === 'string' ? fallback : '';
+        if (typeof value !== 'string') return fb;
+
+        var raw = value.trim();
+        if (!raw) return fb;
+        if (URL_SMUGGLING_RE.test(raw)) return fb;
+        if (raw.slice(0, 2) === '//') return fb;
+
+        var allowed = Array.isArray(hosts) ? hosts : [];
+        if (LOOKS_LIKE_SCHEME_RE.test(raw)) {
+            var parsed;
+            try {
+                parsed = new URL(raw);
+            } catch (err) {
+                return fb;
+            }
+            if (parsed.protocol !== 'https:') return fb;
+            // F41: `hostname` excludes the port, so an allowlist check alone
+            // would accept `image.tmdb.org:8443` — a different service on an
+            // otherwise-approved host. The server refuses that form too.
+            if (allowed.indexOf(parsed.hostname) === -1) return fb;
+            if (parsed.port && parsed.port !== '443') return fb;
+            if (parsed.username || parsed.password) return fb;
+            return parsed.href;
+        }
+
+        if (raw.charAt(0) === '/') {
+            if (raw.indexOf('\\') !== -1) return fb;
+            if (raw.indexOf('..') !== -1) return fb;
+            // F41: a query or fragment truncates the request at the first `?`
+            // or `#`, so it is never a plain image path. The server refuses
+            // these for the same reason.
+            if (raw.indexOf('?') !== -1) return fb;
+            if (raw.indexOf('#') !== -1) return fb;
+            if (LOOKS_LIKE_SCHEME_RE.test(raw.slice(1))) return fb;
+            return raw;
+        }
+
+        return fb;
+    }
+
+    /**
+     * Accept only a same-origin, root-relative path. Returns '' otherwise, so
+     * the caller omits the link rather than emitting a broken one.
+     *
+     * Stricter than `safeLinkUrl()`, which is the right default for a genuinely
+     * outbound link. For values the server always builds from Integer columns —
+     * `/watch/tv/{show_id}/{season}/{episode}` — an absolute or off-origin
+     * target is never legitimate data, and an off-site "Watch Next" button is an
+     * open-redirect and phishing surface.
+     */
+    function safeInternalUrl(value) {
+        if (typeof value !== 'string') return '';
+        var raw = value.trim();
+        if (!raw) return '';
+        if (URL_SMUGGLING_RE.test(raw)) return '';
+        if (raw.charAt(0) !== '/') return '';
+        if (raw.slice(0, 2) === '//') return '';
+        if (raw.indexOf('\\') !== -1) return '';
+        if (raw.indexOf('..') !== -1) return '';
+        if (LOOKS_LIKE_SCHEME_RE.test(raw.slice(1))) return '';
+        return raw;
+    }
+
     /** Build a Font Awesome <i> icon. `name` comes from our own code. */
     function icon(name, extraClass) {
         var cls = 'fas fa-' + String(name).replace(/[^a-z0-9-]/gi, '');
@@ -251,9 +453,14 @@
 
     global.FrameIQDOM = {
         text: text,
+        escapeText: escapeText,
+        escapeAttr: escapeAttr,
         safeUrl: safeUrl,
         safeImageUrl: safeImageUrl,
         safeLinkUrl: safeLinkUrl,
+        tmdbImageUrl: tmdbImageUrl,
+        safeImageUrlFromHosts: safeImageUrlFromHosts,
+        safeInternalUrl: safeInternalUrl,
         el: el,
         clear: clear,
         safeId: safeId,

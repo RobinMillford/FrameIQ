@@ -97,6 +97,10 @@
 </style>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
 let currentStartDate = new Date();
 currentStartDate.setHours(0, 0, 0, 0);
 
@@ -178,13 +182,13 @@ function renderCalendar(calendar) {
                          onclick="window.location.href='/tv/${ep.show_id}'">
                         <div class="flex items-start gap-3">
                             ${ep.still_path ? `
-                                <img src="https://image.tmdb.org/t/p/w200${ep.still_path}" 
-                                     alt="${ep.episode_name}"
+                                <img src="${DOM.escapeAttr(DOM.tmdbImageUrl(ep.still_path, 'w200', '/static/images/no-image.png'))}"
+                                     alt="${DOM.escapeAttr(ep.episode_name)}"
                                      class="w-16 h-10 rounded object-cover">
                             ` : '<div class="w-16 h-10 bg-gray-700 rounded flex items-center justify-center text-xs text-[var(--text-mid)]">No image</div>'}
                             <div class="flex-1 min-w-0">
                                 <div class="text-white font-medium text-sm truncate">
-                                    ${ep.show_name}
+                                    ${DOM.escapeText(ep.show_name)}
                                 </div>
                                 <div class="text-[var(--accent-hi)] text-xs">
                                     S${ep.season_number}E${ep.episode_number}

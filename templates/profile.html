@@ -647,6 +647,9 @@
             </div>
         </div>
     </div>
+    <!-- F35: notifications.js resolves the shared URL policy from here. This
+         page does not extend base.html, so it must load dom-safety.js itself. -->
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     <script src="{{ url_for('static', filename='js/taste-dna.js') }}"></script>

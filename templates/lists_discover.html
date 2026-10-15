@@ -89,6 +89,10 @@
 </div>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
     let currentPage = 1;
     let currentSort = 'recent';
     let totalPages = 1;
@@ -145,8 +149,20 @@
         card.className = 'block rounded-xl overflow-hidden border border-[var(--line)] bg-surface hover:border-[var(--line-hi)] hover:-translate-y-0.5 transition-all duration-200 focus-visible:border-[var(--accent)] focus-visible:outline-none';
 
         // Cover image or subtle placeholder — consistent aspect ratio at every breakpoint.
-        const coverHtml = list.cover_image
-            ? `<img src="${list.cover_image}" alt="" class="w-full aspect-[2/1] object-cover" loading="lazy">`
+        // F38: cover_image is set by the list owner, so it is arbitrary
+        // user input rather than catalogue data. It is validated as an https
+        // URL first and attribute-escaped second; anything unusable falls back
+        // to the same placeholder the empty case uses.
+        // Restricted to this origin and the TMDb image host. `safeImageUrl`
+        // would accept any https host, and `PUT /api/lists/<id>/cover` stores
+        // this field verbatim from the request body, so an unvalidated value
+        // lets a list owner make every visitor fetch a URL of their choosing.
+        const coverSrc = DOM
+            ? DOM.escapeAttr(DOM.safeImageUrlFromHosts(
+                String(list.cover_image || ''), ['image.tmdb.org'], ''))
+            : '';
+        const coverHtml = coverSrc
+            ? `<img src="${coverSrc}" alt="" class="w-full aspect-[2/1] object-cover" loading="lazy">`
             : `<div class="w-full aspect-[2/1] bg-gradient-to-br from-elevated to-surface flex items-center justify-center">
                     <i class="fas fa-film text-3xl text-[var(--text-low)]" aria-hidden="true"></i>
                </div>`;

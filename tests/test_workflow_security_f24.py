@@ -298,6 +298,7 @@ REQUIRED_BROWSER_SUITES = [
     "test_f23_csrf_browser.py",
     "test_taste_dna_actor_f14_browser.py",
     "test_xss_f21_browser.py",
+    "test_xss_f35_browser.py",
 ]
 
 

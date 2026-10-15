@@ -1,3 +1,20 @@
+        /**
+         * Escape for a QUOTED ATTRIBUTE.
+         *
+         * F35: TMDb titles/poster paths are third-party data that we persist into
+         * media_item, so they are not trustworthy merely because they came from a
+         * catalogue API. Unescaped, a quote in either field closed the attribute
+         * and the remainder became live markup.
+         */
+        function escapeAttr(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function tmdbUrl(path, params) {
             const q = new URLSearchParams(Object.assign({path}, params || {}));
             return '/api/tmdb/proxy?' + q.toString();
@@ -46,9 +63,9 @@
                     showCard.className = "tv-card flex-shrink-0 w-48 glass-effect rounded-lg overflow-hidden";
                         showCard.innerHTML = `
                         <a href="/tv/${show.id}" class="block">
-                            <img src="${posterUrl}" alt="${show.name}" class="w-full h-72 object-cover">
+                            <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(show.name)}" class="w-full h-72 object-cover">
                             <div class="p-4">
-                                <h3 class="font-semibold text-sm">${show.name}</h3>
+                                <h3 class="font-semibold text-sm">${escapeAttr(show.name)}</h3>
                                 <p class="text-gray-400 text-xs">${show.first_air_date}</p>
                             </div>
                             </a>
@@ -96,7 +113,7 @@
                             showCard.innerHTML = `
                                 <div class="relative">
                                     <a href="/tv/${show.id}">
-                                        <img src="${posterUrl}" alt="${show.name}" class="w-full">
+                                        <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(show.name)}" class="w-full">
                                         <div class="show-rating">
                                             <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
                                                 <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
@@ -104,7 +121,7 @@
                                             <span>${show.vote_average.toFixed(1)}</span>
                                         </div>
                                         <div class="show-info">
-                                            <h3 class="text-xl font-bold mb-2">${show.name}</h3>
+                                            <h3 class="text-xl font-bold mb-2">${escapeAttr(show.name)}</h3>
                                             <p class="text-sm text-gray-300">${show.first_air_date}</p>
                                         </div>
                                     </a>
@@ -196,9 +213,9 @@
                     
                     suggestion.className = "autocomplete-item flex items-center p-2 glass-effect";
                     suggestion.innerHTML = `
-                        <img src="${posterUrl}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3 flex-shrink-0">
+                        <img src="${escapeAttr(posterUrl)}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3 flex-shrink-0">
                         <div class="min-w-0 flex-1 overflow-hidden">
-                            <div class="font-medium truncate">${show.name}</div>
+                            <div class="font-medium truncate">${escapeAttr(show.name)}</div>
                             <div class="text-sm text-gray-400 truncate">${show.first_air_date}</div>
                         </div>
                     `;
@@ -266,9 +283,9 @@
                                 showCard.className = "tv-card flex-shrink-0 w-32 glass-effect rounded-lg overflow-hidden";
                                 showCard.innerHTML = `
                                     <a href="/tv/${show.id}" class="block">
-                                        <img src="${posterUrl}" alt="${show.name}" class="w-full h-48 object-cover">
+                                        <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(show.name)}" class="w-full h-48 object-cover">
                                         <div class="p-2">
-                                            <h3 class="font-semibold text-xs truncate">${show.name}</h3>
+                                            <h3 class="font-semibold text-xs truncate">${escapeAttr(show.name)}</h3>
                                             <p class="text-gray-400 text-xs">${show.first_air_date}</p>
                                         </div>
                                     </a>

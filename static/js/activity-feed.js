@@ -161,7 +161,7 @@ class ActivityFeed {
                             </button>
                         ` : ''}
                     </div>
-                    <p class="text-[10px] text-gray-500">${this.formatRelativeTime(review.created_at)}</p>
+                    <p class="text-[10px] text-gray-500">${escapeHtml(this.formatRelativeTime(review.created_at))}</p>
                 </div>
             </div>
 

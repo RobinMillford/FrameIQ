@@ -26,6 +26,28 @@ class MediaCommentsManager {
         }
     }
 
+    /** Lazily resolve the shared DOM-safety library (loaded by base.html). */
+    dom() {
+        return window.FrameIQDOM;
+    }
+
+    /**
+     * A `/profile/<name>` link, or a plain span when the name is unusable.
+     *
+     * F35: the username was interpolated raw into a quoted `href`, so a double
+     * quote in a username closed the attribute and the remainder became live
+     * markup. Escaping alone would not be enough — the value is a URL *path
+     * component*, so it is percent-encoded AND run through the URL policy.
+     */
+    profileLink(D, username, className) {
+        const name = String(username == null ? '' : username);
+        const href = D.safeLinkUrl('/profile/' + encodeURIComponent(name));
+        if (!href) {
+            return D.el('span', { class: className, text: name });
+        }
+        return D.el('a', { class: className, href: href, text: name });
+    }
+
     renderComments() {
         const container = document.getElementById('media-comments-list');
         if (!container) return;
@@ -37,38 +59,76 @@ class MediaCommentsManager {
             return;
         }
 
-        container.innerHTML = this.comments.map(comment => `
-            <div class="comment-item bg-gray-800 rounded-lg p-4 mb-3" data-comment-id="${comment.id}">
-                <div class="flex items-start gap-3">
-                    <div class="flex-shrink-0">
-                        <div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
-                            ${comment.user.username.charAt(0).toUpperCase()}
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <a href="/profile/${comment.user.username}" class="font-semibold text-indigo-400 hover:text-indigo-300">
-                                ${this.escapeHtml(comment.user.username)}
-                            </a>
-                            <span class="text-gray-500 text-sm">${this.formatDate(comment.created_at)}</span>
-                            ${comment.updated_at && comment.updated_at !== comment.created_at ? 
-                                '<span class="text-gray-500 text-xs">(edited)</span>' : ''}
-                        </div>
-                        <p class="text-gray-300 whitespace-pre-wrap">${this.escapeHtml(comment.content)}</p>
-                        ${comment.is_author ? `
-                            <div class="flex gap-2 mt-2">
-                                <button onclick="commentsManager.editComment(${comment.id})" class="text-sm text-indigo-400 hover:text-indigo-300">
-                                    Edit
-                                </button>
-                                <button onclick="commentsManager.deleteComment(${comment.id})" class="text-sm text-red-400 hover:text-red-300">
-                                    Delete
-                                </button>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        const D = this.dom();
+        if (!D) return;   // fail closed rather than build an unsafe string
+
+        const frag = document.createDocumentFragment();
+        this.comments.forEach(comment => {
+            const id = D.safeId(comment.id);
+            const username = comment.user ? comment.user.username : '';
+            const initial = String(username || '').charAt(0).toUpperCase();
+
+            const bubble = D.el('div', {
+                class: 'w-10 h-10 rounded-full bg-indigo-600 flex items-center '
+                     + 'justify-center text-white font-bold',
+                text: initial,
+            });
+
+            const meta = D.el('div', { class: 'flex items-center gap-2 mb-1' }, [
+                this.profileLink(
+                    D, username,
+                    'font-semibold text-indigo-400 hover:text-indigo-300'),
+                D.el('span', {
+                    class: 'text-gray-500 text-sm',
+                    text: this.formatDate(comment.created_at),
+                }),
+            ]);
+            if (comment.updated_at && comment.updated_at !== comment.created_at) {
+                meta.appendChild(D.el('span', {
+                    class: 'text-gray-500 text-xs', text: '(edited)',
+                }));
+            }
+
+            const body = D.el('div', { class: 'flex-1' }, [
+                meta,
+                D.el('p', {
+                    class: 'text-gray-300 whitespace-pre-wrap',
+                    text: D.text(comment.content),
+                }),
+            ]);
+
+            // Behaviour by listener, not by an inline handler string built from
+            // a data value — the pattern F21 removed and this file still had.
+            if (comment.is_author && id !== null) {
+                const editBtn = D.el('button', {
+                    class: 'text-sm text-indigo-400 hover:text-indigo-300',
+                    text: 'Edit',
+                });
+                editBtn.addEventListener('click', () => this.editComment(id));
+
+                const delBtn = D.el('button', {
+                    class: 'text-sm text-red-400 hover:text-red-300',
+                    text: 'Delete',
+                });
+                delBtn.addEventListener('click', () => this.deleteComment(id));
+
+                body.appendChild(D.el('div', { class: 'flex gap-2 mt-2' },
+                    [editBtn, delBtn]));
+            }
+
+            const item = D.el('div', {
+                class: 'comment-item bg-gray-800 rounded-lg p-4 mb-3',
+            });
+            if (id !== null) item.dataset.commentId = String(id);
+            item.appendChild(D.el('div', { class: 'flex items-start gap-3' }, [
+                D.el('div', { class: 'flex-shrink-0' }, [bubble]),
+                body,
+            ]));
+            frag.appendChild(item);
+        });
+
+        container.innerHTML = '';
+        container.appendChild(frag);
     }
 
     setupEventListeners() {
@@ -184,12 +244,6 @@ class MediaCommentsManager {
         if (diffDays < 7) return `${diffDays}d ago`;
         
         return date.toLocaleDateString();
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     showMessage(message, type) {

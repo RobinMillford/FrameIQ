@@ -37,6 +37,45 @@
         return d.innerHTML;
     }
 
+    /**
+     * Escape for a QUOTED ATTRIBUTE.
+     *
+     * F35: `esc()` above is the `textContent -> innerHTML` variant, which encodes
+     * only `& < >`. Quotes pass through untouched, so using it inside
+     * `href="…"` let a value terminate the attribute and the remainder become
+     * live markup. That is the exact hazard documented in static/js/dom-safety.js.
+     */
+    function escAttr(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /**
+     * A link target that is safe to put in `href`, or '' when unusable.
+     *
+     * Prefers the shared policy in dom-safety.js. The local fallback is
+     * deliberately narrow — same-origin, root-relative paths only — and fails
+     * closed: an unrecognised or scheme-bearing value yields '' so the caller
+     * renders inert markup instead of a clickable URL.
+     */
+    function safeHref(value) {
+        if (typeof value !== 'string' || !value) return '';
+        var D = window.FrameIQDOM;
+        if (D && typeof D.safeLinkUrl === 'function') {
+            return D.safeLinkUrl(value) || '';
+        }
+        var raw = value.trim();
+        if (raw.charAt(0) !== '/') return '';
+        if (raw.slice(0, 2) === '//') return '';
+        if (/[\u0000-\u0020\u007f]/.test(raw)) return '';
+        if (raw.indexOf('\\') !== -1 || raw.indexOf('..') !== -1) return '';
+        return raw;
+    }
+
     function timeAgo(iso) {
         if (!iso) return '';
         var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -59,13 +98,18 @@
             '<p class="text-[11px] text-[var(--text-low)] mt-0.5">' + epLine +
             (epLine ? ' · ' : '') + timeAgo(n.created_at) + '</p>' +
             '</div>';
-        if (n.target_url) {
-            return '<a href="' + esc(n.target_url) + '" data-notif-id="' + n.id + '"' +
+        var href = safeHref(n.target_url);
+        if (href) {
+            return '<a href="' + escAttr(href) + '" data-notif-id="' + escAttr(n.id) + '"' +
                    (n.read ? '' : ' data-unread="1"') +
                    ' class="flex gap-2.5 px-4 py-3 hover:bg-white/5 border-b border-[var(--line)] last:border-b-0">' +
                    dot + inner + '</a>';
         }
-        return '<div class="flex gap-2.5 px-4 py-3 border-b border-[var(--line)] last:border-b-0">' +
+        // No target, or an unsafe one: render the row inert rather than
+        // emitting a clickable URL we could not validate.
+        return '<div class="flex gap-2.5 px-4 py-3 border-b border-[var(--line)] last:border-b-0"' +
+               (n.id == null ? '' : ' data-notif-id="' + escAttr(n.id) + '"') +
+               (n.read ? '' : ' data-unread="1"') + '>' +
                dot + inner + '</div>';
     }
 

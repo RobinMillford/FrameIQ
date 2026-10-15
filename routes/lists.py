@@ -17,6 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import re
 from utils.collections import get_or_create_media_item
+from utils.cover_image_policy import (
+    InvalidCoverImage, cover_image_url, normalize_cover_image)
 
 logger = logging.getLogger(__name__)
 
@@ -314,11 +316,22 @@ def update_list_cover(list_id):
     if user_list.user_id != current_user.id:
         return jsonify({'error': 'You can only edit your own lists'}), 403
 
-    data = request.get_json()
+    data = request.get_json() or {}
     cover_url = data.get('cover_image')
 
     if not cover_url:
         return jsonify({'error': 'cover_image URL is required'}), 400
+
+    # F39: this field used to be stored verbatim, so a list owner could store
+    # any string and have every visitor's browser fetch it. Validate against the
+    # traced contract before it reaches the database: a root-relative path, or
+    # an https URL on an approved image host. The error is returned as a
+    # client-safe 400 rather than an exception, and nothing is written when it
+    # does not validate.
+    try:
+        cover_url = normalize_cover_image(cover_url)
+    except InvalidCoverImage as exc:
+        return jsonify({'error': str(exc)}), 400
 
     try:
         user_list.cover_image = cover_url
@@ -639,7 +652,14 @@ def view_list(list_id):
         ListLike.id).filter_by(user_id=current_user.id,
                                list_id=user_list.id).first() is not None)
 
+    # F39: the template cannot validate this itself without a Jinja filter,
+    # and app.py is off-limits (the F20 guard asserts it is untouched), so the
+    # render-time validation happens here. A row stored before the write-path
+    # policy existed still holds whatever it held; this is what stops that
+    # value from becoming a fetch. `cover_src` is '' when the stored value is
+    # not renderable, and the template then renders no cover block at all.
     return render_template('list_detail.html', user_list=user_list,
+                           cover_src=cover_image_url(user_list.cover_image),
                            items=items, watched_map=watched_map,
                            progress_map=progress_map,
                            liked_by_me=liked_by_me, can_edit=_can_edit(user_list),
@@ -672,7 +692,14 @@ def view_list_by_slug(slug):
         ListLike.id).filter_by(user_id=current_user.id,
                                list_id=user_list.id).first() is not None)
 
+    # F39: the template cannot validate this itself without a Jinja filter,
+    # and app.py is off-limits (the F20 guard asserts it is untouched), so the
+    # render-time validation happens here. A row stored before the write-path
+    # policy existed still holds whatever it held; this is what stops that
+    # value from becoming a fetch. `cover_src` is '' when the stored value is
+    # not renderable, and the template then renders no cover block at all.
     return render_template('list_detail.html', user_list=user_list,
+                           cover_src=cover_image_url(user_list.cover_image),
                            items=items, watched_map=watched_map,
                            progress_map=progress_map,
                            liked_by_me=liked_by_me, can_edit=_can_edit(user_list),

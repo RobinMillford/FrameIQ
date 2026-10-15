@@ -380,7 +380,16 @@
     <span id="toast-msg">Progress saved</span>
 </div>
 
+<!-- F38: watch_tv.html does not extend base.html, so it must load the
+     shared DOM-safety helpers itself. Before the inline script so
+     window.FrameIQDOM exists when this script is parsed. -->
+<script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
+
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
     const TMDB_ID    = {{ tmdb_id }};
     const MEDIA_TYPE = '{{ media_type }}';
     const CUR_SEASON = {{ season }};
@@ -485,8 +494,10 @@
         list.innerHTML = eps.map((ep) => {
             const isActive = season === CUR_SEASON && ep.episode_number === CUR_EP;
             const isSeen   = IS_AUTH && isWatched(season, ep.episode_number);
-            const still = ep.still_path
-                ? `<img src="https://image.tmdb.org/t/p/w185${ep.still_path}" class="w-16 h-10 object-cover rounded flex-shrink-0 ${isSeen ? 'opacity-40' : 'opacity-80'}">`
+            const stillSrc = DOM.escapeAttr(
+                DOM.tmdbImageUrl(ep.still_path, 'w185', ''));
+            const still = stillSrc
+                ? `<img src="${stillSrc}" class="w-16 h-10 object-cover rounded flex-shrink-0 ${isSeen ? 'opacity-40' : 'opacity-80'}">`
                 : `<div class="w-16 h-10  rounded flex-shrink-0 flex items-center justify-center"><i class="fas fa-play text-[var(--text-mid)] text-xs"></i></div>`;
             return `
             <div class="ep-item px-3 py-2.5 ${isActive ? 'active' : ''}"

@@ -178,6 +178,10 @@
         // The selected review year (a period label, not private data).
         window.__YIR_YEAR__ = {{ year|tojson }};
     </script>
+    <!-- F38: chrome.js renders third-party TMDb titles and poster
+         paths through the shared DOM-safety helpers, so it must be
+         loaded first. This page does not extend base.html. -->
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     <script src="{{ url_for('static', filename='js/yir-share.js') }}"></script>
     <script src="{{ url_for('static', filename='js/year-in-review.js') }}"></script>

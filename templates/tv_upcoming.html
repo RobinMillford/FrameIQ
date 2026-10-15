@@ -125,6 +125,10 @@
 </style>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
 function tmdbUrl(path, params) {
     const q = new URLSearchParams(Object.assign({path}, params || {}));
     return '/api/tmdb/proxy?' + q.toString();
@@ -306,18 +310,18 @@ function renderEpisodes(filter) {
                     ${episodes.map(ep => `
                         <div class="bg-white/5 hover:bg-white/10 rounded-lg p-4 flex gap-4 transition-all cursor-pointer"
                              onclick="window.location.href='/tv/${ep.show_id}/season/${ep.season_number}/episode/${ep.episode_number}'">
-                            <img src="${ep.still_path || ep.poster_path || '/static/images/no-poster.png'}" 
-                                 alt="${ep.episode_name}"
+                            <img src="${DOM.escapeAttr(DOM.tmdbImageUrl(ep.still_path || ep.poster_path, 'w300', '/static/images/no-poster.png'))}"
+                                 alt="${DOM.escapeAttr(ep.episode_name)}"
                                  class="w-40 h-24 rounded-lg object-cover"
                                  onerror="this.src='/static/images/no-poster.png'">
                             <div class="flex-1">
                                 <h3 class="text-lg font-bold text-white hover:text-[var(--accent)]">
-                                    ${ep.show_name}
+                                    ${DOM.escapeText(ep.show_name)}
                                 </h3>
                                 <p class="text-[var(--accent-hi)] mb-2">
-                                    Season ${ep.season_number}, Episode ${ep.episode_number}: ${ep.episode_name}
+                                    Season ${ep.season_number}, Episode ${ep.episode_number}: ${DOM.escapeText(ep.episode_name)}
                                 </p>
-                                <p class="text-[var(--text-mid)] text-sm line-clamp-2">${ep.episode_overview || 'No overview available.'}</p>
+                                <p class="text-[var(--text-mid)] text-sm line-clamp-2">${DOM.escapeText(ep.episode_overview || 'No overview available.')}</p>
                             </div>
                             <div class="flex-shrink-0 flex items-center">
                                 <svg class="w-6 h-6 text-[var(--text-mid)]" fill="currentColor" viewBox="0 0 20 20">

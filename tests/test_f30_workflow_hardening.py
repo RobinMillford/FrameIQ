@@ -237,7 +237,7 @@ def run_browser_step(script, tmp_path, output=None, pytest_exit=0):
     for name in ("test_director_detail_f19", "test_edit_profile_picker_browser",
                  "test_explore_browser", "test_f23_2_chat_csrf_browser",
                  "test_f23_csrf_browser", "test_taste_dna_actor_f14_browser",
-                 "test_xss_f21_browser"):
+                 "test_xss_f21_browser", "test_xss_f35_browser"):
         # The step resolves them as tests/<name>.py relative to the working
         # directory, so the scratch tree must mirror that layout.
         (tmp_path / "tests").mkdir(exist_ok=True)
