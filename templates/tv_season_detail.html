@@ -94,6 +94,10 @@
 </div>
 
 <script>
+    // F38: shared DOM-safety helpers. base.html now loads dom-safety.js
+    // BEFORE the content block, so this is defined at parse time.
+    const DOM = window.FrameIQDOM;
+
 function tmdbUrl(path, params) {
     const q = new URLSearchParams(Object.assign({path}, params || {}));
     return '/api/tmdb/proxy?' + q.toString();
@@ -207,7 +211,7 @@ function renderEpisodes() {
                 <div class="flex gap-4 p-4">
                     <!-- Episode Still -->
                     <div class="flex-shrink-0 cursor-pointer" onclick="window.location.href='/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${episode.episode_number}'">
-                        <img src="${episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : '/static/images/no-image.png'}" 
+                        <img src="${DOM.escapeAttr(DOM.tmdbImageUrl(episode.still_path, 'w300', '/static/images/no-image.png'))}"
                              alt="Episode ${episode.episode_number}"
                              class="w-32 sm:w-48 h-20 sm:h-27 rounded-lg object-cover hover:ring-2 hover:ring-indigo-500 transition-all">
                         ${isWatched ? `
@@ -226,7 +230,7 @@ function renderEpisodes() {
                             <div>
                                 <h3 class="text-xl font-bold text-white hover:text-[var(--accent)] cursor-pointer"
                                     onclick="window.location.href='/tv/${SHOW_ID}/season/${SEASON_NUMBER}/episode/${episode.episode_number}'">
-                                    ${episode.episode_number}. ${episode.name}
+                                    ${episode.episode_number}. ${DOM.escapeText(episode.name)}
                                 </h3>
                                 <div class="flex flex-wrap gap-3 text-sm text-[var(--text-mid)] mt-1">
                                     ${episode.air_date ? `<span>📅 ${new Date(episode.air_date).toLocaleDateString()}</span>` : ''}
@@ -236,7 +240,7 @@ function renderEpisodes() {
                             </div>
                         </div>
                         
-                        <p class="text-gray-300 text-sm mb-3 line-clamp-2">${episode.overview || 'No overview available.'}</p>
+                        <p class="text-gray-300 text-sm mb-3 line-clamp-2">${DOM.escapeText(episode.overview || 'No overview available.')}</p>
                         
                         <!-- Action Buttons -->
                         <div class="flex flex-wrap gap-2">

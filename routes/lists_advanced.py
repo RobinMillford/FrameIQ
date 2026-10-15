@@ -9,6 +9,7 @@ from flask_login import login_required, current_user
 from models import db, UserList, ListCollaborator, ListCategory, UserListCategory, ListAnalytics, ListView, User
 from datetime import datetime, timedelta
 from sqlalchemy import func
+from utils.query_limits import page_args
 
 logger = logging.getLogger(__name__)
 
@@ -476,8 +477,7 @@ def discover_by_category(category_id):
     """Discover lists by category"""
     category = ListCategory.query.get_or_404(category_id)
     
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    page, per_page = page_args(request.args, per_page_default=20)
     
     # Get lists with this category
     lists_query = db.session.query(UserList).join(UserListCategory).filter(

@@ -165,6 +165,7 @@ jobs:
             tests/test_f23_csrf_browser.py
             tests/test_taste_dna_actor_f14_browser.py
             tests/test_xss_f21_browser.py
+            tests/test_xss_f35_browser.py
           )
           for suite in "${REQUIRED_BROWSER_SUITES[@]}"; do
             [ -f "$suite" ] || {

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, redirect, url_for
 from flask_login import login_user
 from models import db, User
+from utils import username_policy
 from authlib.integrations.flask_client import OAuth
 import os
 
@@ -60,15 +61,16 @@ def google_callback():
         
         if not user:
             # Create new user
-            # Generate a unique username from email
-            username = email.split('@')[0]
-            # Ensure username is unique
-            counter = 1
-            original_username = username
-            while User.query.filter_by(username=username).first():
-                username = f"{original_username}_{counter}"
-                counter += 1
-            
+            # F35: the username is derived from the provider's email local-part,
+            # which we do not control. A provider value containing markup
+            # characters must not be stored. Rather than failing the sign-in —
+            # the user authenticated successfully — fall back to a compliant
+            # generated name and keep uniqueness.
+            username = username_policy.unique_valid_username(
+                email.split('@')[0],
+                exists=lambda candidate: bool(
+                    User.query.filter_by(username=candidate).first()))
+
             user = User(
                 username=username,
                 email=email,

@@ -6,9 +6,23 @@
 (function () {
     'use strict';
 
-    function isAuthed() {
-        return window.__IS_AUTH__ === true;
+    // F38: TMDb titles, person names and poster paths reach the palette as raw
+    // HTML. They are third-party data, so they go through the shared helpers.
+    // Every page that loads chrome.js now includes dom-safety.js ahead of it
+    // (base.html, plus the standalone pages patched in F38). Resolved at CALL
+    // time so this file does not depend on load order.
+    function dom() {
+        return window.FrameIQDOM;
     }
+
+    function escText(value) {
+        var D = dom();
+        return D ? D.escapeText(value) : '';
+    }
+
+      function isAuthed() {
+          return window.__IS_AUTH__ === true;
+      }
 
     function requireAuth() {
         if (isAuthed()) return true;
@@ -160,8 +174,8 @@
             for (const a of actions) {
                 html += itemHTML(
                     `<span class="cmdk-icon"><i data-lucide="${a.icon}"></i></span>
-                     <div class="cmdk-item-title">${a.title}</div>
-                     <div class="cmdk-item-sub">${a.sub}</div>`,
+                     <div class="cmdk-item-title">${escText(a.title)}</div>
+                     <div class="cmdk-item-sub">${escText(a.sub)}</div>`,
                     `data-href="${a.href}"`);
                 cmdkItems.push({ href: a.href });
             }
@@ -181,12 +195,20 @@
                     : `/${kind}/${it.id}`;
                 const title = it.title || it.name || 'Unknown';
                 const sub = it.release_date || it.first_air_date || it.known_for || '';
-                const poster = it.poster_path
-                    ? `<img class="cmdk-poster" src="https://image.tmdb.org/t/p/w92${it.poster_path}" alt="">`
+                // F38: validated as a URL, then attribute-escaped. The old
+                // `https://image.tmdb.org/t/p/w92${it.poster_path}` accepted
+                // any stored value and concatenated it raw into src.
+                const D = dom();
+                const posterUrl = D
+                    ? D.escapeAttr(D.tmdbImageUrl(String(it.poster_path || ''),
+                                                 'w92', ''))
+                    : '';
+                const poster = posterUrl
+                    ? `<img class="cmdk-poster" src="${posterUrl}" alt="">`
                     : `<span class="cmdk-icon"><i data-lucide="${kind === 'person' ? 'user' : 'film'}"></i></span>`;
                 html += itemHTML(
-                    `${poster}<div><div class="cmdk-item-title">${title}</div>
-                     <div class="cmdk-item-sub">${sub}</div></div>`,
+                    `${poster}<div><div class="cmdk-item-title">${escText(title)}</div>
+                     <div class="cmdk-item-sub">${escText(sub)}</div></div>`,
                     `data-href="${href}"`);
                 cmdkItems.push({ href });
             }

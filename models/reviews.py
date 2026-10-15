@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from flask_login import current_user
+from sqlalchemy import func
 
 from models.base import db
 
@@ -128,8 +129,17 @@ class ReviewComment(db.Model):
     def __init__(self, **kwargs):
         super(ReviewComment, self).__init__(**kwargs)
 
-    def to_dict(self):
-        """Convert comment to dictionary for JSON responses"""
+    def to_dict(self, reply_count=None):
+        """Convert comment to dictionary for JSON responses.
+
+        F43: ``reply_count`` may be supplied by :func:`serialize_comments`,
+        which resolves every count on a page in one grouped query. Callers
+        that serialise a single comment (the create endpoints) may still omit
+        it and get the original one-query-per-comment behaviour — that path is
+        a single object, so it was never an N+1.
+        """
+        if reply_count is None:
+            reply_count = self.replies.filter_by(is_deleted=False).count()
         return {
             'id': self.id,
             'user': {
@@ -141,11 +151,41 @@ class ReviewComment(db.Model):
             'parent_id': self.parent_id,
             'content': self.content,
             'created_at': self.created_at.isoformat(),
-            'reply_count': self.replies.filter_by(is_deleted=False).count()
+            'reply_count': reply_count
         }
 
     def __repr__(self):
         return f'<ReviewComment {self.id} by {self.user.username}>'
+
+
+def serialize_comments(comments):
+    """Serialise a page of comments with reply counts fetched in one query.
+
+    F43. ``ReviewComment.to_dict()`` counts replies per comment, so a page of
+    N comments used to cost N COUNT queries. This resolves all of them with a
+    single ``GROUP BY parent_id`` over the page's own comment ids.
+
+    ``comments`` must already have ``user`` eager-loaded by the caller
+    (``.options(db.joinedload(ReviewComment.user))``) — that relationship is
+    still lazy by default, and this function does not load it for you.
+    """
+    comments = list(comments)
+    if not comments:
+        return []
+
+    reply_counts = dict(
+        db.session.query(
+            ReviewComment.parent_id,
+            func.count(ReviewComment.id),
+        ).filter(
+            ReviewComment.parent_id.in_([c.id for c in comments]),
+            ReviewComment.is_deleted.is_(False),
+        ).group_by(
+            ReviewComment.parent_id
+        ).all()
+    )
+
+    return [c.to_dict(reply_counts.get(c.id, 0)) for c in comments]
 
 
 class ReviewHelpful(db.Model):

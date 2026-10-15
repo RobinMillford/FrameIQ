@@ -2,6 +2,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import TVShowProgress, db, User, Review
+from utils import username_policy
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import limiter
 from datetime import datetime
@@ -59,6 +60,16 @@ def register():
         password = request.form['password']
         confirm_password = request.form['confirm_password']
         
+        # F35: reject usernames that could break out of the HTML/attribute
+        # contexts they are rendered into. Defense in depth — the render paths
+        # are already safe — but refusing to STORE such a value is the tighter
+        # control. Existing accounts are untouched; this runs only on creation.
+        username_problems = username_policy.username_problems(username)
+        if username_problems:
+            for problem in username_problems:
+                flash(problem)
+            return redirect(url_for('auth.register'))
+
         # Validate email format
         email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_regex, email):

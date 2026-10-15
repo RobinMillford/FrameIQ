@@ -1,3 +1,20 @@
+        /**
+         * Escape for a QUOTED ATTRIBUTE.
+         *
+         * F35: TMDb titles/poster paths are third-party data that we persist into
+         * media_item, so they are not trustworthy merely because they came from a
+         * catalogue API. Unescaped, a quote in either field closed the attribute
+         * and the remainder became live markup.
+         */
+        function escapeAttr(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function tmdbUrl(path, params) {
             const q = new URLSearchParams(Object.assign({path}, params || {}));
             return '/api/tmdb/proxy?' + q.toString();
@@ -46,9 +63,9 @@
                     movieCard.className = "movie-card flex-shrink-0 w-48 glass-effect rounded-lg overflow-hidden";
                     movieCard.innerHTML = `
                         <a href="/movie/${movie.id}" class="block">
-                            <img src="${posterUrl}" alt="${movie.title}" class="w-full h-72 object-cover">
+                            <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(movie.title)}" class="w-full h-72 object-cover">
                             <div class="p-4">
-                                <h3 class="font-semibold text-sm">${movie.title}</h3>
+                                <h3 class="font-semibold text-sm">${escapeAttr(movie.title)}</h3>
                                 <p class="text-gray-400 text-xs">${movie.release_date}</p>
                             </div>
                         </a>
@@ -85,7 +102,7 @@
                                 </iframe>
                             </div>
                             <div class="p-4">
-                                <h3 class="font-semibold text-lg mb-2">${movie.title}</h3>
+                                <h3 class="font-semibold text-lg mb-2">${escapeAttr(movie.title)}</h3>
                                 <p class="text-gray-400 text-sm">${movie.release_date}</p>
                             </div>
                         `;
@@ -157,9 +174,9 @@ async function fetchMovieTrailer(movieId) {
                     
                     suggestion.className = "autocomplete-item flex items-center p-2 glass-effect";
                     suggestion.innerHTML = `
-                        <img src="${posterUrl}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3 flex-shrink-0">
+                        <img src="${escapeAttr(posterUrl)}" alt="Poster" class="w-12 h-18 object-cover rounded mr-3 flex-shrink-0">
                         <div class="min-w-0 flex-1 overflow-hidden">
-                            <div class="font-medium truncate">${movie.title}</div>
+                            <div class="font-medium truncate">${escapeAttr(movie.title)}</div>
                             <div class="text-sm text-gray-400 truncate">${movie.release_date}</div>
                         </div>
                     `;
@@ -214,9 +231,9 @@ async function fetchMovieTrailer(movieId) {
                         movieCard.className = "movie-card flex-shrink-0 w-32 glass-effect rounded-lg overflow-hidden";
                         movieCard.innerHTML = `
                             <a href="/movie/${movie.id}" class="block">
-                                <img src="${posterUrl}" alt="${movie.title}" class="w-full h-48 object-cover">
+                                <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(movie.title)}" class="w-full h-48 object-cover">
                                 <div class="p-2">
-                                    <h3 class="font-semibold text-xs truncate">${movie.title}</h3>
+                                    <h3 class="font-semibold text-xs truncate">${escapeAttr(movie.title)}</h3>
                                     <p class="text-gray-400 text-xs">${movie.release_date}</p>
                                 </div>
                             </a>

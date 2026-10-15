@@ -85,6 +85,10 @@
 
 {% block extra_js %}
     <script src="{{ url_for('static', filename='js/activity-feed.js') }}"></script>
+    <!-- F38: chrome.js renders third-party TMDb titles and poster
+         paths through the shared DOM-safety helpers, so it must be
+         loaded first. This page does not extend base.html. -->
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
     {#- F21 — these two blocks were written with nested script tags. A nested
         script tag is not a script: the browser treats the inner tag as text,

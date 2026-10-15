@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from models import db, Tag, UserMediaTag
 from sqlalchemy import func, desc
 from extensions import limiter
+from utils.query_limits import LIST_LIMIT_MAX, size_arg
 
 tags_bp = Blueprint('tags', __name__)
 
@@ -17,7 +18,7 @@ def test_tags_page():
 @tags_bp.route('/api/tags/popular', methods=['GET'])
 def get_popular_tags():
     """Get most used tags globally"""
-    limit = request.args.get('limit', 20, type=int)
+    limit = size_arg(request.args, 'limit', 20, LIST_LIMIT_MAX)
     
     popular_tags = Tag.query.filter(Tag.usage_count > 0).order_by(desc(Tag.usage_count)).limit(limit).all()
     

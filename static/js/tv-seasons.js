@@ -9,16 +9,16 @@
 
 /**
  * Escape a value for an HTML text or quoted-attribute context.
- * Unlike the `textContent -> innerHTML` variant, this encodes quotes, which is
- * what an attribute context requires.
+ *
+ * F38: this used to be a second, independent copy of the escaper. It is now a
+ * thin delegation to static/js/dom-safety.js so there is exactly one
+ * implementation to audit and one to keep in step with the URL policies.
+ * Resolved at CALL time rather than load time so it does not depend on
+ * dom-safety.js having been parsed before this file.
  */
 function escAttr(value) {
-    return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    var D = window.FrameIQDOM;
+    return D ? D.escapeAttr(value) : '';
 }
 
 /**
@@ -260,7 +260,7 @@ class TVSeasonsManager {
                             </div>
                             
                             ${season.overview ? `
-                                <p class="text-gray-300 text-sm mb-3 line-clamp-2">${season.overview}</p>
+                                <p class="text-gray-300 text-sm mb-3 line-clamp-2">${escAttr(season.overview)}</p>
                             ` : ''}
                             
                             <div class="mb-3">

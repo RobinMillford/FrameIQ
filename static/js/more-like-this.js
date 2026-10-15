@@ -9,16 +9,16 @@
 
 /**
  * Escape a value for an HTML text or quoted-attribute context.
- * Unlike the `textContent -> innerHTML` variant used elsewhere, this DOES
- * encode quotes, which is what an attribute context requires.
+ *
+ * F38: this used to be a second, independent copy of the escaper. It is now a
+ * thin delegation to static/js/dom-safety.js so there is exactly one
+ * implementation to audit and one to keep in step with the URL policies.
+ * Resolved at CALL time rather than load time so it does not depend on
+ * dom-safety.js having been parsed before this file.
  */
 function escAttr(value) {
-    return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    var D = window.FrameIQDOM;
+    return D ? D.escapeAttr(value) : '';
 }
 
 class MoreLikeThisManager {
@@ -84,7 +84,6 @@ class MoreLikeThisManager {
             const url = (itemId !== null && mediaType && D)
                 ? D.safeLinkUrl(`/${mediaType}/${itemId}`)
                 : '';
-            const title = escAttr(item.title);
 
             // F21 — poster path validated as a URL, then attribute-escaped.
             // Fails closed: without the helper the poster is omitted entirely
@@ -98,7 +97,7 @@ class MoreLikeThisManager {
                     <div class="relative overflow-hidden rounded-lg shadow-lg transition-transform duration-300 group-hover:scale-105 group-hover:shadow-2xl">
                         ${posterSrc ? `
                             <img src="${posterSrc}"
-                                 alt="${title}"
+                                 alt="${escAttr(item.title)}"
                                  class="w-full h-auto aspect-[2/3] object-cover">
                         ` : `
                             <div class="w-full aspect-[2/3] bg-gray-700 flex items-center justify-center">
@@ -124,7 +123,7 @@ class MoreLikeThisManager {
                     </div>
                     
                     <h4 class="mt-2 text-sm font-medium text-white line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                        ${title}
+                        ${escAttr(item.title)}
                     </h4>
                 </a>
             `;

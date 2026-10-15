@@ -3,6 +3,17 @@
  * Handles progress tracking, status changes, and episode marking
  */
 
+/**
+ * Escape a value for an HTML text context.
+ *
+ * F38: this file had no escaper, so a TMDb episode title went into the markup
+ * raw. Delegates to the shared implementation rather than adding a third copy.
+ */
+function escText(value) {
+  var D = window.FrameIQDOM;
+  return D ? D.escapeText(value) : '';
+}
+
 class TVTracker {
     constructor(showId) {
         this.showId = showId;
@@ -258,7 +269,7 @@ class TVTracker {
             return `
                 <div class="mb-6 bg-white/5 border border-white/10 rounded-xl p-4">
                     <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Next Episode</p>
-                    <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${ne.title}` : ''}</p>
+                    <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${escText(ne.title)}` : ''}</p>
                     <p class="text-yellow-400 text-sm mt-1">⏳ ${when}</p>
                 </div>
             `;
@@ -269,7 +280,7 @@ class TVTracker {
                 <div class="flex items-center justify-between gap-4">
                     <div>
                         <p class="text-xs text-indigo-300 uppercase tracking-wide mb-1">Next Episode</p>
-                        <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${ne.title}` : ''}</p>
+                        <p class="text-white font-bold">S${ne.season}E${ne.episode}${ne.title ? ` · ${escText(ne.title)}` : ''}</p>
                     </div>
                     <a href="/watch/tv/${this.showId}/${ne.season}/${ne.episode}"
                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap">

@@ -246,6 +246,22 @@
         </div>
 
     <!-- Main Content -->
+
+    {# LOAD ORDER (F38) -------------------------------------------------------
+       dom-safety.js is loaded HERE, before {% block content %}, so every
+       template can rely on `window.FrameIQDOM` at parse time.
+
+       It used to be loaded at the end of the body, AFTER the content block.
+       That meant an inline `<script>` inside a template — which is where most
+       of the rendering lives — executed before the helpers existed, so
+       `window.FrameIQDOM` was undefined there. The safe-looking fix was to
+       read it lazily inside each render function; the real fix is to load the
+       dependency before its dependents. The module is a pure IIFE of function
+       definitions with no DOM access at load time, so moving it earlier cannot
+       change what it does, only when it becomes available.
+    #}
+    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
+
     <main class="pt-[72px] relative z-[2] page-enter">
         {% block content %}{% endblock %}
     </main>
@@ -301,7 +317,8 @@
         trending tiles). Loaded once here rather than per template so the
         ordering guarantee cannot drift.
     #}
-    <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
+
+    {# The script tag itself stays here; see the load-order note at line 248. #}
     {% block extra_js %}{% endblock %}
 
 
