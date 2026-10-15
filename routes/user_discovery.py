@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from models import db, User, UserFollow, Review, DiaryEntry
 from sqlalchemy import func, or_, desc
 from datetime import datetime, timedelta
+from utils.query_limits import LIST_LIMIT_MAX, size_arg
 
 user_discovery = Blueprint('user_discovery', __name__)
 
@@ -111,7 +112,7 @@ def search_users():
 @login_required
 def suggested_follows():
     """Get suggested users to follow based on various factors"""
-    limit = request.args.get('limit', 10, type=int)
+    limit = size_arg(request.args, 'limit', 10, LIST_LIMIT_MAX)
 
     # Get users the current user already follows
     following_ids = db.session.query(UserFollow.following_id).filter_by(
@@ -271,7 +272,7 @@ def popular_users():
 def similar_users(user_id):
     """Find users with similar taste to the specified user"""
     user = User.query.get_or_404(user_id)
-    limit = request.args.get('limit', 10, type=int)
+    limit = size_arg(request.args, 'limit', 10, LIST_LIMIT_MAX)
 
     # Get users who have reviewed the same movies with similar ratings
     # This is a simplified version - can be enhanced with the user_similarity table
@@ -354,7 +355,7 @@ def similar_users(user_id):
 def autocomplete_users():
     """Quick autocomplete for username search (for @mentions, etc.)"""
     query_str = request.args.get('q', '').strip()
-    limit = request.args.get('limit', 10, type=int)
+    limit = size_arg(request.args, 'limit', 10, LIST_LIMIT_MAX)
 
     if len(query_str) < 2:
         return jsonify({'users': []}), 200

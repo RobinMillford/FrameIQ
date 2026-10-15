@@ -10,6 +10,7 @@ from models import db, User, UserFollow, Review
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
+from utils.query_limits import LIST_LIMIT_MAX, size_arg
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +336,7 @@ def get_global_feed():
 @login_required
 def get_suggested_follows():
     """Get user recommendations based on shared movie tastes"""
-    limit = request.args.get('limit', 5, type=int)
+    limit = size_arg(request.args, 'limit', 5, LIST_LIMIT_MAX)
     
     # Get all media IDs the current user has interacted with
     watchlist_ids = {item.id for item in current_user.watchlist}

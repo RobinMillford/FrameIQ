@@ -7,9 +7,12 @@ import logging
 from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewHelpful, ReviewComment, User, UserFollow, MediaItem
+from models.reviews import serialize_comments
 from datetime import datetime
 from sqlalchemy import desc, func
 from sqlalchemy.orm import joinedload
+
+from utils.query_limits import page_args
 
 logger = logging.getLogger(__name__)
 
@@ -381,18 +384,41 @@ def mark_helpful(review_id):
 
 @reviews_enhanced_bp.route('/api/reviews/<int:review_id>/replies', methods=['GET'])
 def get_review_replies(review_id):
-    """Get all replies for a review"""
+    """Get top-level replies for a review, one bounded page at a time.
+
+    F43. Previously every top-level reply was loaded with `.all()` and each
+    was serialised with its own reply COUNT. The page is now bounded, and all
+    reply counts on the page come from one grouped query.
+
+    Contract: `replies` and `count` are unchanged in shape; `count` is the
+    review's total number of top-level replies rather than the length of the
+    returned page, and `page`/`per_page`/`pages` are added.
+    """
     review = Review.query.filter_by(id=review_id, is_deleted=False).first_or_404()
 
-    replies = ReviewComment.query.filter_by(
+    page, per_page = page_args(request.args, per_page_default=20)
+
+    base = ReviewComment.query.filter_by(
         review_id=review_id,
         is_deleted=False,
         parent_id=None
-    ).order_by(ReviewComment.created_at.asc()).all()
+    )
+    total = base.count()
+
+    replies = base.options(
+        db.joinedload(ReviewComment.user)
+    ).order_by(
+        ReviewComment.created_at.asc(), ReviewComment.id.asc()
+    ).limit(per_page).offset(
+        (page - 1) * per_page
+    ).all()
 
     return jsonify({
-        'replies': [reply.to_dict() for reply in replies],
-        'count': len(replies)
+        'replies': serialize_comments(replies),
+        'count': total,
+        'page': page,
+        'per_page': per_page,
+        'pages': max(1, -(-total // per_page))
     }), 200
 
 

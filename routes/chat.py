@@ -29,6 +29,8 @@ from models import (
 from src.agents.graph import get_agent_graph, submit_to_chat_loop
 from src.api.agent_service import _build_initial_state, _build_user_context
 
+from utils.query_limits import bounded_int
+
 logger = logging.getLogger(__name__)
 
 chat = Blueprint("chat", __name__)
@@ -52,6 +54,24 @@ _NODE_LABELS = {
 # not internal calls (retriever tool decisions, enricher extraction).
 _FINAL_RESPONSE_TAG = "final_response"
 DAILY_CHAT_LIMIT = 5
+
+# F43 — conversation history is paged, never loaded whole.
+#
+# `GET /chat/conversations/<id>` used to serialise every message in a
+# conversation, and `_history_messages` fed every message to the agent on
+# every turn. Both grew without bound: one long conversation made each request
+# slower and each model call more expensive, with nothing to stop it.
+#
+# The API takes `?limit=` (messages per page, newest page by default) and
+# `?before=<message_id>` to walk backwards, and reports `has_more` plus
+# `next_before` so a client knows how to continue.
+HISTORY_PAGE_MAX = 100
+HISTORY_PAGE_DEFAULT = 50
+#: How much history the agent is given per turn. This is a cost and latency
+#: bound, not a correctness one — a conversation longer than this has its
+#: oldest turns dropped from the model's context (the most recent turns are
+#: kept, in chronological order).
+AGENT_HISTORY_MAX = 60
 
 
 def _sse(data: dict) -> str:
@@ -252,8 +272,25 @@ def _conversation_for_user(conversation_id):
 
 
 def _history_messages(conversation):
+    """The most recent `AGENT_HISTORY_MAX` turns, oldest first.
+
+    F43: bounded in SQL. The window is selected newest-first with a LIMIT and
+    then reversed, so the agent always sees the *end* of the conversation in
+    chronological order — the same content as before for any conversation
+    shorter than the cap.
+
+    `order_by(None)` is required, not decorative: `ChatConversation.messages`
+    carries its own `order_by="ChatMessage.created_at"`, and appending to that
+    yields `created_at ASC, id DESC` — ascending again, so `reversed()` below
+    would hand the agent the transcript backwards.
+    """
+    rows = (conversation.messages
+            .order_by(None)
+            .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+            .limit(AGENT_HISTORY_MAX)
+            .all())
     messages = []
-    for message in conversation.messages.order_by(ChatMessage.created_at).all():
+    for message in reversed(rows):
         message_type = HumanMessage if message.role == "user" else AIMessage
         messages.append(message_type(content=message.content))
     return messages
@@ -359,17 +396,50 @@ def chat_conversations():
 @chat.route("/chat/conversations/<int:conversation_id>", methods=["GET"])
 @login_required
 def chat_conversation(conversation_id):
+    """One page of a conversation, oldest-first within the page.
+
+    F43. Bounded, and cursor-paged so nothing is silently dropped:
+    the newest `limit` messages are returned (chronologically), plus
+    `has_more` and `next_before`. Passing `?before=<next_before>` walks
+    further back. `limit` is clamped to HISTORY_PAGE_MAX.
+    """
     conversation = ChatConversation.query.filter_by(
         id=conversation_id, user_id=current_user.id,
     ).first_or_404()
+
+    limit = bounded_int(request.args.get("limit"), HISTORY_PAGE_DEFAULT,
+                        HISTORY_PAGE_MAX, minimum=1)
+    before = request.args.get("before", type=int)
+
+    query = conversation.messages
+    if before is not None:
+        # `before` is the id of the oldest message on the previous page. Ids
+        # increase with insertion order, so this selects strictly older rows.
+        query = query.filter(ChatMessage.id < before)
+
+    # Fetch one extra row to learn whether older messages exist without a
+    # second COUNT query.
+    # `order_by(None)` clears the relationship's own `created_at` ordering,
+    # which would otherwise be prepended to this one and defeat the paging.
+    rows = (query.order_by(None)
+                 .order_by(ChatMessage.id.desc())
+                 .limit(limit + 1)
+                 .all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    rows.reverse()
+
     return jsonify({
         "id": conversation.id,
         "title": conversation.title,
         "messages": [
             {"role": message.role, "content": message.content,
              "metadata": json.loads(message.metadata_json or "{}")}
-            for message in conversation.messages.order_by(ChatMessage.created_at).all()
+            for message in rows
         ],
+        "limit": limit,
+        "has_more": has_more,
+        "next_before": rows[0].id if (has_more and rows) else None,
     })
 
 

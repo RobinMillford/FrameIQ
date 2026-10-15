@@ -1,13 +1,46 @@
-"""
-Trending System API Routes
-Tracks and displays trending media, tags, and users
+"""F43: bound the trending queries and replace the per-user N+1 counts.
+
+F43.
+
+WHAT WAS WRONG
+--------------
+* ``get_trending_tags`` and ``get_trending_reviews`` passed a client-supplied
+  ``limit`` straight into ``.limit()``. A large value asked for the whole
+  table; a *negative* value was worse, because SQLite reads ``LIMIT -1`` as
+  "no limit". ``get_trending_media`` already clamped, which is why only these
+  three were exposed.
+* ``get_trending_users`` loaded **every** user with ``.all()`` and then ran two
+  COUNT queries per user in a Python loop — an N+1 over the whole user table,
+  before the requested limit was applied at all. The limit was a slice of an
+  already-computed list, so it bounded the response but not the work.
+* Both list endpoints sorted only by a score, so equal scores came back in
+  whatever order the database happened to produce.
+
+WHAT CHANGED
+------------
+* Every limit goes through :func:`query_limits.size_arg` and is applied in the
+  database, before rows are materialised.
+* ``get_trending_users`` computes reviews, comments and likes in three
+  grouped subqueries and ranks in SQL: one query instead of ``2N + 1``, and the
+  limit is a SQL ``LIMIT``. The score formula and each count's filter (reviews
+  and likes are not filtered on ``is_deleted``; comments are) are preserved
+  exactly, so the numbers a client sees do not change.
+* Equal scores now break ties on ascending user id, so the response is
+  deterministic across calls and databases.
 """
 from flask import Blueprint, request, jsonify
 from models import db, MediaItem, Tag, User, Review, ReviewLike, MediaLike, MediaComment, UserMediaTag
 from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta
 
+from utils.query_limits import LIST_LIMIT_MAX, size_arg
+
 trending = Blueprint('trending', __name__)
+
+
+def _limit(default: int) -> int:
+    """A client-supplied limit, clamped to a sane, positive maximum."""
+    return size_arg(request.args, 'limit', default, LIST_LIMIT_MAX)
 
 
 @trending.route('/api/trending/media', methods=['GET'])
@@ -16,8 +49,7 @@ def get_trending_media():
     days = request.args.get('days', 7, type=int)
     media_type = request.args.get('type', None)  # 'movie', 'tv', or None for both
     # Cap the public limit so callers can't request arbitrarily large pages.
-    limit = request.args.get('limit', 20, type=int) or 20
-    limit = max(1, min(limit, 50))
+    limit = _limit(20)
 
     since_date = datetime.utcnow() - timedelta(days=days)
 
@@ -109,8 +141,10 @@ def get_trending_media():
             'review_count': review_count
         })
 
-    # Re-sort by calculated score
-    trending_items.sort(key=lambda x: x['score'], reverse=True)
+    # Re-sort by calculated score. The tie-break on id keeps the order stable
+    # across calls; the DB `limit` above already bounds the set, so the slice
+    # below can only ever drop rows that ranked below the cutoff.
+    trending_items.sort(key=lambda x: (-x['score'], x['id']))
 
     return jsonify({
         'success': True,
@@ -124,7 +158,7 @@ def get_trending_media():
 def get_trending_tags():
     """Get trending tags based on recent usage"""
     days = request.args.get('days', 7, type=int)
-    limit = request.args.get('limit', 20, type=int)
+    limit = _limit(20)
 
     since_date = datetime.utcnow() - timedelta(days=days)
 
@@ -141,7 +175,7 @@ def get_trending_tags():
     ).group_by(
         Tag.id, Tag.name, Tag.usage_count
     ).order_by(
-        desc('recent_usage')
+        desc('recent_usage'), Tag.id.asc()
     ).limit(limit).all()
 
     return jsonify({
@@ -158,60 +192,92 @@ def get_trending_tags():
 
 @trending.route('/api/trending/users', methods=['GET'])
 def get_trending_users():
-    """Get most active users based on recent activity"""
+    """Get most active users based on recent activity.
+
+    F43: the three activity counts are aggregated in grouped subqueries and
+    the score is computed in SQL, so this is a single query with a SQL LIMIT
+    instead of `2N + 1` queries over every user in the table.
+    """
     days = request.args.get('days', 7, type=int)
-    limit = request.args.get('limit', 20, type=int)
+    limit = _limit(20)
 
     since_date = datetime.utcnow() - timedelta(days=days)
 
-    # Count activities: reviews, comments, likes
-    user_activity = db.session.query(
+    # Count activities: reviews, comments, likes. Each becomes one grouped
+    # subquery. The filters match the previous per-user COUNTs exactly —
+    # reviews and likes are not filtered on `is_deleted`, comments are — so
+    # the counts a client receives are unchanged.
+    review_counts = (
+        db.session.query(
+            Review.user_id.label('user_id'),
+            func.count(Review.id).label('review_count'),
+        ).filter(
+            Review.created_at >= since_date
+        ).group_by(
+            Review.user_id
+        ).subquery()
+    )
+
+    comment_counts = (
+        db.session.query(
+            MediaComment.user_id.label('user_id'),
+            func.count(MediaComment.id).label('comment_count'),
+        ).filter(
+            MediaComment.created_at >= since_date,
+            MediaComment.is_deleted == False
+        ).group_by(
+            MediaComment.user_id
+        ).subquery()
+    )
+
+    like_counts = (
+        db.session.query(
+            MediaLike.user_id.label('user_id'),
+            func.count(MediaLike.id).label('like_count'),
+        ).filter(
+            MediaLike.created_at >= since_date
+        ).group_by(
+            MediaLike.user_id
+        ).subquery()
+    )
+
+    review_count = func.coalesce(review_counts.c.review_count, 0)
+    comment_count = func.coalesce(comment_counts.c.comment_count, 0)
+    like_count = func.coalesce(like_counts.c.like_count, 0)
+    activity_score = review_count * 5 + comment_count * 3 + like_count * 1
+
+    rows = db.session.query(
         User.id,
         User.username,
         User.profile_picture,
         User.followers_count,
-        func.count(Review.id).label('review_count')
+        review_count.label('review_count'),
+        comment_count.label('comment_count'),
+        like_count.label('like_count'),
+        activity_score.label('activity_score'),
     ).outerjoin(
-        Review, and_(Review.user_id == User.id, Review.created_at >= since_date)
-    ).group_by(
-        User.id, User.username, User.profile_picture, User.followers_count
-    ).all()
-
-    # Add comment counts
-    users_with_scores = []
-    for user in user_activity:
-        comment_count = MediaComment.query.filter(
-            MediaComment.user_id == user.id,
-            MediaComment.created_at >= since_date,
-            MediaComment.is_deleted == False
-        ).count()
-
-        like_count = MediaLike.query.filter(
-            MediaLike.user_id == user.id,
-            MediaLike.created_at >= since_date
-        ).count()
-
-        # Calculate activity score
-        score = (user.review_count * 5) + (comment_count * 3) + (like_count * 1)
-
-        users_with_scores.append({
-            'id': user.id,
-            'username': user.username,
-            'profile_picture': user.profile_picture,
-            'followers_count': user.followers_count or 0,
-            'activity_score': score,
-            'review_count': user.review_count,
-            'comment_count': comment_count,
-            'like_count': like_count
-        })
-
-    # Sort by activity score
-    users_with_scores.sort(key=lambda x: x['activity_score'], reverse=True)
+        review_counts, review_counts.c.user_id == User.id
+    ).outerjoin(
+        comment_counts, comment_counts.c.user_id == User.id
+    ).outerjoin(
+        like_counts, like_counts.c.user_id == User.id
+    ).order_by(
+        desc(activity_score), User.id.asc()
+    ).limit(limit).all()
 
     return jsonify({
         'success': True,
         'period_days': days,
-        'users': users_with_scores[:limit]
+        'users': [{
+            'id': row.id,
+            'username': row.username,
+            'profile_picture': row.profile_picture,
+            'followers_count': row.followers_count or 0,
+            'activity_score': row.activity_score,
+            'review_count': row.review_count,
+            'comment_count': row.comment_count,
+            'like_count': row.like_count
+        } for row in rows]
     })
 
 
@@ -219,19 +285,38 @@ def get_trending_users():
 def get_trending_reviews():
     """Get trending/popular reviews based on likes"""
     days = request.args.get('days', 30, type=int)
-    limit = request.args.get('limit', 10, type=int)
+    limit = _limit(10)
 
     since_date = datetime.utcnow() - timedelta(days=days)
 
-    # Get reviews with like counts
+    # F43: `user` and `media` are batch-loaded rather than lazy-loaded per row
+    # (two extra queries per review before).
+    #
+    # F44: `selectinload`, NOT `joinedload`. This query aggregates and groups by
+    # `review.id` alone; `joinedload` folds `user` into this same SELECT, so
+    # every `user` column lands in the projection while only `review.id` is
+    # grouped. SQLite accepts that, PostgreSQL rejects it:
+    #
+    #     psycopg2.errors.GroupingError: column "user_1.id" must appear in
+    #     the GROUP BY clause or be used in an aggregate function
+    #
+    # i.e. a 500 in production, which only the PostgreSQL run could find.
+    # `selectinload` issues one extra `WHERE id IN (...)` statement for the
+    # whole page instead, so the GROUP BY stays valid and the load is still
+    # batched rather than per-row.
     trending_reviews = db.session.query(
         Review,
         func.count(ReviewLike.id).label('like_count')
     ).outerjoin(
         ReviewLike, ReviewLike.review_id == Review.id
+    ).options(
+        db.selectinload(Review.user),
+        db.selectinload(Review.media),
     ).filter(
         Review.created_at >= since_date
-    ).group_by(Review.id).order_by(desc('like_count')).limit(limit).all()
+    ).group_by(Review.id).order_by(
+        desc('like_count'), Review.id.asc()
+    ).limit(limit).all()
 
     reviews_data = []
     for review, like_count in trending_reviews:

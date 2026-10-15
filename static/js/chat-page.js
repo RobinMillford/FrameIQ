@@ -54,12 +54,83 @@
         addMessage('bot', "Hey — I'm CineBot. Ask me anything about movies, TV shows, or what to watch next.");
     }
 
+    // Build a message element without attaching it, so an older page of
+    // history can be inserted above what is already on screen.
+    function buildMessage(sender, text) {
+        const div = document.createElement('div');
+        div.className = `chat-msg ${sender}`;
+
+        const name = document.createElement('div');
+        name.className = 'chat-msg-name';
+        name.textContent = sender === 'bot' ? BOT_NAME : 'You';
+        div.appendChild(name);
+
+        const body = document.createElement('div');
+        if (sender === 'bot') {
+            body.innerHTML = renderMarkdown(text);
+        } else {
+            body.textContent = text;
+        }
+        div.appendChild(body);
+        return div;
+    }
+
     function renderStoredMessage(message) {
         addMessage(message.role === 'user' ? 'user' : 'bot', message.content);
         if (message.role === 'assistant' && message.metadata) {
             if (message.metadata.movies?.length) displayMedia(message.metadata.movies, 'Movies');
             if (message.metadata.tv_shows?.length) displayMedia(message.metadata.tv_shows, 'TV Shows');
         }
+    }
+
+    // F43: the server pages conversation history (`?before=<message id>`) and
+    // reports `has_more` / `next_before`. Without this affordance a long
+    // conversation would silently lose its oldest messages, so when more
+    // exist we put a button at the top of the transcript instead.
+    function renderOlderMessagesButton(nextBefore) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'load-older-messages';
+        button.textContent = 'Load earlier messages';
+
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            button.textContent = 'Loading…';
+            try {
+                const url = `/chat/conversations/${currentConversationId}` +
+                    `?before=${encodeURIComponent(nextBefore)}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Unable to load earlier messages');
+                const data = await response.json();
+
+                const heightBefore = chatMessages.scrollHeight;
+                // data.messages is oldest-first, so insert the whole page
+                // above the current first child to keep the transcript
+                // chronological.
+                const anchor = chatMessages.firstElementChild;
+                const fragment = document.createDocumentFragment();
+                data.messages.forEach((message) => {
+                    fragment.appendChild(
+                        buildMessage(message.role === 'user' ? 'user' : 'bot',
+                                     message.content)
+                    );
+                });
+                chatMessages.insertBefore(fragment, anchor);
+                button.remove();
+
+                if (data.has_more && data.next_before != null) {
+                    renderOlderMessagesButton(data.next_before);
+                }
+                chatMessages.scrollTop =
+                    chatMessages.scrollHeight - heightBefore;
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = 'Load earlier messages';
+                console.warn(error);
+            }
+        });
+
+        chatMessages.insertBefore(button, chatMessages.firstChild);
     }
 
     function updateQuota(quota) {
@@ -76,6 +147,11 @@
         currentConversationId = data.id;
         clearMessages();
         data.messages.forEach(renderStoredMessage);
+        // F43: history is paged server-side. Offer to fetch the older page
+        // rather than dropping it silently.
+        if (data.has_more && data.next_before != null) {
+            renderOlderMessagesButton(data.next_before);
+        }
         document.querySelectorAll('.chat-history-item').forEach((item) => {
             item.classList.toggle('active', item.dataset.conversationId === String(id));
         });

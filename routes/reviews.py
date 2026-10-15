@@ -7,9 +7,12 @@ import logging
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 from models import db, Review, ReviewLike, ReviewComment, MediaItem, User, UserFollow
+from models.reviews import serialize_comments
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
+
+from utils.query_limits import page_args
 
 logger = logging.getLogger(__name__)
 
@@ -260,20 +263,47 @@ def create_comment(review_id):
 
 @reviews.route('/api/reviews/<int:review_id>/comments', methods=['GET'])
 def get_review_comments(review_id):
-    """Get all comments for a review"""
+    """Get comments for a review, one bounded page at a time.
+
+    F43. This used to load *every* comment on the review with `.all()` and
+    serialise each one with its own reply COUNT — unbounded work behind a
+    single public GET. It is now paginated, and the page is serialised with
+    `serialize_comments`, which resolves all reply counts in one grouped query.
+
+    Response contract: `comments` and `total` keep their meaning for a caller
+    that asks for one page. `total` is now the review's total comment count
+    rather than the length of the returned page, and `page`/`per_page`/`pages`
+    are added so a client can walk the rest.
+    """
     review = Review.query.filter_by(id=review_id, is_deleted=False).first()
     if not review:
         return jsonify({'error': 'Review not found'}), 404
-        
-    # Get all comments for this review (not deleted)
-    comments = ReviewComment.query.filter_by(
+
+    page, per_page = page_args(request.args, per_page_default=20)
+
+    base = ReviewComment.query.filter_by(
         review_id=review_id,
         is_deleted=False
-    ).order_by(ReviewComment.created_at.asc()).all()
-    
+    )
+    total = base.count()
+
+    # F43: `id` breaks ties on `created_at` so paging is stable when two
+    # comments share a timestamp — otherwise a comment can be repeated on one
+    # page and skipped on the next.
+    comments = base.options(
+        db.joinedload(ReviewComment.user)
+    ).order_by(
+        ReviewComment.created_at.asc(), ReviewComment.id.asc()
+    ).limit(per_page).offset(
+        (page - 1) * per_page
+    ).all()
+
     return jsonify({
-        'comments': [c.to_dict() for c in comments],
-        'total': len(comments)
+        'comments': serialize_comments(comments),
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'pages': max(1, -(-total // per_page))
     }), 200
 
 
