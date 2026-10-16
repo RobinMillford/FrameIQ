@@ -332,8 +332,28 @@
                 </label>
 
                 <!-- Remove button -->
-                <button onclick="removeFromList(event, {{ user_list.id }}, {{ item.id }}, '{{ media.title|replace("'", "\\'") }}')"
-                        class="absolute bottom-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                {# F52 D-1: this used to be
+                     onclick="removeFromList(event, {{ user_list.id }}, {{ item.id }},
+                              '{{ media.title|replace("'", "\\'") }}')"
+                   which is a JavaScript-string context. Jinja's autoescape
+                   escapes the quote to `&#39;`, but the HTML parser DECODES
+                   that back to `'` BEFORE the JS parser runs — so the value was
+                   never actually escaped for JS. `|replace` did not help
+                   either: it neutralises `'` but leaves `\` alone, so a title
+                   of  \\'+alert(1)//  produced `\\` (one escaped backslash) and
+                   then a real quote that CLOSED the string, putting the rest
+                   outside it. Demonstrated in F51.
+
+                   Now nothing is interpolated into JavaScript at all. The
+                   values ride in data-* attributes, which Jinja escapes for the
+                   HTML attribute context, and the delegated listener below
+                   reads them via `dataset` — a plain string, never re-parsed
+                   as JS. #}
+                <button type="button"
+                        class="js-remove-item absolute bottom-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        data-list-id="{{ user_list.id }}"
+                        data-item-id="{{ item.id }}"
+                        data-title="{{ media.title }}"
                         title="Remove from list" aria-label="Remove {{ media.title }} from list">
                     <i class="fas fa-times"></i>
                 </button>
@@ -494,18 +514,46 @@
     </div>
 
     <script>
+        // F52 D-1: delegated click handler. This replaces the former inline
+        //   onclick="removeFromList(event, {{ list }}, {{ item }}, '{{ title }}')"
+        // Nothing originating from the request is parsed as JavaScript any
+        // more — the ids and title arrive as `dataset` strings, which the HTML
+        // parser has already entity-decoded and the JS engine will never
+        // re-parse. Delegation rather than one listener per row because a list
+        // can hold many items.
+        document.addEventListener('click', function (event) {
+            const button = event.target.closest('.js-remove-item');
+            if (!button) return;
+            removeFromList(event, button.dataset.listId,
+                           button.dataset.itemId, button.dataset.title);
+        });
+
         async function removeFromList(event, listId, itemId, title) {
             // Prevent the card click from navigating
             event.preventDefault();
             event.stopPropagation();
 
-            if (!confirm(`Remove "${title}" from this list?`)) {
+            // `dataset` yields strings. Coerce and validate the ids before they
+            // are interpolated into the URL below, so a malformed attribute
+            // cannot reach the request path.
+            const list = Number(listId);
+            const item = Number(itemId);
+            if (!Number.isInteger(list) || list <= 0
+                || !Number.isInteger(item) || item <= 0) {
+                alert('Could not remove this item');
+                return;
+            }
+            // `title` is displayed only inside a confirm() dialog, and only as
+            // a runtime string, so it needs no escaping here.
+            const label = typeof title === 'string' ? title : '';
+
+            if (!confirm(`Remove "${label}" from this list?`)) {
                 return;
             }
 
             const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
             try {
-                const response = await fetch(`/api/lists/${listId}/remove/${itemId}`, {
+                const response = await fetch(`/api/lists/${list}/remove/${item}`, {
                     method: 'DELETE',
                     headers: { 'X-CSRFToken': csrf }
                 });

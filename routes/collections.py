@@ -5,6 +5,7 @@ kept as redirects to the canonical Watchlist equivalents (Wishlist was
 consolidated into Watchlist).
 """
 import logging
+from urllib.parse import urlsplit
 
 from flask import (abort, flash, jsonify, redirect, render_template, request,
                    url_for)
@@ -34,6 +35,70 @@ VALID_MEDIA_TYPES = frozenset({'movie', 'tv'})
 # clicks per person, so this matches the established policy rather than
 # inventing a stricter one that would make normal use annoying.
 COLLECTION_WRITE_LIMIT = "30 per minute"
+
+
+def _safe_return_url(fallback_endpoint, **values):
+    """Return-to-previous-page target, or an endpoint we control.
+
+    F52 D-3: every one of these handlers used to do
+    ``redirect(request.referrer or url_for(...))``. ``Referer`` is
+    attacker-settable from any origin, so a cross-origin form POST sent the
+    user off-site *after* a legitimate action — F51 reproduced
+    ``Referer: https://evil.example/landing`` producing
+    ``Location: https://evil.example/landing``.
+
+    A return path is worth keeping (the user came from a detail page and
+    should land back on it), so rather than dropping the feature this accepts
+    only a path on **this** origin. Both shapes a browser actually sends are
+    handled: a root-relative ``/diary``, and an absolute
+    ``http://<this-host>/diary`` — browsers always send the absolute form, so
+    rejecting it would have silently broken the feature for everyone.
+
+    Everything else falls back to a known internal endpoint, so every handler
+    keeps a deterministic safe destination: a different host, a
+    scheme-relative ``//host`` reference, a backslash that some browsers
+    normalise to ``/``, a non-HTTP scheme such as ``javascript:``, a control
+    character, or a value with no leading slash at all.
+
+    Only the path and query survive; scheme and host are never echoed back, so
+    even an accepted value cannot carry an authority into the ``Location``.
+    """
+    raw = request.referrer or ''
+    candidate = None
+    if raw and '\\' not in raw and '\r' not in raw and '\n' not in raw:
+        try:
+            # urlsplit only splits; it never fetches, so there is no SSRF
+            # surface here.
+            parts = urlsplit(raw)
+        except ValueError:
+            parts = None
+
+        same_origin_absolute = False
+        if parts is not None and parts.netloc:
+            # Browsers send an ABSOLUTE Referer, so a same-origin one is the
+            # normal case and must still work. Accept it only when the host
+            # matches this request's own host exactly — string comparison, not
+            # a suffix or substring test, so `frameiq.example.evil.com` and
+            # `evil.com/?x=frameiq.example` both fail.
+            try:
+                same_origin_absolute = (
+                    parts.scheme in ('http', 'https')
+                    and parts.netloc.lower() == request.host.lower())
+            except RuntimeError:
+                # Outside a request context; treat as untrusted.
+                same_origin_absolute = False
+
+        if parts is not None and parts.path.startswith('/') \
+                and not parts.path.startswith('//') \
+                and (same_origin_absolute
+                     or (not parts.scheme and not parts.netloc)):
+            candidate = parts.path
+            if parts.query:
+                candidate = '%s?%s' % (candidate, parts.query)
+
+    if not candidate:
+        return url_for(fallback_endpoint, **values)
+    return candidate
 
 
 def _valid_media_type(media_type):
@@ -175,7 +240,7 @@ def _add_to_collection(table, media_id, media_type, label):
     media_item = get_or_create_media_item(media_id, media_type)
     if not media_item:
         flash('Could not find that item!')
-        return redirect(request.referrer or url_for('main.index'))
+        return redirect(_safe_return_url('main.index'))
 
     exists = db.session.execute(
         select(table.c.user_id).where(
@@ -207,7 +272,7 @@ def _add_to_collection(table, media_id, media_type, label):
         db.session.commit()
         flash(added_msg)
 
-    return redirect(request.referrer or url_for('main.index'))
+    return redirect(_safe_return_url('main.index'))
 
 
 def _remove_from_collection(table, media_id, media_type, label, fallback):
@@ -235,7 +300,7 @@ def _remove_from_collection(table, media_id, media_type, label, fallback):
     else:
         flash('Item not found!')
 
-    return redirect(request.referrer or url_for(fallback))
+    return redirect(_safe_return_url(fallback))
 
 
 @main.route('/add_to_watchlist/<int:media_id>/<media_type>', methods=['POST'])
@@ -310,7 +375,7 @@ def mark_as_viewed(media_id, media_type):
             logger.error("TV bulk mark-as-viewed failed for show %s",
                          media_id, exc_info=True)
             flash('Could not mark that show as viewed!')
-            return redirect(request.referrer or url_for('main.index'))
+            return redirect(_safe_return_url('main.index'))
     return _add_to_collection(user_viewed, media_id, media_type, 'viewing history')
 
 
@@ -379,7 +444,7 @@ def remove_from_viewed(media_id, media_type):
             logger.error("TV unmark-as-viewed failed for show %s",
                          media_id, exc_info=True)
             flash('Could not remove that show from your viewing history!')
-            return redirect(request.referrer or url_for('main.index'))
+            return redirect(_safe_return_url('main.index'))
     return _remove_from_collection(
         user_viewed, media_id, media_type, 'viewing history', 'main.viewed')
 
