@@ -296,6 +296,9 @@ REQUIRED_BROWSER_SUITES = [
     "test_explore_browser.py",
     "test_f23_2_chat_csrf_browser.py",
     "test_f23_csrf_browser.py",
+    # F48: the list-cover collage is asserted on rendered geometry, so it runs
+    # in a browser and must be enforced rather than skippable like the rest.
+    "test_list_cover_browser_f48.py",
     "test_taste_dna_actor_f14_browser.py",
     "test_xss_f21_browser.py",
     "test_xss_f35_browser.py",

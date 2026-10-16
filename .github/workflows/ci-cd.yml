@@ -163,6 +163,7 @@ jobs:
             tests/test_explore_browser.py
             tests/test_f23_2_chat_csrf_browser.py
             tests/test_f23_csrf_browser.py
+            tests/test_list_cover_browser_f48.py
             tests/test_taste_dna_actor_f14_browser.py
             tests/test_xss_f21_browser.py
             tests/test_xss_f35_browser.py

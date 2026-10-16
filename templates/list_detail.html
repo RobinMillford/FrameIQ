@@ -70,16 +70,28 @@
     </nav>
 
     <div class="container mx-auto px-4 py-8 max-w-6xl">
-        <!-- Cover Image -->
-        {# F39: `cover_src` is validated in the route (routes/lists.py), so a
-           value stored before the write-path policy existed cannot make this
-           page fetch an arbitrary host. `|e` still applies: validation decides
-           *whether* to render, escaping decides *how* it is written. Both. #}
+        <!-- Cover artwork (F48) -->
+        {# Poster paths for the automatic collage, in this list's own order.
+           They arrive as a JSON string in a data attribute and are read by
+           static/js/list-cover.js; they are never interpolated into markup.
+           `tojson` escapes the characters that could break out of the
+           attribute. `cover_posters` is computed by the route from the items
+           it ALREADY loaded for this page, so a collage costs no extra query.
+           A saved, validated external cover still wins over the collage, so a
+           list whose owner set one before F48 looks exactly as it did. #}
         {% if cover_src %}
         <div class="mb-8 rounded-lg overflow-hidden relative">
             <img id="list-cover" src="{{ cover_src | e }}" alt="{{ user_list.title | e }}"
                  class="w-full h-64 object-cover">
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+        </div>
+        {% else %}
+        <div class="mb-8 rounded-lg overflow-hidden">
+            <div class="fq-cover"
+                 data-cover-posters='{{ cover_posters | tojson }}'
+                 data-cover-aspect="21 / 9"
+                 data-cover-size="w342"
+                 aria-hidden="true"></div>
         </div>
         {% endif %}
 
@@ -163,10 +175,10 @@
                         </select>
                     </div>
 
-                    <button id="upload-cover-btn" class="bg-white/[0.04] hover:bg-white/[0.08] border border-[rgba(255,255,255,0.12)] text-white px-4 py-2 rounded-lg transition-colors">
-                        <i class="fas fa-image"></i> Cover
-                    </button>
-                    <input type="file" id="cover-image-input" accept="image/*" style="display: none;">
+                    {# F48: the "Cover" upload button is removed. It could only
+                       ever fail — it PUT a data: URL into a 500-character
+                       column that rejects data: outright. The cover is now
+                       generated from this list's own posters. #}
 
                     <button id="add-collaborator-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-users"></i> Collaborators
@@ -515,6 +527,15 @@
         which builds collaborator/category rows from user-supplied text.
     #}
     <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
+    {# F48: automatic cover collage. After dom-safety.js because every
+       tile is built through FrameIQDOM.el / tmdbImageUrl. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/list-cover.css') }}">
+    <script src="{{ url_for('static', filename='js/list-cover.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+          if (window.FrameIQListCover) window.FrameIQListCover.hydrate(document);
+      });
+    </script>
     <script src="{{ url_for('static', filename='js/list-enhancements.js') }}"></script>
     <script src="{{ url_for('static', filename='js/list-advanced.js') }}"></script>
     <script src="{{ url_for('static', filename='js/lists-v2.js') }}"></script>

@@ -14,7 +14,6 @@ class ListEnhancementsManager {
     
     init() {
         this.setupDragAndDrop();
-        this.setupCoverImageUpload();
         this.setupShareableLink();
     }
     
@@ -131,77 +130,26 @@ class ListEnhancementsManager {
     }
     
     // ============================================================================
-    // Cover Image Upload
+    // Cover Artwork (Feature F48)
     // ============================================================================
-    
-    setupCoverImageUpload() {
-        const uploadBtn = document.getElementById('upload-cover-btn');
-        const coverInput = document.getElementById('cover-image-input');
-        
-        if (uploadBtn && coverInput) {
-            uploadBtn.addEventListener('click', () => coverInput.click());
-            coverInput.addEventListener('change', (e) => this.handleCoverImageUpload(e));
-        }
-    }
-    
-    async handleCoverImageUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            this.showMessage('Please select an image file', 'error');
-            return;
-        }
-        
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            this.showMessage('Image size must be less than 5MB', 'error');
-            return;
-        }
-        
-        try {
-            // In a real app, upload to cloud storage (S3, Cloudinary, etc.)
-            // For now, we'll use a data URL (not recommended for production)
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const imageUrl = event.target.result;
-                await this.updateCoverImage(imageUrl);
-            };
-            reader.readAsDataURL(file);
-            
-        } catch (error) {
-            this.showMessage('Failed to upload cover image', 'error');
-        }
-    }
-    
-    async updateCoverImage(imageUrl) {
-        try {
-            const response = await fetch(`/api/lists/${this.listId}/cover`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ cover_image: imageUrl })
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok) {
-                this.showMessage('Cover image updated successfully', 'success');
-                
-                // Update the cover image in the UI
-                const coverElement = document.getElementById('list-cover');
-                if (coverElement) {
-                    coverElement.src = imageUrl;
-                }
-            } else {
-                this.showMessage(data.error || 'Failed to update cover image', 'error');
-            }
-        } catch (error) {
-            this.showMessage('Failed to update cover image', 'error');
-        }
-    }
+    //
+    // The "Cover" upload button and its data-URI writer are GONE, deliberately.
+    //
+    // That flow read a chosen file with FileReader.readAsDataURL and PUT the
+    // resulting `data:` URL to /api/lists/<id>/cover. It could never have
+    // worked: a data URL for any real image is far longer than
+    // UserList.cover_image's 500-character column, and since F39
+    // normalize_cover_image refuses `data:` outright, so every attempt ended in
+    // a 400. The UI kept offering it anyway, which is worse than not offering
+    // it -- users picked a file and watched nothing happen.
+    //
+    // A list cover is now derived from the list's own first ten items and drawn
+    // by static/js/list-cover.js. Nothing is uploaded and nothing is stored.
+    //
+    // The server endpoint is intentionally left in place. It is not dead code:
+    // it validates and stores an external https cover URL, and a list whose
+    // owner already saved one through it keeps rendering that cover. What was
+    // removed is the client interaction that could only ever fail.
     
     // ============================================================================
     // Shareable Links

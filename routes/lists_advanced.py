@@ -10,6 +10,7 @@ from models import db, UserList, ListCollaborator, ListCategory, UserListCategor
 from datetime import datetime, timedelta
 from sqlalchemy import func
 from utils.query_limits import page_args
+from utils.list_covers import prefetch_list_covers
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +489,11 @@ def discover_by_category(category_id):
     # Paginate
     pagination = lists_query.paginate(page=page, per_page=per_page, error_out=False)  # type: ignore
     
+    # F48: `UserList.to_dict()` now carries the automatic cover's poster paths.
+    # Without this the comprehension below would fall back to a per-list query
+    # and turn a 20-item page into 21 statements. One batched query instead.
+    prefetch_list_covers(pagination.items)
+
     return jsonify({
         'category': category.to_dict(),
         'lists': [user_list.to_dict() for user_list in pagination.items],
