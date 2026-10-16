@@ -100,6 +100,12 @@ def prefetch_list_data(user_lists):
         user_list._prefetched_like_count = likes.get(user_list.id, 0)
         user_list._prefetched_comment_count = comments.get(user_list.id, 0)
 
+    # 8. Cover poster paths (F48; ONE windowed query). Attached last so it
+    # benefits from nothing above and costs nothing extra. Import is local
+    # because utils.list_covers imports this module's classes.
+    from utils.list_covers import prefetch_list_covers
+    prefetch_list_covers(lists)
+
 
 class UserList(db.Model):
     """User-created custom lists of movies/TV shows"""
@@ -173,6 +179,36 @@ class UserList(db.Model):
             analytics = self.analytics
         return analytics.to_dict() if analytics else None
 
+    @property
+    def cover_posters(self):
+        """F48: poster paths for the automatic collage, in list order.
+
+        PREFETCH-ONLY. This reads the rows `prefetch_list_covers` batch-loaded
+        and never issues a query, so a template rendering a grid of lists
+        costs no extra statements. It returns ``[]`` when the prefetch has not
+        run for this row, which the renderer draws as a placeholder rather than
+        as a broken image.
+
+        For a value that falls back to a query, use ``to_dict()``
+        (``_cover_poster_list``). The split exists because a template cannot
+        afford a query per card and an API response must never silently omit
+        the field.
+        """
+        return list(getattr(self, '_prefetched_cover_posters', None) or [])
+
+    def _cover_poster_list(self):
+        """F48: poster paths for the automatic collage, in list order.
+
+        Returns the batch-prefetched rows when the caller used
+        ``prefetch_list_data``; otherwise runs the single-list query. Empty
+        list means "no posters", which the renderer draws as a placeholder —
+        not an error, and not a reason to fail the page.
+        """
+        # Local import: utils.list_covers imports this module's classes, so a
+        # module-scope import here would be a cycle.
+        from utils.list_covers import cover_posters
+        return cover_posters(self)
+
     def to_dict(self):
         """Convert list to dictionary for JSON responses"""
         user = getattr(self, '_prefetched_user', None)
@@ -198,6 +234,10 @@ class UserList(db.Model):
             'description': self.description,
             'is_public': self.is_public,
             'cover_image': self.cover_image,  # Week 2
+            # F48: poster paths for the automatic collage, in list order.
+            # Additive — `cover_image` keeps its exact contract so an
+            # already-saved external URL still renders as before.
+            'cover_posters': self._cover_poster_list(),
             'slug': self.slug,  # Week 2
             'list_type': self.list_type,  # Lists V2 (additive)
             'like_count': getattr(self, '_prefetched_like_count', None) or 0,  # Lists V2 (additive)

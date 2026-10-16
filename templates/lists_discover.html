@@ -2,6 +2,19 @@
 
 {% block title %}Discover Lists - FrameIQ{% endblock %}
 
+{% block extra_css %}
+{# F48: automatic list-cover collage. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/list-cover.css') }}">
+{% endblock %}
+
+{% block extra_head %}
+{# F48: the collage renderer. Must load AFTER dom-safety.js, which base.html
+   loads before this block, because every tile is built through
+   FrameIQDOM.el / tmdbImageUrl. Loading it here also guarantees it is
+   defined before the inline script below calls loadLists(). #}
+<script src="{{ url_for('static', filename='js/list-cover.js') }}"></script>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-8">
 
@@ -148,24 +161,34 @@
         card.href = list.slug ? `/lists/l/${list.slug}` : `/lists/${list.id}`;
         card.className = 'block rounded-xl overflow-hidden border border-[var(--line)] bg-surface hover:border-[var(--line-hi)] hover:-translate-y-0.5 transition-all duration-200 focus-visible:border-[var(--accent)] focus-visible:outline-none';
 
-        // Cover image or subtle placeholder — consistent aspect ratio at every breakpoint.
-        // F38: cover_image is set by the list owner, so it is arbitrary
-        // user input rather than catalogue data. It is validated as an https
-        // URL first and attribute-escaped second; anything unusable falls back
-        // to the same placeholder the empty case uses.
-        // Restricted to this origin and the TMDb image host. `safeImageUrl`
-        // would accept any https host, and `PUT /api/lists/<id>/cover` stores
-        // this field verbatim from the request body, so an unvalidated value
-        // lets a list owner make every visitor fetch a URL of their choosing.
+        // Cover artwork — a saved external cover if the owner set one, else
+        // the automatic collage, else the placeholder.
+        //
+        // F48: `cover_posters` arrives from `UserList.to_dict()` and holds
+        // this list's own first ten poster paths, in list order. They are
+        // handed to the shared renderer as a data attribute and turned into
+        // elements through FrameIQDOM.el / tmdbImageUrl, so a hostile
+        // poster_path cannot become markup or an off-host fetch.
+        //
+        // F38 (retained for the explicit-cover branch): cover_image is set by
+        // the list owner, so it is arbitrary user input rather than catalogue
+        // data. It is validated as an https URL first and attribute-escaped
+        // second; anything unusable falls through to the collage. Restricted
+        // to this origin and the TMDb image host — `safeImageUrl` would accept
+        // any https host, and `PUT /api/lists/<id>/cover` stores this field
+        // from the request body, so an unvalidated value lets a list owner
+        // make every visitor fetch a URL of their choosing.
         const coverSrc = DOM
             ? DOM.escapeAttr(DOM.safeImageUrlFromHosts(
                 String(list.cover_image || ''), ['image.tmdb.org'], ''))
             : '';
-        const coverHtml = coverSrc
-            ? `<img src="${coverSrc}" alt="" class="w-full aspect-[2/1] object-cover" loading="lazy">`
-            : `<div class="w-full aspect-[2/1] bg-gradient-to-br from-elevated to-surface flex items-center justify-center">
-                    <i class="fas fa-film text-3xl text-[var(--text-low)]" aria-hidden="true"></i>
-               </div>`;
+
+        let coverHtml;
+        if (coverSrc) {
+            coverHtml = `<img src="${coverSrc}" alt="" class="w-full aspect-[2/1] object-cover" loading="lazy">`;
+        } else {
+            coverHtml = '<div class="fq-cover" data-cover-aspect="2 / 1" data-cover-size="w342" aria-hidden="true"></div>';
+        }
 
         card.innerHTML = `
             ${coverHtml}
@@ -195,6 +218,17 @@
             desc.textContent = list.description;
         }
         card.querySelector('.js-owner').textContent = list.user.username;
+
+        // F48: paint the collage into the mount created above. A JSON string in
+        // a data attribute, not markup — the renderer parses it and builds
+        // elements itself. If FrameIQListCover is missing the mount simply
+        // stays empty rather than throwing mid-grid.
+        const mount = card.querySelector('.fq-cover');
+        if (mount && window.FrameIQListCover) {
+            const posters = Array.isArray(list.cover_posters) ? list.cover_posters : [];
+            mount.setAttribute('data-cover-posters', JSON.stringify(posters));
+            window.FrameIQListCover.render(mount, posters, { aspect: '2 / 1', size: 'w342' });
+        }
 
         return card;
     }

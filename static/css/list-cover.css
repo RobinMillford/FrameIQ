@@ -1,0 +1,86 @@
+/**
+ * Automatic list-cover collage (Feature F48). Styles for
+ * `static/js/list-cover.js`.
+ *
+ * Sizing strategy: the collage fills its box by `aspect-ratio` rather than a
+ * fixed height, so one set of rules serves a 2:1 card and a taller hero. Every
+ * tile is `object-fit: cover` against a cell the grid guarantees, which is what
+ * lets the same markup work for 2:1 cards and 21:9 hero banners.
+ *
+ * `--fq-cover-aspect` is set by the renderer from the host's
+ * `data-cover-aspect`. When it is absent the grid falls back to `auto`, i.e.
+ * the collage takes the height of its own first row and no taller.
+ */
+.fq-cover {
+    display: grid;
+    grid-template-columns: repeat(var(--fq-cover-cols, 4), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--fq-cover-rows, 2), minmax(0, 1fr));
+    gap: 2px;
+    overflow: hidden;
+    background: var(--surface, #0f1116);
+    /* Restrained: the collage sits inside cards that already have their own
+       rounded border, so it contributes shape, not decoration. */
+    border-radius: 0.5rem;
+    isolation: isolate;
+}
+
+.fq-cover[style*="--fq-cover-aspect"] {
+    aspect-ratio: var(--fq-cover-aspect, auto);
+}
+
+/* Hover lift, kept minimal and confined to the collage itself so it cannot
+   fight a parent card's own transform. */
+@media (hover: hover) {
+    .fq-cover:hover .fq-cover-tile__img {
+        transform: scale(1.04);
+    }
+}
+
+.fq-cover-tile {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    object-fit: cover;
+    object-position: center;
+    background: var(--elevated, #171a21);
+}
+
+/* A poster that is missing, unusable, or 404'd. Drawn rather than left blank
+   so a half-complete list still reads as a deliberate collection. */
+.fq-cover-tile--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-low, #5b6472);
+    font-size: clamp(0.6rem, 1.6vw, 1.1rem);
+}
+
+.fq-cover-tile--empty i {
+    opacity: 0.55;
+}
+
+/* The whole-cover placeholder: an empty list, or one where every poster was
+   unusable. Matches the pre-F48 empty state on the discover grid so empty
+   lists look the same as they did before this feature. */
+.fq-cover--empty {
+    display: flex;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--elevated, #171a21), var(--surface, #0f1116));
+}
+
+.fq-cover__glyph {
+    color: var(--text-low, #5b6472);
+    font-size: clamp(1.1rem, 3.2vw, 2rem);
+    opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fq-cover:hover .fq-cover-tile__img {
+        transform: none;
+    }
+}

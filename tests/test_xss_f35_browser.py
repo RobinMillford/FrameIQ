@@ -1171,6 +1171,11 @@ def test_episode_detail_name_and_character_render_as_text(episode_detail):
 
 @pytest.fixture
 def lists(trapped):
+    # F48: the discover card's cover is now drawn by the collage renderer, so
+    # this harness must load it. Without it `createListCard` hits the
+    # "renderer missing" guard and every assertion below would pass against a
+    # degraded page rather than the real one.
+    trapped.add_script_tag(content=_read('list-cover.js'))
     return _load_template(trapped, 'lists_discover.html')
 
 
@@ -1374,10 +1379,14 @@ def _attach_card(page, cover):
             const img = host.querySelector('img');
             return {
                 src: img ? img.getAttribute('src') : null,
-                // `from-elevated` is unique to the placeholder block. Note
-                // `fa-film` is NOT a usable marker: the card body renders an
-                // `fa-film` icon for the item count too.
-                placeholder: !!host.querySelector('.from-elevated'),
+                // F48: the placeholder is now the collage renderer's
+                // whole-cover state. `fq-cover--empty` is unique to it --
+                // `fq-cover-tile--empty` marks individual missing posters, and
+                // `fa-film` is NOT a usable marker because the card body
+                // renders an `fa-film` icon for the item count too.
+                placeholder: !!host.querySelector('.fq-cover--empty'),
+                // The card must not have fallen back to loading a real cover.
+                collageTiles: host.querySelectorAll('.fq-cover-tile').length,
                 html: host.innerHTML,
             };
         }""", cover)

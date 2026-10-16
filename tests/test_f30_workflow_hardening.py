@@ -219,8 +219,28 @@ def browser_step_script():
     return step["run"]
 
 
+def required_suites_from(script):
+    """The suites the step requires, read out of the step itself.
+
+    This list used to be a hard-coded tuple mirroring ``ci-cd.yml``. That made
+    one fact live in three places -- the workflow, ``REQUIRED_BROWSER_SUITES``
+    in ``test_workflow_security_f24.py``, and here -- and only two of them were
+    cross-checked. Adding a suite and forgetting this copy made the step
+    refuse a perfectly valid run with "Required browser suite ... no longer
+    exists", which reads like a real CI break and is not one.
+
+    Parsing the script the fixture is already executing removes the third
+    mirror instead of extending it.
+    """
+    match = re.search(r"REQUIRED_BROWSER_SUITES=\(([^)]*)\)", script)
+    assert match, "the step no longer declares REQUIRED_BROWSER_SUITES"
+    names = re.findall(r"tests/(\S+\.py)", match.group(1))
+    assert names, "no suites parsed out of REQUIRED_BROWSER_SUITES"
+    return names
+
+
 def run_browser_step(script, tmp_path, output=None, pytest_exit=0):
-    """Execute the real step with a stub pytest and all 7 suite files present."""
+    """Execute the real step with a stub pytest and every suite file present."""
     bindir = tmp_path / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
     pytest_stub = bindir / "pytest"
@@ -234,14 +254,11 @@ def run_browser_step(script, tmp_path, output=None, pytest_exit=0):
     pytest_stub.write_text(body)
     pytest_stub.chmod(0o755)
 
-    for name in ("test_director_detail_f19", "test_edit_profile_picker_browser",
-                 "test_explore_browser", "test_f23_2_chat_csrf_browser",
-                 "test_f23_csrf_browser", "test_taste_dna_actor_f14_browser",
-                 "test_xss_f21_browser", "test_xss_f35_browser"):
+    for name in required_suites_from(script):
         # The step resolves them as tests/<name>.py relative to the working
         # directory, so the scratch tree must mirror that layout.
         (tmp_path / "tests").mkdir(exist_ok=True)
-        (tmp_path / "tests" / f"{name}.py").write_text("")
+        (tmp_path / "tests" / name).write_text("")
 
     step = tmp_path / "step.sh"
     step.write_text(script)

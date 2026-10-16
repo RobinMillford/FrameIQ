@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import re
 from utils.collections import get_or_create_media_item
+from utils.list_covers import cover_posters_from_items, prefetch_list_covers
 from utils.cover_image_policy import (
     InvalidCoverImage, cover_image_url, normalize_cover_image)
 
@@ -104,6 +105,10 @@ def get_list_details(list_id):
     ).order_by(UserListItem.position, UserListItem.added_at).all()
 
     list_data = user_list.to_dict()
+    # F48: these endpoints already loaded every item with its media joined for
+    # the payload below, so the cover's poster paths are read off those same
+    # rows instead of costing a second query.
+    list_data['cover_posters'] = cover_posters_from_items(items)
     list_data['items'] = [item.to_dict() for item in items]
 
     _enrich_items_with_watched_state(list_data['items'])
@@ -549,6 +554,10 @@ def get_list_by_slug(slug):
     ).order_by(UserListItem.position, UserListItem.added_at).all()
 
     list_data = user_list.to_dict()
+    # F48: these endpoints already loaded every item with its media joined for
+    # the payload below, so the cover's poster paths are read off those same
+    # rows instead of costing a second query.
+    list_data['cover_posters'] = cover_posters_from_items(items)
     list_data['items'] = [item.to_dict() for item in items]
 
     _enrich_items_with_watched_state(list_data['items'])
@@ -616,6 +625,12 @@ def my_lists():
     from api.smart_lists import rule_summary, is_discovery_preset
 
     user_lists = current_user.lists.order_by(UserList.created_at.desc()).all()
+    # F48: the card grid renders an automatic collage per list, so the poster
+    # paths are resolved in ONE batched query here rather than one query per
+    # card. Deliberately NOT `prefetch_list_data`: that would add its seven
+    # queries while this template still calls `list.items.count()` per row, so
+    # it would cost seven queries and remove none.
+    prefetch_list_covers(user_lists)
     smart_lists = (SmartList.query
                    .filter_by(user_id=current_user.id)
                    .order_by(SmartList.created_at.desc())
@@ -660,6 +675,7 @@ def view_list(list_id):
     # not renderable, and the template then renders no cover block at all.
     return render_template('list_detail.html', user_list=user_list,
                            cover_src=cover_image_url(user_list.cover_image),
+                           cover_posters=cover_posters_from_items(items),
                            items=items, watched_map=watched_map,
                            progress_map=progress_map,
                            liked_by_me=liked_by_me, can_edit=_can_edit(user_list),
@@ -700,6 +716,7 @@ def view_list_by_slug(slug):
     # not renderable, and the template then renders no cover block at all.
     return render_template('list_detail.html', user_list=user_list,
                            cover_src=cover_image_url(user_list.cover_image),
+                           cover_posters=cover_posters_from_items(items),
                            items=items, watched_map=watched_map,
                            progress_map=progress_map,
                            liked_by_me=liked_by_me, can_edit=_can_edit(user_list),

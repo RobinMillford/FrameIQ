@@ -64,7 +64,18 @@
         {% if user_lists %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for list in user_lists %}
-            <a href="/lists/{{ list.id }}" class="list-card  rounded-lg p-6 border border-gray-700 hover:border-[var(--accent)] block">
+            <a href="/lists/{{ list.id }}" class="list-card rounded-lg overflow-hidden border border-gray-700 hover:border-[var(--accent)] block">
+                {# F48: automatic cover collage from this list's own first ten
+                   items. `list.cover_posters` is resolved by ONE batched query
+                   in routes/lists.py (prefetch_list_covers), not per card.
+                   Passed as JSON in a data attribute and drawn by
+                   static/js/list-cover.js — never interpolated into markup. #}
+                <div class="fq-cover"
+                     data-cover-posters='{{ list.cover_posters | tojson }}'
+                     data-cover-aspect="2 / 1"
+                     data-cover-size="w342"
+                     aria-hidden="true"></div>
+                <div class="p-6">
                 <div class="flex justify-between items-start mb-4">
                     <h3 class="text-xl font-bold text-white">{{ list.title }}</h3>
                     {% if not list.is_public %}
@@ -85,6 +96,7 @@
                     <span>
                         <i class="fas fa-clock"></i> {{ list.created_at.strftime('%b %d, %Y') }}
                     </span>
+                </div>
                 </div>
             </a>
             {% endfor %}
@@ -377,6 +389,15 @@ function csrfHeaders() {
          paths through the shared DOM-safety helpers, so it must be
          loaded first. This page does not extend base.html. -->
     <script src="{{ url_for('static', filename='js/dom-safety.js') }}"></script>
+    {# F48: automatic cover collage. After dom-safety.js because every tile
+       is built through FrameIQDOM.el / tmdbImageUrl. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/list-cover.css') }}">
+    <script src="{{ url_for('static', filename='js/list-cover.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+          if (window.FrameIQListCover) window.FrameIQListCover.hydrate(document);
+      });
+    </script>
     <script src="{{ url_for('static', filename='js/chrome.js') }}"></script>
 </body>
 </html>
