@@ -185,18 +185,51 @@ def _assert_compatible(connection):
            '; '.join(problems), _expected_description()))
 
 
-def _add_column(connection):
-    """ADD COLUMN, rendered through SQLAlchemy's DDL compiler.
+def _quoted_table(dialect):
+    """``_TABLE`` as the target dialect requires it written.
+
+    ``user`` is a RESERVED word in PostgreSQL, so the unquoted form this used to
+    emit (``ALTER TABLE user ADD COLUMN ...``) is a syntax error there — the
+    migration could not run on the production engine at all. The bug only
+    surfaced in the PostgreSQL suite; the SQLite suite accepted the bare
+    identifier, which is why the offline gate stayed green.
+
+    Hand-quoting would be the wrong fix: ``"user"`` happens to be valid on
+    SQLite too, but hard-coding one dialect's quoting into a statement built
+    for several engines invites the next mismatch in the other direction.
+    SQLAlchemy's ``IdentifierPreparer`` already knows each dialect's reserved
+    words, so asking it is both correct and self-maintaining — PostgreSQL gets
+    ``"user"``, SQLite and MySQL get ``user``.
+
+    Takes the dialect rather than the connection so the statement can be built,
+    and asserted, for any engine without one being present.
+    """
+    return dialect.identifier_preparer.quote(_TABLE)
+
+
+def _add_column_statement(dialect):
+    """The exact ``ALTER TABLE ... ADD COLUMN`` this migration sends.
 
     Compiling ``CreateColumn`` keeps the rendered type and the server default
     dialect-correct instead of hand-writing ``INTEGER NOT NULL DEFAULT 0``,
-    which is wrong for at least one engine this app might be pointed at.
+    which is wrong for at least one engine this app might be pointed at. The
+    table name is prepared the same way, for the reserved-word reason given in
+    ``_quoted_table``.
+
+    Split out from ``_add_column`` so the statement can be asserted for several
+    dialects with no database present. That is the only way the offline suite
+    could catch the reserved-word defect at all, since SQLite tolerates the bare
+    identifier PostgreSQL rejects.
     """
     column = _declared_column()
     from sqlalchemy.schema import CreateColumn
-    rendered = str(CreateColumn(column).compile(dialect=connection.dialect))
-    connection.exec_driver_sql(
-        'ALTER TABLE %s ADD COLUMN %s' % (_TABLE, rendered))
+    rendered = str(CreateColumn(column).compile(dialect=dialect))
+    return 'ALTER TABLE %s ADD COLUMN %s' % (_quoted_table(dialect), rendered)
+
+
+def _add_column(connection):
+    """Execute the ADD COLUMN against ``connection``. Idempotent by contract."""
+    connection.exec_driver_sql(_add_column_statement(connection.dialect))
     return 'added'
 
 

@@ -38,10 +38,18 @@ import pytest
 
 PG_URL = os.environ.get('FRAMEIQ_TEST_POSTGRES_URL', '').strip()
 
+# A CI run exists precisely to execute these tests, so a missing
+# FRAMEIQ_TEST_POSTGRES_URL there must FAIL rather than skip. Without this the
+# job would report success having run nothing, and a skipped postgres test
+# would read as coverage it never provided. Locally there is no server, so the
+# suite still skips and the offline gate is unaffected.
+_IN_CI = (os.environ.get('GITHUB_ACTIONS', '').strip().lower() in ('1', 'true')
+          or os.environ.get('CI', '').strip().lower() in ('1', 'true'))
+
 pytestmark = [
     pytest.mark.postgres,
     pytest.mark.skipif(
-        not PG_URL,
+        not PG_URL and not _IN_CI,
         reason='needs FRAMEIQ_TEST_POSTGRES_URL pointing at a throwaway '
                'PostgreSQL server'),
 ]

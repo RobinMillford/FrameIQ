@@ -68,9 +68,18 @@ def _pg_url():
 
 
 PG_URL = _pg_url()
+
+# A CI run exists precisely to execute these tests, so a missing
+# FRAMEIQ_TEST_POSTGRES_URL there must FAIL rather than skip. Without this the
+# job would report success having run nothing, and a skipped postgres test
+# would read as coverage it never provided. Locally there is no server, so the
+# suite still skips and the offline gate is unaffected.
+_IN_CI = (os.environ.get('GITHUB_ACTIONS', '').strip().lower() in ('1', 'true')
+          or os.environ.get('CI', '').strip().lower() in ('1', 'true'))
+
 pytestmark = [
     pytest.mark.postgres,
-    pytest.mark.skipif(PG_URL is None,
+    pytest.mark.skipif(PG_URL is None and not _IN_CI,
                        reason='needs FRAMEIQ_TEST_POSTGRES_URL pointing at a '
                               'throwaway PostgreSQL server'),
 ]
@@ -1249,6 +1258,27 @@ def _session_version_module():
 F55_VERSION = '0006_user_session_version'
 
 
+def _insert_legacy_user(connection, username):
+    """Insert a user in the shape the real schema requires — no 0006 column.
+
+    `email_verified` is `nullable=False` with only a PYTHON-side default and no
+    `server_default`, so the DDL gives PostgreSQL a bare `BOOLEAN NOT NULL` and
+    a raw INSERT that omits it fails. The ORM hides that by applying the Python
+    default, which is why this only ever showed up in raw-SQL tests. Supplying
+    it explicitly is what makes this a valid pre-0006 row; the column set
+    otherwise mirrors `_seed_identity`, so the fixture cannot drift from the
+    rest of the file.
+    """
+    import datetime
+    connection.execute(text(
+        "INSERT INTO \"user\" (username, email, password_hash, "
+        "date_joined, is_active, email_verified) "
+        "VALUES (:u, :e, 'x', :d, TRUE, TRUE)"), {
+            'u': username,
+            'e': '%s@example.test' % username,
+            'd': datetime.datetime.utcnow()})
+
+
 def _drop_session_version_column(connection):
     """Return user to its pre-F55 shape."""
     connection.execute(text('ALTER TABLE "user" DROP COLUMN session_version'))
@@ -1271,9 +1301,7 @@ def test_f55_adds_not_null_defaulted_column_to_a_populated_user_table(pg_engine)
     module = _session_version_module()
     with pg_engine.begin() as connection:
         _drop_session_version_column(connection)
-        connection.execute(text(
-            "INSERT INTO \"user\" (username, email, password_hash) "
-            "VALUES ('f55legacy', 'f55legacy@example.test', 'x')"))
+        _insert_legacy_user(connection, 'f55legacy')
 
     with pg_engine.connect() as connection:
         with connection.begin():
@@ -1292,9 +1320,7 @@ def test_f55_adds_not_null_defaulted_column_to_a_populated_user_table(pg_engine)
 
     with pg_engine.begin() as connection:
         # A server default means a later INSERT may omit the column entirely.
-        connection.execute(text(
-            "INSERT INTO \"user\" (username, email, password_hash) "
-            "VALUES ('f55new', 'f55new@example.test', 'x')"))
+        _insert_legacy_user(connection, 'f55new')
     with pg_engine.connect() as connection:
         assert connection.execute(text(
             "SELECT session_version FROM \"user\" "
@@ -1318,12 +1344,18 @@ def test_f55_column_carries_a_server_default_on_postgres(pg_engine):
         assert '0' in str(default)
 
 
-def test_f55_add_column_is_transactional_and_rolls_back(pg_engine, monkeypatch):
+def test_f55_add_column_is_transactional_and_rolls_back(pg_engine):
     """A failure mid-migration must leave neither column nor ledger row.
 
     PostgreSQL has transactional DDL, so this is a real guarantee there and not
     merely a convention. 0005's equivalent test proved the same for its own
     column; 0006 needs it independently.
+
+    The failure is injected by wrapping ``run`` so the DDL really executes and
+    the exception is raised AFTER it — the case that would leave a half-applied
+    column behind if DDL were not transactional. A bare `monkeypatch` is
+    deliberately not used: restoring it from inside the transaction left the
+    patch half-applied if the surrounding assertions raised.
     """
     module = _session_version_module()
     with pg_engine.begin() as connection:
@@ -1332,26 +1364,27 @@ def test_f55_add_column_is_transactional_and_rolls_back(pg_engine, monkeypatch):
     original = module.run
 
     def _boom(connection):
-        original(connection)
-        raise RuntimeError('simulated failure after the DDL')
+        original(connection)                     # perform the DDL …
+        raise RuntimeError('simulated failure after the DDL')   # … then fail
 
-    with pg_engine.connect() as connection:
-        with pytest.raises(RuntimeError, match='simulated failure'):
-            with connection.begin():
-                monkeypatch.setattr(module, 'run', _boom)
-                try:
+    module.run = _boom
+    try:
+        with pg_engine.connect() as connection:
+            with pytest.raises(RuntimeError, match='simulated failure'):
+                with connection.begin():
                     module.run(connection)
-                finally:
-                    monkeypatch.setattr(module, 'run', original)
+    finally:
+        module.run = original
 
+    # A fresh connection: the rollback must have undone the ADD COLUMN.
     with pg_engine.connect() as connection:
         with connection.begin():
-            # Rollback undid the ADD COLUMN.
             assert module.verify(connection) != [], (
                 'a failed 0006 left session_version behind; PostgreSQL DDL is '
                 'transactional so it must not')
 
-    # Leave the database usable for the rest of the session.
+    # And the migration is still applicable afterwards — nothing was left in a
+    # state that would need manual repair.
     with pg_engine.connect() as connection:
         with connection.begin():
             module.run(connection)
