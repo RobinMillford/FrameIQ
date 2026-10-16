@@ -278,13 +278,55 @@ def test_app_import_after_the_boundary_never_targets_a_remote_database():
 
 # ── the production guard must NOT be weakened ───────────────────────────────
 
-def test_schema_guard_source_is_untouched_by_f20():
-    """F20 adds a boundary; it must not edit the guard it protects."""
-    import subprocess as sp
-    diff = sp.run(['git', 'diff', '--quiet', 'HEAD', '--',
-                   'utils/schema_guard.py', 'app.py'],
-                  capture_output=True)
-    assert diff.returncode == 0, 'F20 modified the guard or the app factory'
+def test_app_factory_still_invokes_the_schema_guard():
+    """``create_app`` must call the guard at startup, unskipped.
+
+    This replaces a weaker ``git diff --quiet HEAD -- app.py`` proxy, which
+    was vacuous in CI: on a clean checkout the working tree always equals HEAD,
+    so it could never fail there, and locally it failed for *any* later change
+    to app.py rather than for a weakened guard.
+
+    What it was actually reaching for is the property below, which is checked
+    directly instead. The guard's own behaviour — raising
+    ``SchemaMismatchError`` on drift — is covered behaviourally by
+    ``tests/test_schema_guard.py``; this covers the part that lives in
+    app.py, namely that startup is guarded at all.
+    """
+    import ast
+
+    path = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), 'app.py')
+    with open(path, encoding='utf-8') as fh:
+        tree = ast.parse(fh.read())
+
+    create_app = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == 'create_app'),
+        None)
+    assert create_app is not None, 'app.py no longer defines create_app'
+
+    calls = [
+        node for node in ast.walk(create_app)
+        if isinstance(node, ast.Call)
+        and ((isinstance(node.func, ast.Name)
+              and node.func.id == 'ensure_schema_compatible')
+             or (isinstance(node.func, ast.Attribute)
+                 and node.func.attr == 'ensure_schema_compatible'))
+    ]
+    assert len(calls) == 1, (
+        'create_app must invoke ensure_schema_compatible exactly once; found '
+        '%d call(s)' % len(calls))
+    # The single positional argument must be the app being built, and there
+    # must be no keyword arguments: `skip=True` or any other opt-out would
+    # defeat the guard, and the guard accepts no such parameter, so an extra
+    # argument can only be an attempt to bypass it.
+    (argument,) = calls[0].args
+    assert isinstance(argument, ast.Name) and argument.id == 'app', (
+        'the guard must be called as ensure_schema_compatible(app), got %r'
+        % (ast.dump(argument),))
+    assert not calls[0].keywords, (
+        'the startup guard must take no keyword arguments, not %r'
+        % ([k.arg for k in calls[0].keywords],))
 
 
 def test_skip_schema_guard_still_requires_an_explicit_value():

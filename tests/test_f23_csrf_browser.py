@@ -240,10 +240,24 @@ def _recorded(page, timeout=5000):
     return json.loads(raw)
 
 
-def _token_of(client, path):
-    match = re.search(r'name="csrf-token"\s+content="([^"]+)"',
-                      client.get(path).get_data(as_text=True))
-    assert match, f'{path} published no csrf-token meta tag'
+def _token_from(html):
+    """The CSRF token published in a rendered page's meta tag.
+
+    Scraped from the HTML the test is about to load into the browser, so the
+    comparison is between the token the page published and the token its own
+    script sent — the property these tests exist to check.
+
+    Always take the HTML from the SAME response that is loaded into the
+    browser. These tests used to fetch the page twice: once for the expected
+    token and once for the page under test. Those renders are independent,
+    because Flask-WTF caches only the RAW token in the session and re-signs it
+    with the current timestamp on every render — so two renders of the same
+    page carry the same secret in a DIFFERENT signed form. The comparison then
+    only held when both renders landed in the same wall-clock second, which is
+    a flake that surfaced only under particular test orderings (F57).
+    """
+    match = re.search(r'name="csrf-token"\s+content="([^"]+)"', html)
+    assert match, 'the page published no csrf-token meta tag'
     return match.group(1)
 
 
@@ -256,9 +270,8 @@ def test_create_list_sends_the_csrf_header(browser, session, db):
     client.post('/login', data={'username': 'f23browser',
                                 'password': 'F23Pass1!'},
                 follow_redirects=True)
-    token = _token_of(client, '/lists')
-
     html = client.get('/lists').get_data(as_text=True)
+    token = _token_from(html)
     page = _load(browser, 'my_lists.html', html)
     page.fill('#list-title', 'Browser-created list')
     page.evaluate('() => createList()')
@@ -278,9 +291,8 @@ def test_create_smart_list_sends_the_csrf_header(browser, session, db):
     client.post('/login', data={'username': 'f23browser',
                                 'password': 'F23Pass1!'},
                 follow_redirects=True)
-    token = _token_of(client, '/lists')
-
     html = client.get('/lists').get_data(as_text=True)
+    token = _token_from(html)
     page = _load(browser, 'my_lists.html', html)
     page.fill('#sl-name', 'Browser-created Smart List')
     page.evaluate('() => createSmartList()')
@@ -302,9 +314,8 @@ def test_priority_update_sends_the_csrf_header(browser, session, db):
     client.post('/login', data={'username': 'f23browser',
                                 'password': 'F23Pass1!'},
                 follow_redirects=True)
-    token = _token_of(client, '/watchlist')
-
     html = client.get('/watchlist').get_data(as_text=True)
+    token = _token_from(html)
 
     # A watchlist card is only rendered when the user actually has items, so
     # reproduce the control the real template emits. It must be in the document
@@ -344,9 +355,8 @@ def test_follow_sends_the_csrf_header(browser, session, db):
     client.post('/login', data={'username': 'f23browser',
                                 'password': 'F23Pass1!'},
                 follow_redirects=True)
-    token = _token_of(client, f'/user/{subject_id}')
-
     html = client.get(f'/user/{subject_id}').get_data(as_text=True)
+    token = _token_from(html)
     page = _load(browser, 'user_profile.html', html)
 
     assert page.locator('[data-follow-button]').count() == 1, (
@@ -413,7 +423,7 @@ def test_the_real_client_sends_the_published_token(browser, session):
                 follow_redirects=True)
 
     html = _search_html(client, 'f231target')
-    token = _token_of(client, '/search?query=f231target')
+    token = _token_from(html)
 
     page = _load(browser, 'search_results.html', html)
     assert page.evaluate('() => typeof FollowButton') == 'function', (

@@ -317,19 +317,20 @@ def test_concurrent_runners_cannot_apply_the_same_migration(pg_engine, capsys):
     # Either the second runner found nothing pending, or it could not proceed.
     # What must never happen is both applying the same migration.
     # The ordinary (non-destructive) stage applies every additive migration —
-    # 0001, F9's 0003_cast_persistence, F12's 0004_notification_preferences and
-    # F32's 0005_media_runtime — and the approval-gated stage applies 0002. So
-    # the ledger holds five rows.
+    # 0001, F9's 0003_cast_persistence, F12's 0004_notification_preferences,
+    # F32's 0005_media_runtime and F55's 0006_user_session_version — and the
+    # approval-gated stage applies 0002. So the ledger holds six rows.
     # Kept as an EXACT list: a stray extra row is as much a bug as a missing one.
     assert sorted(versions) == ['0001_canonical_watched_reconcile',
                                 DESTRUCTIVE_VERSION,
                                 '0003_cast_persistence',
                                 '0004_notification_preferences',
-                                '0005_media_runtime']
+                                '0005_media_runtime',
+                                '0006_user_session_version']
     succeeded = [v for v in outcomes.values() if v[0] == 'ok']
     assert succeeded, 'no runner succeeded at all: %r' % outcomes
     total_applied = sum(len(v[1]) for v in succeeded)
-    assert total_applied == 5, 'migrations were applied more than once: %r' % outcomes
+    assert total_applied == 6, 'migrations were applied more than once: %r' % outcomes
 
 
 # ── transactional DDL ────────────────────────────────────────────────────────
@@ -397,10 +398,13 @@ def test_failed_migration_is_not_recorded_and_retry_succeeds(pg_engine,
     assert '0004_notification_preferences' in applied
     # F32's additive 0005 is ordinary too.
     assert '0005_media_runtime' in applied
+    # F55's additive 0006 is ordinary too, so it lands in the same stage.
+    assert '0006_user_session_version' in applied
     assert set(_ledger(pg_engine)) == {'0001_canonical_watched_reconcile',
                                        '0003_cast_persistence',
                                        '0004_notification_preferences',
                                        '0005_media_runtime',
+                                       '0006_user_session_version',
                                        DESTRUCTIVE_VERSION}
 
 
@@ -1219,3 +1223,153 @@ def test_f32_applies_by_ordinary_upgrade_while_0002_stays_deferred(pg_engine):
             "SELECT COUNT(*) FROM schema_migrations WHERE version = "
             "'0005_media_runtime'")).scalar()
     assert count == 1
+
+
+# ── F55: 0006_user_session_version ───────────────────────────────────────────
+#
+# The SQLite suite proves the column is added, defaults correctly and is
+# re-runnable. What it cannot prove is the two things that only matter on a real
+# server, and both are load-bearing for this migration:
+#
+#   * the ADD COLUMN is TRANSACTIONAL on PostgreSQL, so a failure leaves neither
+#     the column nor the ledger row behind;
+#   * the DEFAULT is a real SERVER default, which is what lets a single
+#     `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT 0` backfill every
+#     existing row instead of failing on a table that already has data.
+#
+# The second is the reason the column is safe to deploy against a populated
+# `user` table at all, so it is asserted directly here.
+
+
+def _session_version_module():
+    import importlib
+    return importlib.import_module('migrations_0006_user_session_version')
+
+
+F55_VERSION = '0006_user_session_version'
+
+
+def _drop_session_version_column(connection):
+    """Return user to its pre-F55 shape."""
+    connection.execute(text('ALTER TABLE "user" DROP COLUMN session_version'))
+
+
+def _session_version_default(connection):
+    return connection.execute(text(
+        "SELECT column_default FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'session_version'")).scalar()
+
+
+def _session_version_nullable_flag(connection):
+    return connection.execute(text(
+        "SELECT is_nullable FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'session_version'")).scalar()
+
+
+def test_f55_adds_not_null_defaulted_column_to_a_populated_user_table(pg_engine):
+    """The deploy case: `user` already has rows when 0006 runs."""
+    module = _session_version_module()
+    with pg_engine.begin() as connection:
+        _drop_session_version_column(connection)
+        connection.execute(text(
+            "INSERT INTO \"user\" (username, email, password_hash) "
+            "VALUES ('f55legacy', 'f55legacy@example.test', 'x')"))
+
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            assert module.verify(connection) != []      # really missing first
+            module.run(connection)
+            assert module.verify(connection) == []
+
+    with pg_engine.connect() as connection:
+        # The backfill: an existing row reads 0, not NULL.
+        value = connection.execute(text(
+            "SELECT session_version FROM \"user\" "
+            "WHERE username = 'f55legacy'")).scalar()
+        assert value == 0, (
+            'the pre-existing row was not backfilled to 0; got %r' % (value,))
+        assert _session_version_nullable_flag(connection) == 'NO'
+
+    with pg_engine.begin() as connection:
+        # A server default means a later INSERT may omit the column entirely.
+        connection.execute(text(
+            "INSERT INTO \"user\" (username, email, password_hash) "
+            "VALUES ('f55new', 'f55new@example.test', 'x')"))
+    with pg_engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT session_version FROM \"user\" "
+            "WHERE username = 'f55new'")).scalar() == 0
+
+
+def test_f55_column_carries_a_server_default_on_postgres(pg_engine):
+    """PostgreSQL reflects the default as a literal string."""
+    module = _session_version_module()
+    with pg_engine.begin() as connection:
+        _drop_session_version_column(connection)
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            module.run(connection)
+
+    with pg_engine.connect() as connection:
+        default = _session_version_default(connection)
+        assert default is not None, (
+            'no server default on session_version, so a later INSERT that '
+            'omits the column would fail instead of defaulting to 0')
+        assert '0' in str(default)
+
+
+def test_f55_add_column_is_transactional_and_rolls_back(pg_engine, monkeypatch):
+    """A failure mid-migration must leave neither column nor ledger row.
+
+    PostgreSQL has transactional DDL, so this is a real guarantee there and not
+    merely a convention. 0005's equivalent test proved the same for its own
+    column; 0006 needs it independently.
+    """
+    module = _session_version_module()
+    with pg_engine.begin() as connection:
+        _drop_session_version_column(connection)
+
+    original = module.run
+
+    def _boom(connection):
+        original(connection)
+        raise RuntimeError('simulated failure after the DDL')
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError, match='simulated failure'):
+            with connection.begin():
+                monkeypatch.setattr(module, 'run', _boom)
+                try:
+                    module.run(connection)
+                finally:
+                    monkeypatch.setattr(module, 'run', original)
+
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            # Rollback undid the ADD COLUMN.
+            assert module.verify(connection) != [], (
+                'a failed 0006 left session_version behind; PostgreSQL DDL is '
+                'transactional so it must not')
+
+    # Leave the database usable for the rest of the session.
+    with pg_engine.connect() as connection:
+        with connection.begin():
+            module.run(connection)
+        assert module.verify(connection) == []
+
+
+def test_f55_refuses_a_nullable_column_on_postgres(pg_engine):
+    """A NULLABLE column would lock every account out, silently."""
+    module = _session_version_module()
+    with pg_engine.begin() as connection:
+        _drop_session_version_column(connection)
+        connection.execute(text(
+            'ALTER TABLE "user" ADD COLUMN session_version INTEGER'))
+
+    with pg_engine.connect() as connection:
+        with pytest.raises(RuntimeError) as excinfo:
+            with connection.begin():
+                module.run(connection)
+    message = str(excinfo.value)
+    assert 'NULLABLE' in message, (
+        '0006 adopted a NULLABLE session_version: %s' % message[:200])

@@ -837,7 +837,12 @@ def _enrich_items_with_watched_state(items):
     """
     if not items:
         return
-    viewer_id = current_user.get_id() if current_user.is_authenticated else None
+    # `current_user.id`, not `current_user.get_id()`. F55 made get_id() return
+    # the versioned credential string ("<id>|<session version>") so it can be
+    # revoked, and comparing that against the integer `user_id` columns below
+    # silently matched nothing — every item read as unwatched for a signed-in
+    # viewer. get_id() is an opaque identifier for Flask-Login, never a row id.
+    viewer_id = current_user.id if current_user.is_authenticated else None
     if viewer_id is None:
         return
 

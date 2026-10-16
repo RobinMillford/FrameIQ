@@ -13,6 +13,14 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(512), nullable=False)  # Increased length to accommodate longer hashes
+    # F55: bumped on password reset / credential change. The value is carried
+    # in the session cookie AND the remember-me cookie (see
+    # `utils.session_auth.session_identity` / `parse_session_identity`), so
+    # raising it revokes every credential already issued to this user. With a
+    # stateless signed-cookie session there is no server-side session store to
+    # delete, so this counter is the only revocation handle available.
+    session_version = db.Column(db.Integer, nullable=False, default=0,
+                                server_default='0')
     date_joined = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     email_verified = db.Column(db.Boolean, default=False, nullable=False)
@@ -55,6 +63,23 @@ class User(UserMixin, db.Model):
 
     # Where-to-Watch region preference (Feature 03). ISO-3166 alpha-2.
     streaming_region = db.Column(db.String(2))
+
+    def get_id(self):
+        """The versioned identity this user is known by.
+
+        F55. Flask-Login calls this to populate ``session['_user_id']``, and
+        the remember-me cookie is written from that same value, so overriding
+        it here is what puts the version into BOTH credentials. Defining it in
+        one place is deliberate: stamping at each `login_user()` call site
+        instead missed every path that writes the session directly, including
+        Flask-Login's own `FlaskLoginClient`.
+
+        `getattr(..., 0)` rather than a bare attribute read so a deployment
+        that reaches this code before migration 0006 has run degrades to
+        version 0 instead of raising on every login.
+        """
+        from utils.session_auth import session_identity
+        return session_identity(self)
 
     def __init__(self, **kwargs):
         super(User, self).__init__(**kwargs)

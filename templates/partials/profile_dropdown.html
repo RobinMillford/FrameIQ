@@ -41,8 +41,12 @@
         <a href="{{ url_for('auth.edit_profile') }}" role="menuitem" class="fi-menu-item">
             <i class="fas fa-gear" aria-hidden="true"></i> Settings
         </a>
-        <a href="{{ url_for('auth.logout') }}" role="menuitem" class="fi-menu-item fi-menu-danger">
-            <i class="fas fa-arrow-right-from-bracket" aria-hidden="true"></i> Logout
-        </a>
+        {# F55: POST + CSRF token, because logout is a state change. See routes/auth.py. #}
+        <form method="post" action="{{ url_for('auth.logout') }}" class="m-0 p-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" role="menuitem" class="fi-menu-item fi-menu-danger w-full text-left bg-transparent border-0 cursor-pointer">
+                <i class="fas fa-arrow-right-from-bracket" aria-hidden="true"></i> Logout
+            </button>
+        </form>
     </div>
 </div>

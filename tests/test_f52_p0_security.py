@@ -57,6 +57,25 @@ def _make_user(db, name):
 _USERS = {}
 
 
+def _db_row(db, model, pk):
+    """Read a row straight from the database, bypassing any ORM cache.
+
+    ``Model.query.get(pk)`` is deliberately NOT used for assertions that check
+    what a request just changed. Since the F56 harness fix each request runs in
+    its own application context and therefore its own SQLAlchemy session, so an
+    instance the test created is still sitting in the test's identity map — and
+    ``get()`` hands that stale instance straight back without issuing any SQL.
+
+    That made these assertions pass or fail on cache contents rather than on
+    what the endpoint did. (One of them, the ``media_type`` check, was already
+    passing for the wrong reason: its cached value happened to equal the
+    expected one.) Expiring first and selecting explicitly is what the
+    assertion always meant.
+    """
+    db.session.expire_all()
+    return model.query.filter(model.id == pk).first()
+
+
 def _u(db, name):
     """Shorthand for the identity a test logs in as."""
     return _make_user(db, name)
@@ -333,7 +352,7 @@ def test_d1_list_removal_endpoint_still_works(client, db):
     assert response.status_code == 200
     assert _views(db, user_list.id) == 0
     from models.lists import UserListItem
-    assert UserListItem.query.get(item.id) is None
+    assert _db_row(db, UserListItem, item.id) is None
 
 
 def test_d1_remove_button_absent_for_non_editors(client, db):
@@ -479,7 +498,7 @@ def test_d2_existing_review_survives_the_change(client, db):
 
     assert review.media_type == 'onclick=alert(1)'
     # The column still holds the bad value; the renderer is what must cope.
-    assert Review.query.get(review.id).media_type == 'onclick=alert(1)'
+    assert _db_row(db, Review, review.id).media_type == 'onclick=alert(1)'
 
 
 def _js_code_only(source):
@@ -570,7 +589,7 @@ def test_d2_review_update_still_works(client, db):
 
     ok = client.put('/api/reviews/%d' % review.id, json={'rating': 5})
     assert ok.status_code == 200
-    assert Review.query.get(review.id).rating == 5.0
+    assert _db_row(db, Review, review.id).rating == 5.0
 
     bad = client.put('/api/reviews/%d' % review.id, json={'rating': 99})
     assert bad.status_code == 400

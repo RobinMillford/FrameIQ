@@ -38,6 +38,21 @@ def _user(db, name):
     return u
 
 
+def _preset_row(preset_id):
+    """Re-read a SmartList from the database, not the ORM identity map.
+
+    F56. Each request now runs in its own application context and therefore its
+    own SQLAlchemy session, so a row the request just updated or deleted is not
+    reflected in the test's identity map. ``SmartList.query.get(id)`` is the
+    worst case: it returns the cached instance without issuing any SQL, so an
+    assertion placed after a write was reading pre-request values. Expiring
+    first forces the read the assertion means — and it can now actually detect
+    a no-op endpoint, which it previously could not.
+    """
+    db.session.expire_all()
+    return SmartList.query.get(preset_id)
+
+
 def _make_preset(user, name='Sci-fi', config=None, scope='all',
                  sort='date_added'):
     config = config if config is not None else _config(genres=['science_fiction'])
@@ -429,7 +444,7 @@ class TestPresetCrud:
         p = _make_preset(sample_user)
         r = auth_client.delete(f'/explore/presets/{p.id}')
         assert r.status_code == 200
-        assert SmartList.query.get(p.id) is None
+        assert _preset_row(p.id) is None
 
     def test_one_user_cannot_delete_another_users_preset(
             self, auth_client, db, sample_user):
@@ -659,7 +674,7 @@ class TestTypePreservedThroughGenericUpdate:
         original = preset.filters_json
         auth_client.put(f'/api/smart-lists/{preset.id}',
                         json={'scope': 'watchlist'})
-        after = SmartList.query.get(preset.id)
+        after = _preset_row(preset.id)
         assert after.filters_json == original
         assert is_discovery_preset(after)
 
@@ -675,7 +690,7 @@ class TestTypePreservedThroughGenericUpdate:
         auth_client.put(f'/api/smart-lists/{preset.id}', json={
             'filters': {'min_rating': 2}, 'scope': 'diary', 'sort': 'random'})
 
-        after = SmartList.query.get(preset.id)
+        after = _preset_row(preset.id)
         assert is_discovery_preset(after)
         assert after.filters == stored
         assert after.filters['kind'] == DISCOVERY_KIND
@@ -692,7 +707,7 @@ class TestTypePreservedThroughGenericUpdate:
         assert r.status_code == 200
         assert r.json['name'] == 'New name'
         assert r.json['is_discovery'] is True
-        after = SmartList.query.get(preset.id)
+        after = _preset_row(preset.id)
         assert after.name == 'New name'
         assert after.filters == stored
 

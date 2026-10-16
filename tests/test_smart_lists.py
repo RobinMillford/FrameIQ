@@ -42,6 +42,14 @@ def make_media(tmdb_id, title='A Movie', media_type='movie', rating=7.0,
             db.session.add(DiaryEntry(
                 user_id=user.id, media_id=m.id, media_type=media_type,
                 watched_date=datetime(year, 6, 15).date()))
+    # F56: commit, matching `make_list` below. This used to only flush, which
+    # left every write above uncommitted in the test's own session while the
+    # request under test wrote through a different one — on the shared
+    # single-file SQLite that is a held write lock, and the request failed with
+    # "database is locked". The commit has to come last, after the
+    # `user_watchlist` / `user_viewed` inserts. Nothing a test has not
+    # committed is visible to a request anyway.
+    db.session.commit()
     return m
 
 

@@ -344,7 +344,8 @@ def test_registered_and_ordered_after_0002_in_the_registry(app, db):
                         '0002_remove_legacy_wishlist',
                         '0003_cast_persistence',
                         '0004_notification_preferences',
-                        '0005_media_runtime']
+                        '0005_media_runtime',
+                        '0006_user_session_version']
     spec = registry.by_version()['0003_cast_persistence']
     assert spec.depends_on == ('0001_canonical_watched_reconcile',)
     f12 = registry.by_version()['0004_notification_preferences']
@@ -414,7 +415,8 @@ def test_ordinary_upgrade_applies_f9_while_0002_stays_deferred(tmp_path):
     assert versions == ['0001_canonical_watched_reconcile',
                         '0003_cast_persistence',
                         '0004_notification_preferences',
-                        '0005_media_runtime']
+                        '0005_media_runtime',
+                        '0006_user_session_version']
     assert '0002_remove_legacy_wishlist' not in versions
     assert {'person', 'media_cast'} <= tables
     assert 'cast_enriched_at' in columns

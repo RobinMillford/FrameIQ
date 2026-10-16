@@ -1,6 +1,9 @@
 # File: routes/auth.py
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
+from flask import (Blueprint, render_template, request, redirect, url_for,
+                   flash, jsonify, current_app, session)
 from flask_login import login_user, logout_user, login_required, current_user
+
+from utils.session_auth import bump_session_version
 from models import TVShowProgress, db, User, Review
 from utils import username_policy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -152,6 +155,9 @@ def login():
             password_ok = check_password_hash(candidate_hash, password)
 
             if user and password_ok:
+                # F55: the versioned identity is stamped by the
+                # `user_logged_in` handler registered in app.py, so every
+                # login path is covered rather than just this one.
                 login_user(user, remember=remember_me)
                 flash('Logged in successfully')
                 logger.info(f"User {username} logged in successfully")
@@ -166,9 +172,19 @@ def login():
     return render_template('login.html')
 
 
-@auth.route('/logout')
+@auth.route('/logout', methods=['POST'])
 @login_required
 def logout():
+    """Log out.
+
+    F55: this used to accept GET. A state change reachable by GET can be
+    triggered cross-origin — an ``<img src="/logout">`` on any page a signed-in
+    user visits logs them out — and the global CSRFProtect never sees a GET, so
+    POST-only is what actually brings logout under CSRF protection.
+
+    POST is the right verb for a state change that is not idempotent in the
+    user's interest, and ``CSRFProtect(app)`` (app.py) already covers it.
+    """
     logout_user()
     flash('You have been logged out')
     return redirect(url_for('main.index'))
@@ -514,42 +530,130 @@ def forgot_password():
     return render_template('forgot_password.html')
 
 
+def _password_problem(password, confirm):
+    """The first password-policy violation, or None when the pair is acceptable.
+
+    Returning the message rather than flashing here keeps the rule in one
+    place and keeps it out of the route's control flow.
+
+    A rejected submission must NOT consume the reset token, so this runs before
+    the binding re-check and before any write.
+    """
+    if len(password) < 8:
+        return 'Password must be at least 8 characters.'
+    if not re.search(r'[A-Z]', password):
+        return 'Password must contain at least one uppercase letter.'
+    if not re.search(r'[a-z]', password):
+        return 'Password must contain at least one lowercase letter.'
+    if not re.search(r'\d', password):
+        return 'Password must contain at least one digit.'
+    if password != confirm:
+        return 'Passwords do not match.'
+    return None
+
+
+def _token_still_matches(payload, user):
+    """Whether a decoded reset token still matches the user's credential.
+
+    F55. The token carries a fingerprint of the password hash it was minted
+    against, so this is the whole one-time-use guarantee: the moment the
+    password changes the fingerprint stops matching and every outstanding
+    token is dead.
+
+    Extracted so the same check is used by the pre-flight GET and by the
+    pre-commit row-locked re-read — they must not drift apart, because only
+    the second one is atomic.
+    """
+    from utils.email import password_fingerprint
+    return payload['fingerprint'] == password_fingerprint(user.password_hash)
+
+
 @auth.route('/reset-password/<token>', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
 def reset_password(token):
+    """Consume a password-reset token exactly once.
+
+    F55. Previously the token was a signed email plus a one-hour expiry with no
+    record of use, so a successful reset left the link replayable for the rest
+    of that hour, and nothing revoked the attacker's existing sessions. Now:
+
+      * the token is bound to a fingerprint of the password hash it was issued
+        against, so any password change invalidates every outstanding token;
+      * the bound is re-checked under a row lock immediately before the write,
+        so two concurrent submissions cannot both succeed;
+      * a successful reset raises ``session_version``, which invalidates every
+        session cookie and remember-me cookie already issued to that user;
+      * this browser's own credentials are cleared as well.
+    """
     from utils.email import verify_reset_token
-    email = verify_reset_token(token)
-    if not email:
+
+    payload = verify_reset_token(token)
+    if not payload:
         flash('Reset link is invalid or has expired.')
         return redirect(url_for('auth.forgot_password'))
 
-    user = User.query.filter_by(email=email).first()
+    user = User.query.filter_by(email=payload['email']).first()
     if not user:
         flash('User not found.')
         return redirect(url_for('auth.login'))
+
+    # The token must still match the credential it was minted against. This
+    # runs on GET too, so opening an already-used link shows the same message
+    # as a forged one and discloses nothing.
+    if not _token_still_matches(payload, user):
+        flash('Reset link is invalid or has expired.')
+        return redirect(url_for('auth.forgot_password'))
 
     if request.method == 'POST':
         password = request.form.get('password', '')
         confirm = request.form.get('confirm_password', '')
 
-        if len(password) < 8:
-            flash('Password must be at least 8 characters.')
-            return render_template('reset_password.html', token=token)
-        if not re.search(r'[A-Z]', password):
-            flash('Password must contain at least one uppercase letter.')
-            return render_template('reset_password.html', token=token)
-        if not re.search(r'[a-z]', password):
-            flash('Password must contain at least one lowercase letter.')
-            return render_template('reset_password.html', token=token)
-        if not re.search(r'\d', password):
-            flash('Password must contain at least one digit.')
-            return render_template('reset_password.html', token=token)
-        if password != confirm:
-            flash('Passwords do not match.')
+        problem = _password_problem(password, confirm)
+        if problem:
+            flash(problem)
             return render_template('reset_password.html', token=token)
 
-        user.set_password(password)
+        # Re-read under a row lock and re-check the binding. Without this the
+        # check above is a TOCTOU window: two parallel POSTs both pass it, and
+        # the second silently overwrites the first.
+        #
+        # `populate_existing()` is REQUIRED, not decorative. A re-query of an
+        # already-loaded primary key returns the object from the identity map,
+        # and `with_for_update()` on its own does NOT refresh its attributes —
+        # the column keeps whatever this session loaded before the lock. That
+        # was verified directly: with a second connection committing a change
+        # in between, `with_for_update().one()` returned the pre-change value
+        # while `with_for_update().populate_existing().one()` returned the
+        # committed one. Without it the "re-check" would compare the token
+        # against the same stale hash it had just passed, and two concurrent
+        # resets carrying one token would both be accepted, the second
+        # silently overwriting the first. SQLAlchemy's own docs recommend
+        # pairing the two for exactly this reason.
+        #
+        # `with_for_update` is a real lock on PostgreSQL and a harmless no-op on
+        # SQLite, where the single-writer test database cannot interleave anyway.
+        locked = (User.query.filter_by(id=user.id)
+                  .with_for_update()
+                  .populate_existing()
+                  .one())
+        if not _token_still_matches(payload, locked):
+            db.session.rollback()
+            flash('Reset link is invalid or has expired.')
+            return redirect(url_for('auth.forgot_password'))
+
+        locked.set_password(password)
+        # Revoke every credential previously issued to this user. The version
+        # lives inside both the session cookie and the remember-me cookie, so
+        # raising it logs out any other browser or device holding either.
+        bump_session_version(locked)
         db.session.commit()
+
+        # And clear this browser's copies. `logout_user` pops the session keys
+        # and sets `_remember='clear'`, which makes Flask-Login delete the
+        # remember cookie from the response.
+        logout_user()
+        session.clear()
+
         flash('Password reset successful. You can now log in.')
         return redirect(url_for('auth.login'))
 

@@ -3,6 +3,26 @@ import tempfile
 
 import pytest
 
+# F56 — PRIVATE Flask internals, used deliberately.
+#
+# `_cv_app` is the ContextVar Flask binds every pushed application context to,
+# and `RequestContext.push` consults it to decide whether to REUSE the bound
+# context or create a new one. `_RequestScopedClient` unbinds it around each
+# test-client request so the request gets its own context, exactly as on a real
+# server.
+#
+# Compatibility: verified against the pinned Flask==3.1.3, where `_cv_app`
+# exists, is a ContextVar, and `push()` uses the rule
+# `if app_ctx is None or app_ctx.app is not self.app:`. If a future Flask
+# renames or removes it, this import fails at collection — loudly, which is the
+# intended failure mode. If the REUSE RULE changes but the name survives, the
+# behaviour tests in tests/test_f56_context_isolation.py
+# (`test_the_unbinding_assumption_holds_...` and
+# `test_the_reuse_assumption_holds_...`) fail and point here. Neither failure
+# mode is silent.
+from flask.globals import _cv_app
+from flask.testing import FlaskClient
+
 try:  # tests/ is a package; direct execution still works.
     from tests.tmdb_offline import (
         OfflineNetworkViolation, TMDbOfflineRegistry, _violation_message,
@@ -165,6 +185,12 @@ def app():
         RATELIMIT_ENABLED=False,
     )
 
+    # F56: every client this suite hands out — via the `client` fixture or a
+    # direct `app.test_client()` call — gets request-scoped contexts. Tests
+    # that need Flask-Login's own client (which writes the session directly)
+    # still override `test_client_class` themselves and are unaffected.
+    flask_app.test_client_class = _RequestScopedClient
+
     # Push the app context only for schema setup, then pop it. Holding it
     # open for the whole session would make `g` (and Flask-Login's cached
     # `g._login_user`) leak across tests — authenticated state from one
@@ -181,6 +207,84 @@ def app():
         os.remove(_test_db_path)
     except OSError:
         pass
+
+
+# ── Per-request application context (F56) ────────────────────────────────────
+#
+# `pytest-flask` ships an AUTOUSE fixture, `_push_request_context`, that pushes
+# an `app.test_request_context()` for the whole test whenever the `app` fixture
+# is in play (directly, or via `db` / `client` / `sample_user` / `auth_client`).
+# The test body therefore runs with an application context already bound, which
+# most tests rely on for `db.session` and for `url_for`.
+#
+# That silently defeats per-request context isolation. Flask's
+# `RequestContext.push` REUSES an already-bound application context when it
+# belongs to the same app:
+#
+#     app_ctx = _cv_app.get(None)
+#     if app_ctx is None or app_ctx.app is not self.app:
+#         app_ctx = self.app.app_context()
+#         app_ctx.push()
+#
+# so every `client.get(...)` made during a test REUSES the harness context
+# instead of pushing its own. `g` is then a single object shared by the whole
+# test across all clients, and Flask-Login — which caches the resolved identity
+# in exactly that `g` —
+#
+#     if "_login_user" not in g:
+#         current_app.login_manager._load_user()
+#     return g._login_user
+#
+# loads the user only ONCE. The first request that authenticates populates the
+# cache, and every later request reads it back — including requests from a
+# brand-new, never-used client. One login anywhere in the process therefore
+# authenticates everything that follows, and any assertion about "anonymous"
+# silently becomes dependent on test order.
+#
+# Removing the harness context entirely is not an option: `db.session` and
+# `url_for` are used directly in test bodies throughout the suite. Instead the
+# boundary is moved to where it belongs — the request. `_RequestScopedClient`
+# detaches the ambient context for the duration of each request, so the request
+# pushes and pops its own exactly as it does on a real server, then restores
+# the harness context for the test body. That is the production lifecycle,
+# reached from the harness rather than approximated by clearing caches.
+class _RequestScopedClient(FlaskClient):
+    """A test client whose requests never reuse an ambient application context.
+
+    ``open`` is the single entry point for every request the test client makes
+    (``get``/``post``/``open`` all funnel through it), so covering it covers
+    the whole client API.
+
+    ``session_transaction`` is deliberately NOT wrapped: it pushes a request
+    context only to read and write the cookie jar and runs no view, so it
+    cannot populate ``g._login_user`` — the one piece of ``g`` this harness
+    cares about. Leaving it alone avoids interfering with Werkzeug's own
+    cookie-jar bookkeeping, which several tests rely on.
+    """
+
+    def open(self, *args, **kwargs):
+        # `_cv_app` is the ContextVar Flask binds every pushed context to.
+        # Clearing it is what makes Flask's own `RequestContext.push` take the
+        # `app_ctx is None` branch and create a genuine per-request context.
+        #
+        # `set(None)` rather than `ambient.pop()`: popping would run
+        # `do_teardown_appcontext`, which makes Flask-SQLAlchemy call
+        # `db.session.remove()` for the *harness* context and detach every
+        # instance the test body is still holding. The request gets its own
+        # context and its own teardown either way, so the harness context only
+        # needs to be unbound and rebound. `reset(token)` puts the previous
+        # value back without re-running `push`, so nothing is set up twice.
+        ambient = _cv_app.get(None)
+        if ambient is None:
+            return super().open(*args, **kwargs)
+
+        token = _cv_app.set(None)
+        try:
+            return super().open(*args, **kwargs)
+        finally:
+            # Restore the harness context so the test body keeps its `db`
+            # session and `url_for`.
+            _cv_app.reset(token)
 
 
 @pytest.fixture

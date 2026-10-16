@@ -415,11 +415,19 @@ def test_calendar_future_episode_never_in_denominator(factory):
 # ── Diary: historical integrity (no fabricated state, no dup records) ──────
 
 def test_diary_movie_log_creates_no_duplicate_records(app, client,
-                                                      factory):
+                                                      factory, monkeypatch):
     """Quick-log a movie → ONE diary event, canonical viewed row, and
     zero TVEpisodeWatch rows (the movie/TV split is untouched)."""
     from flask_login import FlaskLoginClient
-    app.test_client_class = FlaskLoginClient
+    # `app` is session-scoped, so this assignment used to persist for the rest
+    # of the run: it ended with `test_client_class = None`, which is not the
+    # class tests/conftest.py installs. Every later `app.test_client()` in the
+    # session then got a plain client with no request-scoped application
+    # context, so requests reused one `g` and Flask-Login's cached
+    # `g._login_user` leaked between them — turning unrelated auth assertions
+    # into coin flips decided by file order. `monkeypatch` restores whatever
+    # was there before this test instead of guessing a replacement.
+    monkeypatch.setattr(app, 'test_client_class', FlaskLoginClient)
     u = factory.user("diarylogger")
     with app.test_client(user=u) as lc:
         r = lc.post(f"/api/media/{MOVIE_A}/log", json={
@@ -441,5 +449,3 @@ def test_diary_movie_log_creates_no_duplicate_records(app, client,
         # Zero TV episode records were created by a movie log.
         assert TVEpisodeWatch.query.filter_by(
             user_id=u.id).count() == 0
-
-    app.test_client_class = None

@@ -469,7 +469,7 @@ class TestSecurity:
         _login(client, ua)
         ea = _get(client).get_json()["events"]
         assert [e["metadata"]["episode_name"] for e in ea] == ["ForA"]
-        client.get("/logout")
+        client.post("/logout")
 
         _login(client, ub)
         eb = _get(client).get_json()["events"]
@@ -602,7 +602,7 @@ class TestMovieReleaseEvents:
 
         _login(client, ua)
         assert len(_movie_events(_get(client).get_json()["events"])) == 1
-        client.get("/logout")
+        client.post("/logout")
         _login(client, ub)
         assert _movie_events(_get(client).get_json()["events"]) == []
 

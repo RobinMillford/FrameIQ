@@ -202,14 +202,24 @@ def test_likes_check_returns_count(client, db, app):
     db.session.add(MediaLike(user_id=other.id, media_id=tmdb_id, media_type='movie'))
     db.session.commit()
 
-    with app.test_request_context(
-        f'/api/media/{tmdb_id}/likes/check?media_type=movie'
-    ):
-        from flask_login import login_user
-        login_user(user)
-        resp = app.test_client().get(
-            f'/api/media/{tmdb_id}/likes/check?media_type=movie'
-        )
+    # Authenticate the CLIENT, not the ambient context. This used to do:
+    #
+    #     with app.test_request_context(...):
+    #         login_user(user)
+    #         resp = app.test_client().get(...)
+    #
+    # which only ever worked because the fresh client carried no credentials at
+    # all — the request reused the harness's application context and so read
+    # the `g._login_user` that `login_user` had just set on it. F56 gave every
+    # request its own context, so a cookieless client is genuinely anonymous
+    # and the endpoint correctly answers 302.
+    #
+    # Logging in through the form makes the request carry a real session
+    # cookie, which is what the assertion is actually about: that the liker
+    # sees `liked: True` and the shared total.
+    api = app.test_client()
+    api.post('/login', data={'username': user.username, 'password': 'x'})
+    resp = api.get(f'/api/media/{tmdb_id}/likes/check?media_type=movie')
 
     assert resp.status_code == 200
     data = resp.get_json()

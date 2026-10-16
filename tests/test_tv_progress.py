@@ -103,6 +103,19 @@ def test_paused_becomes_watching(auth_client, sample_user):
     assert r.get_json()['progress']['status'] == 'watching'
 
 
+def _progress_row(user_id, show_id):
+    """Re-read a TVShowProgress row from the database, not the ORM cache.
+
+    F56. Each request runs in its own application context and therefore its own
+    SQLAlchemy session, so a row the request just updated is not reflected in
+    the test's identity map and a plain query returns the pre-request instance.
+    Expiring first forces the read the assertion is about.
+    """
+    db.session.expire_all()
+    return TVShowProgress.query.filter_by(
+        user_id=user_id, show_id=show_id).first()
+
+
 def test_pause_preserves_episode_history(auth_client, sample_user):
     _track(sample_user, watched=2)
     _watch(sample_user, 1, 1, watched_date=date(2026, 1, 1))
@@ -111,8 +124,7 @@ def test_pause_preserves_episode_history(auth_client, sample_user):
     auth_client.post(f'/api/tv/{SHOW_ID}/update-status',
                      json={'status': 'paused'})
 
-    p = TVShowProgress.query.filter_by(user_id=sample_user.id,
-                                       show_id=SHOW_ID).first()
+    p = _progress_row(sample_user.id, SHOW_ID)
     assert p.status == 'paused'
     assert p.watched_episodes == 2
     assert TVEpisodeWatch.query.filter_by(
@@ -120,8 +132,7 @@ def test_pause_preserves_episode_history(auth_client, sample_user):
     # Resume keeps everything.
     auth_client.post(f'/api/tv/{SHOW_ID}/update-status',
                      json={'status': 'watching'})
-    p = TVShowProgress.query.filter_by(user_id=sample_user.id,
-                                       show_id=SHOW_ID).first()
+    p = _progress_row(sample_user.id, SHOW_ID)
     assert p.status == 'watching'
     assert p.watched_episodes == 2
 

@@ -103,6 +103,19 @@ MIGRATIONS: Tuple['MigrationSpec', ...] = (
                 'queries stop failing on a database that predates the column. '
                 'Additive.',
     ),
+    # F55. Password resets and credential changes must revoke sessions and
+    # remember-me cookies already issued to the user. Those cookies are
+    # stateless and signed, so nothing server-side can be deleted to achieve
+    # it; the only handle is a per-user counter carried inside both cookies
+    # (utils/session_auth). Purely additive.
+    MigrationSpec(
+        version='0006_user_session_version',
+        module='migrations_0006_user_session_version',
+        depends_on=('0001_canonical_watched_reconcile',),
+        summary='Add user.session_version (NOT NULL INTEGER DEFAULT 0) so a '
+                'password reset can revoke every issued session and '
+                'remember-me cookie. Additive.',
+    ),
 )
 
 

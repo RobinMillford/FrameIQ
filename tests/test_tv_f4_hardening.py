@@ -72,7 +72,18 @@ def watched_rows(user, show_id):
 
 
 def stored_row(user, show_id):
+    """Read back the TVShowProgress row a write path actually stored.
+
+    F56. Each request runs in its own application context and therefore its own
+    SQLAlchemy session, so a row the request just updated is not reflected in
+    the test's identity map and a plain query returns the pre-request instance.
+    This helper exists precisely to observe what was persisted, so it must read
+    the database — expiring first is what makes it able to detect a write path
+    that silently did nothing.
+    """
     from models import TVShowProgress
+    from models import db as _db
+    _db.session.expire_all()
     return TVShowProgress.query.filter_by(
         user_id=user.id, show_id=show_id).first()
 

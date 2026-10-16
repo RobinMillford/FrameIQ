@@ -165,7 +165,7 @@ def test_a_non_owner_cannot_set_the_cover(client, app, db):
 
 def test_anonymous_cannot_set_the_cover(client, app, db):
     victim = _owned(db, client, 'anonowner')
-    client.get('/logout', follow_redirects=True)
+    client.post('/logout', follow_redirects=True)
 
     response = client.put(f'/api/lists/{victim.list_id}/cover',
                           json={'cover_image': '/static/images/x.jpg'})
