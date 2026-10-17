@@ -337,17 +337,22 @@ jobs:
   # PostgreSQL migration verification (Decision D)
   # ─────────────────────────────────────────────────────────────────────────
   #
-  # The SQLite suite cannot prove two things that matter for a destructive
-  # migration on production:
+  # The SQLite suite cannot prove things that matter for a destructive migration
+  # on production:
   #   * transactional DDL — pysqlite commits around DDL, so a failed migration
   #     can leave its DDL behind on SQLite but not on PostgreSQL;
   #   * advisory locks — pg_advisory_lock does not exist on SQLite, so the runner
   #     prints "lock: UNAVAILABLE" and no SQLite test can show that competing
-  #     runners are actually excluded.
+  #     runners are actually excluded;
+  #   * reserved-word quoting and NOT NULL-without-a-server-default, which
+  #     SQLite accepts and PostgreSQL rejects;
+  #   * row locking and MVCC visibility, which decide whether a concurrent
+  #     password reset can overwrite another one.
   #
-  # These are executed here against a real server rather than asserted from
-  # SQLite, mocks or reasoning. Pinned to postgres:17 to match production
-  # (17.11) exactly.
+  # All three suites marked `postgres` run here — migration 0006, the query
+  # bounds of the F44 work, and the password-reset race — rather than being
+  # asserted from SQLite, mocks or reasoning. Pinned to postgres:17 to match
+  # production (17.11) exactly.
   #
   # The database is a disposable container with a throwaway credential. The
   # tests additionally refuse to run at all if the URL is not local, so this
@@ -402,7 +407,28 @@ jobs:
         env:
           PGPASSWORD: ci-scratch-password
 
-      - name: Migration tests against real PostgreSQL
+      # Three suites, each in its own pytest process on purpose:
+      #   * test_query_bounds_postgres_f44.py re-points DATABASE_URL at
+      #     PostgreSQL before `app` is imported, so the global app in that
+      #     process is bound to PostgreSQL; sharing a process would hand that
+      #     binding to tests that expect the SQLite test app.
+      #   * test_reset_concurrency_postgres.py builds a second app on the same
+      #     database and drops/recreates the public schema, so it must not share
+      #     a process (or a schema) with the migration suite that asserts on it.
+      # Each module also refuses to skip when FRAMEIQ_TEST_POSTGRES_URL is absent
+      # in CI, and pytest exits 5 if a file collects nothing, so this step cannot
+      # report success while having run zero tests.
+      - name: PostgreSQL suites against a real server
         env:
           FRAMEIQ_TEST_POSTGRES_URL: postgresql://postgres:ci-scratch-password@localhost:5432/frameiq_migration_scratch
-        run: pytest tests/test_migration_postgres.py -v --tb=short -m postgres
+        run: |
+          set -euo pipefail
+          for suite in \
+            tests/test_migration_postgres.py \
+            tests/test_query_bounds_postgres_f44.py \
+            tests/test_reset_concurrency_postgres.py
+          do
+            echo "::group::${suite}"
+            pytest "${suite}" -v --tb=short -m postgres
+            echo "::endgroup::"
+          done

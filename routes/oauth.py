@@ -1,5 +1,6 @@
 from flask import Blueprint, request, redirect, url_for
 from flask_login import login_user
+
 from models import db, User
 from utils import username_policy
 from authlib.integrations.flask_client import OAuth
@@ -84,6 +85,8 @@ def google_callback():
             db.session.commit()
         
         # Log in the user
+        # F55: the versioned identity is stamped by the `user_logged_in`
+        # handler in app.py, so this path is covered too.
         login_user(user, remember=True)
         
         # Redirect to home page

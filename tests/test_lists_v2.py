@@ -34,7 +34,7 @@ def _media(db, title, media_type='movie', tmdb_id=None, runtime=100):
     m = MediaItem(tmdb_id=tmdb_id, media_type=media_type, title=title,
                   runtime=runtime)
     db.session.add(m)
-    db.session.flush()
+    db.session.commit()
     return m
 
 
@@ -50,8 +50,30 @@ def _user(db, username):
     return u
 
 
+def _fresh(db, model, **filters):
+    """Re-read rows from the database, bypassing the ORM identity map.
+
+    F56. Each request now runs in its own application context and therefore its
+    own SQLAlchemy session, so a row a request just changed is not reflected in
+    the test's identity map. `Model.query.get(pk)` is the worst case: it
+    returns the cached instance without issuing any SQL. A test that creates
+    rows and then checks what the endpoint did to them has to read the
+    database, which is what this does and what a server would do.
+    """
+    db.session.expire_all()
+    return model.query.filter_by(**filters).all()
+
+
 def _list(db, user_id, title, slug=None, is_public=True, list_type=None):
-    """Create a list; slug defaults to a uuid suffix (slug is unique)."""
+    """Create a list; slug defaults to a uuid suffix (slug is unique).
+
+    F56: these setup helpers used `flush()` rather than `commit()`, which only
+    worked because the request under test shared the test's transaction. Each
+    request now runs in its own application context and therefore its own
+    SQLAlchemy session, so a flushed-but-uncommitted row is invisible to it and
+    the endpoint answered 404. Committing is what a server would see anyway:
+    no request can observe another transaction's uncommitted work.
+    """
     from models import UserList
     if slug is None:
         slug = f"v2-{uuid.uuid4().hex[:10]}"
@@ -60,7 +82,7 @@ def _list(db, user_id, title, slug=None, is_public=True, list_type=None):
     if list_type is not None:
         ul.list_type = list_type
     db.session.add(ul)
-    db.session.flush()
+    db.session.commit()
     return ul
 
 
@@ -73,7 +95,7 @@ def _item(db, lst, media, position=None, note=None):
                       media_type='tv' if media.media_type == 'tv' else 'movie',
                       position=position, note=note)
     db.session.add(li)
-    db.session.flush()
+    db.session.commit()
     return li
 
 
@@ -153,7 +175,7 @@ class TestReorder:
         assert r.status_code == 200
         from models import UserListItem
         positions = {row.id: row.position for row in
-                     UserListItem.query.filter_by(list_id=lst.id).all()}
+                     _fresh(db, UserListItem, list_id=lst.id)}
         assert positions == {ids[2]: 1, ids[0]: 2, ids[1]: 3}
 
     def test_reorder_accepts_numeric_strings_legacy(self, auth_client, db):
@@ -165,7 +187,7 @@ class TestReorder:
         assert r.status_code == 200
         from models import UserListItem
         positions = {row.id: row.position for row in
-                     UserListItem.query.filter_by(list_id=lst.id).all()}
+                     _fresh(db, UserListItem, list_id=lst.id)}
         assert [positions[i.id] for i in reversed(items)] == [1, 2, 3]
 
     def test_reorder_rejects_cross_list_items(self, auth_client, db):
@@ -219,7 +241,7 @@ class TestReorder:
         assert r.status_code == 200
         from models import UserListItem
         positions = {row.id: row.position for row in
-                     UserListItem.query.filter_by(list_id=lst.id).all()}
+                     _fresh(db, UserListItem, list_id=lst.id)}
         # Sparse payload: moved item first, others keep canonical (position,id) order.
         assert positions[items[2].id] == 1
         assert sorted(positions.values()) == [1, 2, 3]
@@ -591,7 +613,7 @@ class TestBulk:
                                    'target_list_id': target.id})
         assert r.status_code == 200
         from models import UserListItem
-        assert UserListItem.query.get(items[0].id).list_id == target.id
+        assert _fresh(db, UserListItem, id=items[0].id)[0].list_id == target.id
 
     def test_bulk_move_dedupes_existing(self, auth_client, db):
         u, lst, items = self._setup(db)
@@ -604,7 +626,7 @@ class TestBulk:
                                    'target_list_id': target.id})
         assert r.status_code == 200
         from models import UserListItem
-        assert UserListItem.query.get(items[0].id) is None  # dropped from source
+        assert not _fresh(db, UserListItem, id=items[0].id)  # dropped from source
 
     def test_bulk_move_requires_owned_target(self, auth_client, db):
         u, lst, items = self._setup(db)
@@ -755,6 +777,11 @@ class TestWatchedState:
                            season_number=1, episode_number=e)
             for e in range(1, 16)
         ])
+        # F56: this used to rely on the request sharing the test's uncommitted
+        # transaction. Each request now runs in its own session, so nothing a
+        # test has not committed is visible to it — the same as production,
+        # where no request can see another transaction's pending work.
+        db.session.commit()
         from unittest.mock import patch
 
         def _tv_details(show_id, **kw):

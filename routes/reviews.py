@@ -35,6 +35,70 @@ def _rating_or_error(value):
     return rating, None
 
 
+# The two media types this application actually models. Same frozenset the
+# rest of the codebase uses (routes/diary.py, routes/collections.py) so a
+# reviewer does not have to wonder which list is authoritative.
+#
+# F52 D-2: this endpoint stored `media_type` verbatim while
+# routes/reviews_enhanced.py and routes/availability.py already rejected
+# anything else. `static/js/review-manager.js` then interpolated the stored
+# value straight into an href:
+#     <a href="/${review.media.media_type}/${review.media.id}">
+# so a 20-character value such as `onclick=alert(1)` broke out of the
+# attribute. `/api/reviews/feed` serves that markup unauthenticated, so the
+# store is the boundary, not the renderer.
+VALID_MEDIA_TYPES = frozenset({'movie', 'tv'})
+
+
+def _media_type_or_error(value):
+    """Validate a client-supplied ``media_type``.
+
+    Returns ``(media_type, None)`` when it is one this app models, else
+    ``(None, (response, 400))``. An exact set-membership test rather than a
+    sanitiser: a value is either one of the two types or it is rejected, so
+    there is no path where an unexpected string is partially normalised into
+    something that looks valid.
+
+    Returning 400 (rather than coercing or defaulting) matters: silently
+    substituting ``movie`` would attach the review to the wrong media and
+    answer 201, which reads to the client as success.
+    """
+    if not isinstance(value, str) or value not in VALID_MEDIA_TYPES:
+        return None, (jsonify({
+            'error': 'media_type must be "movie" or "tv"'
+        }), 400)
+    return value, None
+
+
+def _resolve_media(data, media_type):
+    """Find the MediaItem a review refers to, creating it when absent.
+
+    Takes ``media_type`` as an argument rather than reading it from ``data``
+    so the caller is the single place that decides whether the value is
+    acceptable; by the time this runs the type has already been validated.
+    """
+    media = MediaItem.query.filter_by(
+        tmdb_id=data['media_id'],
+        media_type=media_type
+    ).first()
+
+    if media:
+        return media
+
+    media = MediaItem(
+        tmdb_id=data['media_id'],
+        media_type=media_type,
+        title=data.get('title', 'Unknown'),
+        poster_path=data.get('poster_path'),
+        genres=data.get('genres'),  # New field
+        overview=data.get('overview'),
+        release_date=datetime.strptime(data['release_date'], '%Y-%m-%d').date() if data.get('release_date') else None
+    )
+    db.session.add(media)
+    db.session.flush()  # Get media.id
+    return media
+
+
 @reviews.route('/api/reviews', methods=['POST'])
 @login_required
 def create_review():
@@ -50,26 +114,15 @@ def create_review():
         rating, error = _rating_or_error(data['rating'])
         if error:
             return error
-        
+
+        # F52 D-2: validate media_type BEFORE any query or insert, so an
+        # unexpected value can neither reach `MediaItem` nor `Review`.
+        media_type, error = _media_type_or_error(data['media_type'])
+        if error:
+            return error
+
         # Check if media exists, create if not
-        media = MediaItem.query.filter_by(
-            tmdb_id=data['media_id'],
-            media_type=data['media_type']
-        ).first()
-        
-        if not media:
-            # Create media item
-            media = MediaItem(
-                tmdb_id=data['media_id'],
-                media_type=data['media_type'],
-                title=data.get('title', 'Unknown'),
-                poster_path=data.get('poster_path'),
-                genres=data.get('genres'),  # New field
-                overview=data.get('overview'),
-                release_date=datetime.strptime(data['release_date'], '%Y-%m-%d').date() if data.get('release_date') else None
-            )
-            db.session.add(media)
-            db.session.flush()  # Get media.id
+        media = _resolve_media(data, media_type)
         
         # Parse watched date if provided
         watched_date = None
@@ -83,7 +136,7 @@ def create_review():
         review = Review(
             user_id=current_user.id,
             media_id=media.id,
-            media_type=data['media_type'],
+            media_type=media_type,
             content=data.get('content', '').strip() or None,
             rating=rating,
             watched_date=watched_date,

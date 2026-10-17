@@ -110,6 +110,99 @@ def _build_db_url(raw_url: str) -> str:
     return raw_url
 
 
+def _is_production_deployment() -> bool:
+    """Whether this process is serving a real deployment.
+
+    F55. The signals are the environment variables the deployment already
+    sets — ``docker-compose.yml`` pins ``APP_ENV: "production"`` on the web
+    service, and Render/Cloud Run inject ``RENDER`` / ``K_SERVICE`` — plus, as
+    an additional independent signal, a database URL pointing at a remote
+    host. The app cannot meaningfully run production traffic against a local
+    SQLite file, so a remote DSN is strong evidence of production even when
+    the mode variable is absent.
+
+    A NEW mode variable is deliberately not introduced: an unrecognised name
+    is exactly the failure mode being closed, since a misspelling would leave
+    the app in development mode with no error.
+    """
+    if os.getenv("RENDER") or os.getenv("K_SERVICE"):
+        return True
+    if (os.getenv("APP_ENV") or "").strip().lower() == "production":
+        return True
+    return _has_remote_database()
+
+
+def _has_remote_database() -> bool:
+    """True when DATABASE_URL names a host that is not local."""
+    raw = (os.getenv("DATABASE_URL") or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("sqlite"):
+        return False
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(raw)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    return host not in ("localhost", "127.0.0.1", "::1", "db", "postgres",
+                        "postgresql", "valkey", "redis")
+
+
+def _warn_on_ambiguous_production_mode(is_production: bool) -> None:
+    """Fail loudly when the deployment looks production but the mode says dev.
+
+    The failure this guards against is a silent one: a missing or misspelled
+    mode variable used to leave ``SESSION_COOKIE_SECURE`` (and, before F55, the
+    remember-me flags) at their development values with nothing in the logs.
+    This does not change the decision — a dev machine legitimately has no
+    mode variable — but it refuses to make the mistake quietly.
+    """
+    if is_production or os.getenv("FLASK_DEBUG", "false").lower() == "true":
+        return
+    if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("RATELIMIT_ENABLED") == "False":
+        return
+    if _has_remote_database():
+        _log.warning(
+            "DATABASE_URL points at a remote host but no production marker is "
+            "set (APP_ENV=production / RENDER / K_SERVICE). Cookies will be "
+            "issued WITHOUT Secure. If this is a real deployment, set "
+            "APP_ENV=production; if it is a local setup against a shared "
+            "database, this is expected.")
+
+
+def _resolve_session_user(user_id):
+    """Resolve the identity carried by the session / remember cookie.
+
+    F55. The identity is versioned (see ``utils.session_auth``): it is
+    ``"<user id>|<session version>"``. A value whose version no longer matches
+    the user's has been revoked — by a password reset, for instance — and the
+    request is treated as unauthenticated. Returning ``None`` is Flask-Login's
+    own "no such user" path, so nothing downstream needs to know.
+
+    An unparseable identity is also ``None``. That includes the bare legacy
+    form issued before F55: it fails closed rather than authenticating a
+    credential we cannot verify, which is what makes the counter meaningful.
+    Because both cookies travel through this one function, a revoked session
+    and a revoked remember-me cookie are handled by the same rule.
+    """
+    from utils.session_auth import parse_session_identity
+
+    parsed = parse_session_identity(user_id)
+    if parsed is None:
+        return None
+    uid, version = parsed
+    user = db.session.get(User, uid)
+    if user is None:
+        return None
+    if int(getattr(user, 'session_version', 0) or 0) != version:
+        _log.info("Rejected a revoked session credential for user id %s", uid)
+        return None
+    return user
+
+
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' cdn.tailwindcss.com cdn.jsdelivr.net cdnjs.cloudflare.com; "
@@ -139,9 +232,8 @@ def create_app() -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # ── Config ────────────────────────────────────────────────────────────────
-    is_production = bool(
-        os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("APP_ENV") == "production"
-    )
+    is_production = _is_production_deployment()
+    _warn_on_ambiguous_production_mode(is_production)
 
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
@@ -151,6 +243,15 @@ def create_app() -> Flask:
         SESSION_COOKIE_SECURE=is_production,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        # F55: the remember-me cookie previously took Flask-Login's defaults,
+        # which are Secure=False and NO SameSite attribute at all — so the
+        # 30-day bearer token was sent over plaintext HTTP and without any
+        # cross-site protection even in production. It is set explicitly here
+        # rather than left to defaults, so the flags are visible in review and
+        # follow SESSION_COOKIE_SECURE exactly.
+        REMEMBER_COOKIE_SECURE=is_production,
+        REMEMBER_COOKIE_HTTPONLY=True,
+        REMEMBER_COOKIE_SAMESITE="Lax",
         WTF_CSRF_TIME_LIMIT=3600,
         # OAuth
         GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID"),
@@ -187,9 +288,19 @@ def create_app() -> Flask:
     login_manager.login_message = "Please log in to access this page."  # type: ignore[assignment]
     login_manager.remember_cookie_duration = timedelta(days=30)  # type: ignore[assignment]
 
+    # The versioned identity needs no stamping here. `User.get_id()` (F55)
+    # returns it, and Flask-Login populates `session['_user_id']` from
+    # `get_id()` — so the session cookie AND the remember-me cookie minted from
+    # that same field are versioned on every path, including ones that write
+    # the session directly instead of calling `login_user()`.
+
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        # Delegated to a module-level function on purpose. A nested function's
+        # branches are counted against ``create_app`` by mccabe, and the logic
+        # below is all defensive early-returns — inlining it pushed create_app
+        # past the configured complexity limit for no benefit.
+        return _resolve_session_user(user_id)
 
     # ── Blueprints ────────────────────────────────────────────────────────────
     blueprints = [

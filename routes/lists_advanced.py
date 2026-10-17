@@ -349,11 +349,22 @@ def get_list_analytics(list_id):
     if not (is_owner or is_collaborator):
         return jsonify({'error': 'Permission denied'}), 403
     
-    # Get or create analytics
+    # Get or create analytics.
+    #
+    # The counters are passed explicitly rather than relying on the column
+    # `default=0`. A column default is applied by the INSERT, so a freshly
+    # constructed row reads back as None in Python until something flushes it.
+    # `track_list_share` increments immediately, and with no intervening query
+    # there is no autoflush to fill the values in — `None += 1` raised
+    # TypeError and the endpoint answered 500 for any list that had never
+    # recorded an event. Seeding the zeros removes that ordering dependency.
     analytics = user_list.analytics
     if not analytics:
-        analytics = ListAnalytics(list_id=list_id)
+        analytics = ListAnalytics(
+            list_id=list_id, view_count=0, unique_viewers=0,
+            share_count=0, fork_count=0)
         db.session.add(analytics)
+        db.session.flush()
         db.session.commit()
     
     # Get recent views
@@ -381,16 +392,82 @@ def get_list_analytics(list_id):
     }), 200
 
 
+def _is_owner_or_collaborator(user_list):
+    """True when the caller owns the list or is on its collaborator roster.
+
+    This is the same predicate `get_list_analytics` above already applies to
+    decide who may *read* analytics, so write access and read access now agree.
+    """
+    if not current_user.is_authenticated:
+        return False
+    if user_list.user_id == current_user.id:
+        return True
+    return ListCollaborator.query.filter_by(
+        list_id=user_list.id, user_id=current_user.id).first() is not None
+
+
+def _analytics_write_allowed(user_list, owner_only=False):
+    """Can the current request record an analytics event for this list?
+
+    F52 D-4/D-5. These two endpoints used to do
+    ``UserList.query.get_or_404(list_id)`` and then write, with no visibility
+    check at all. F51 reproduced an anonymous
+    ``POST /api/lists/<private>/view`` returning 200 and incrementing
+    ``view_count``, and a *different* authenticated user incrementing another
+    user's private list's ``share_count``. Either one also confirms the list
+    exists.
+
+    Two policies, matching how each counter is actually earned:
+
+      * ``owner_only=False`` (views) — a **public** list records a view from
+        anyone, including an anonymous caller, because anonymous view
+        counting is the intended product behaviour and the existing endpoint
+        is called by page beacons. A **private** list records only for its
+        owner or collaborators.
+      * ``owner_only=True`` (shares) — owner or collaborators only, whatever
+        the visibility setting. Sharing is an action on someone else's
+        content: a user shares *their* list, so an unrelated logged-in user
+        must not be able to inflate a public list's share_count either.
+
+    Refusal is 404, not 403, and that is deliberate. 403 would confirm the id
+    names a real list, which is exactly the enumeration the finding describes.
+    404 makes a forbidden list indistinguishable from one that does not exist,
+    so a rejected caller learns nothing beyond "that id is not available".
+    """
+    if owner_only or not user_list.is_public:
+        if _is_owner_or_collaborator(user_list):
+            return None
+        return jsonify({'error': 'Not found'}), 404
+    return None
+
+
 @lists_advanced.route('/api/lists/<int:list_id>/view', methods=['POST'])
 def track_list_view(list_id):
     """Track a view on a list (called when someone views the list)"""
     user_list = UserList.query.get_or_404(list_id)
-    
-    # Get or create analytics
+
+    # Authorisation BEFORE any read-modify-write: no counter may move and no
+    # ListView row may be inserted for a caller who is not allowed to.
+    denied = _analytics_write_allowed(user_list)
+    if denied:
+        return denied
+
+    # Get or create analytics.
+    #
+    # The counters are passed explicitly rather than relying on the column
+    # `default=0`. A column default is applied by the INSERT, so a freshly
+    # constructed row reads back as None in Python until something flushes it.
+    # `track_list_share` increments immediately, and with no intervening query
+    # there is no autoflush to fill the values in — `None += 1` raised
+    # TypeError and the endpoint answered 500 for any list that had never
+    # recorded an event. Seeding the zeros removes that ordering dependency.
     analytics = user_list.analytics
     if not analytics:
-        analytics = ListAnalytics(list_id=list_id)
+        analytics = ListAnalytics(
+            list_id=list_id, view_count=0, unique_viewers=0,
+            share_count=0, fork_count=0)
         db.session.add(analytics)
+        db.session.flush()
     
     try:
         # Create view record
@@ -447,12 +524,30 @@ def track_list_view(list_id):
 def track_list_share(list_id):
     """Track when a list is shared"""
     user_list = UserList.query.get_or_404(list_id)
-    
-    # Get or create analytics
+
+    # F52 D-5: a share is an action on someone else's content, so it requires
+    # owner-or-collaborator regardless of the list's visibility. Checked
+    # before the counter is touched.
+    denied = _analytics_write_allowed(user_list, owner_only=True)
+    if denied:
+        return denied
+
+    # Get or create analytics.
+    #
+    # The counters are passed explicitly rather than relying on the column
+    # `default=0`. A column default is applied by the INSERT, so a freshly
+    # constructed row reads back as None in Python until something flushes it.
+    # `track_list_share` increments immediately, and with no intervening query
+    # there is no autoflush to fill the values in — `None += 1` raised
+    # TypeError and the endpoint answered 500 for any list that had never
+    # recorded an event. Seeding the zeros removes that ordering dependency.
     analytics = user_list.analytics
     if not analytics:
-        analytics = ListAnalytics(list_id=list_id)
+        analytics = ListAnalytics(
+            list_id=list_id, view_count=0, unique_viewers=0,
+            share_count=0, fork_count=0)
         db.session.add(analytics)
+        db.session.flush()
     
     try:
         analytics.share_count += 1

@@ -326,14 +326,38 @@ class ReviewManager {
                 'https://image.tmdb.org/t/p/w92' + String(review.media.poster_path || ''),
                 '/static/images/no-poster.png'))
             : '/static/images/no-poster.png';
-        const mediaSection = !this.mediaId ? `
-            <div class="review-media-info">
-                <a href="/${review.media.media_type}/${review.media.id}">
+        // F52 D-2 (defence in depth). The server now rejects any media_type
+        // outside {movie, tv} at write time (routes/reviews.py), but this
+        // renderer must not depend on that having always been true: rows
+        // written before the validation existed are still in the database.
+        // This was previously interpolated raw:
+        //     <a href="/${review.media.media_type}/${review.media.id}">
+        // so a stored value such as `onclick=alert(1)` broke out of the
+        // attribute.
+        //
+        // An unrecognised stored type yields `null` and NO LINK IS EMITTED.
+        // Substituting an empty string here would be a fresh bug: the href
+        // would render as `//<id>`, which a browser resolves as a
+        // protocol-relative URL pointing at host `<id>` — an off-site
+        // navigation. Dropping the link keeps the poster and title visible
+        // while guaranteeing the href, when present, is always
+        // `/movie/<id>` or `/tv/<id>`.
+        const mediaType = ['movie', 'tv'].includes(review.media.media_type)
+            ? review.media.media_type : null;
+        const mediaId = D && typeof D.safeId === 'function'
+            ? (D.safeId(review.media.id) ?? '')
+            : (Number.isInteger(review.media.id) ? review.media.id : '');
+        const mediaThumb = `
                     <img src="${posterSrc}"
                          alt="${this.escapeHtml(review.media.title)}"
                          class="review-media-poster">
-                    <span class="review-media-title">${this.escapeHtml(review.media.title)}</span>
-                </a>
+                    <span class="review-media-title">${this.escapeHtml(review.media.title)}</span>`;
+        const mediaLink = mediaType
+            ? `<a href="/${mediaType}/${mediaId}">${mediaThumb}</a>`
+            : mediaThumb;
+        const mediaSection = !this.mediaId ? `
+            <div class="review-media-info">
+                ${mediaLink}
             </div>
         ` : '';
 

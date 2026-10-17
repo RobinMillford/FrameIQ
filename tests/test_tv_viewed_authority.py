@@ -522,6 +522,21 @@ def test_case14_unmark_clears_rewatches(factory, stub_details, client):
     assert _all_rows(u.id, BANSHEE_SHOW) == []
 
 
+def _progress_row(user_id, show_id):
+    """Re-read a TVShowProgress row from the database, not the ORM cache.
+
+    F56. Each request now runs in its own application context and therefore its
+    own SQLAlchemy session, so a row the request just updated is not reflected
+    in the test's identity map: `query.filter_by(...).one()` returns the
+    instance loaded before the request, still carrying the pre-request values.
+    Expiring first forces the read the assertion is actually about. This is not
+    a loosening — the old read could not have detected a no-op endpoint.
+    """
+    db.session.expire_all()
+    return TVShowProgress.query.filter_by(
+        user_id=user_id, show_id=show_id).one()
+
+
 def test_case15_unmark_zeroes_progress_and_unseals(factory, stub_details,
                                                    client):
     """Case 15: after unmark, progress reads zero and a sealed 'completed'
@@ -530,14 +545,12 @@ def test_case15_unmark_zeroes_progress_and_unseals(factory, stub_details,
     factory.media(BANSHEE_SHOW, "tv", "Banshee Fixture")
     _banshee()
     _mark_and_mirror(client, u, BANSHEE_SHOW)
-    progress = TVShowProgress.query.filter_by(
-        user_id=u.id, show_id=BANSHEE_SHOW).one()
+    progress = _progress_row(u.id, BANSHEE_SHOW)
     assert progress.status == "completed"
 
     client.post(f"/remove_from_viewed/{BANSHEE_SHOW}/tv",
                follow_redirects=True)
-    progress = TVShowProgress.query.filter_by(
-        user_id=u.id, show_id=BANSHEE_SHOW).one()
+    progress = _progress_row(u.id, BANSHEE_SHOW)
     assert progress.watched_episodes == 0
     assert progress.total_episodes == 38      # aired reality kept
     assert progress.status == "watching"

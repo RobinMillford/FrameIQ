@@ -237,7 +237,13 @@
                 <a href="{{ url_for('auth.profile') }}" class="nav-link">Profile</a>
                 <a href="{{ url_for('main.watchlist') }}" class="nav-link">Watchlist</a>
                 <a href="{{ url_for('main.viewed') }}" class="nav-link">Viewed</a>
-                <a href="{{ url_for('auth.logout') }}" class="nav-link text-[var(--danger)]">Log out</a>
+                {# F55: logout is POST-only (state-changing, CSRF-protected). A plain link
+                   would be a GET, which CSRFProtect cannot cover. The CSRF
+                   token is emitted by the hidden_input below. #}
+                <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="nav-link text-[var(--danger)] bg-transparent border-0 cursor-pointer">Log out</button>
+                </form>
                 {% else %}
                 <a href="{{ url_for('auth.login') }}" class="nav-link">Log in</a>
                 <a href="{{ url_for('auth.register') }}" class="nav-link text-[var(--accent-hi)] font-medium">Sign up</a>

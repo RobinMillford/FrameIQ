@@ -179,6 +179,48 @@ class UserList(db.Model):
             analytics = self.analytics
         return analytics.to_dict() if analytics else None
 
+    def _viewer_may_see_insider_data(self):
+        """Whether the current request may see collaborators and analytics.
+
+        F52 D-6. `to_dict()` is called from eleven places, six of which serve
+        PUBLIC lists to anonymous callers (`GET /api/lists`,
+        `/api/lists/<id>`, `/api/lists/slug/<slug>`, `/api/lists/discover`,
+        `/api/lists/discover/category/<id>`, `/api/users/<id>/lists`). It
+        emitted `collaborators` and `analytics` unconditionally, so any of
+        those returned a collaborator roster — usernames, avatar URLs, roles,
+        join dates — and view/share/fork counters for every list, including
+        private ones. That re-exposed exactly what the dedicated
+        `/api/lists/<id>/collaborators` route was built to withhold (F23 C-11),
+        whose own docstring calls walking public list ids to enumerate
+        usernames "the attack it fixes".
+
+        The decision is made here, from the request's own identity, rather than
+        being passed in by each caller: an opt-in flag would be one forgotten
+        keyword away from re-opening this, and there are eleven call sites.
+
+        The rule matches the dedicated endpoints exactly — owner or
+        collaborator, never merely "someone who can see the list" — so
+        `to_dict()` and `/api/lists/<id>/collaborators` now answer the same
+        question the same way.
+
+        No query is issued when `prefetch_list_data` has already batch-loaded
+        the collaborator rows, which is the case for every list-index route.
+        """
+        if not current_user.is_authenticated:
+            return False
+        if self.user_id == current_user.id:
+            return True
+
+        prefetched = getattr(self, '_prefetched_collaborators', None)
+        if prefetched is not None:
+            # Already batch-loaded by prefetch_list_data; test membership
+            # rather than re-querying, so this stays free per list.
+            return any(getattr(c, 'user_id', None) == current_user.id
+                       for c in prefetched)
+
+        return self.collaborators.filter_by(
+            user_id=current_user.id).first() is not None
+
     @property
     def cover_posters(self):
         """F48: poster paths for the automatic collage, in list order.
@@ -227,6 +269,12 @@ class UserList(db.Model):
                 'profile_picture': user.profile_picture
             }
 
+        # F52 D-6: `collaborators` and `analytics` are insider data. The keys
+        # stay in the payload so the response shape is unchanged, but they are
+        # only populated for the owner or a collaborator. See
+        # `_viewer_may_see_insider_data`.
+        insider = self._viewer_may_see_insider_data()
+
         return {
             'id': self.id,
             'user': user_dict,
@@ -242,9 +290,9 @@ class UserList(db.Model):
             'list_type': self.list_type,  # Lists V2 (additive)
             'like_count': getattr(self, '_prefetched_like_count', None) or 0,  # Lists V2 (additive)
             'comment_count': getattr(self, '_prefetched_comment_count', None) or 0,  # Lists V2 (additive)
-            'collaborators': self._collaborator_dicts(),  # Week 2b
+            'collaborators': self._collaborator_dicts() if insider else None,  # Week 2b
             'categories': self._category_dicts(),  # Week 2b
-            'analytics': self._analytics_dict(),  # Week 2b
+            'analytics': self._analytics_dict() if insider else None,  # Week 2b
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'item_count': item_count,

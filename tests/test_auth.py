@@ -82,7 +82,8 @@ class TestLogin:
         assert b'Invalid' in r.data or b'invalid' in r.data
 
     def test_logout(self, auth_client):
-        r = auth_client.get('/logout', follow_redirects=True)
+        # F55: logout is POST-only now (state change, CSRF-covered).
+        r = auth_client.post('/logout', follow_redirects=True)
         assert r.status_code == 200
 
 
@@ -117,7 +118,11 @@ class TestResetPassword:
         from utils.email import generate_reset_token
         from models import User
         with app.app_context():
-            token = generate_reset_token('test@example.com')
+            # F55: the token is bound to the password hash it was minted
+            # against, so it must be generated from the user's current hash.
+            # Replay-after-use is covered in tests/test_f55_auth_hardening.py.
+            token = generate_reset_token('test@example.com',
+                                         sample_user.password_hash)
 
         r = client.post(f'/reset-password/{token}', data={
             'password': 'NewPass99',

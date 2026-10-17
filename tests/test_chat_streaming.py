@@ -15,17 +15,13 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage
 
 
-@pytest.fixture(autouse=True)
-def _push_request_context(request):
-    """Neutralize pytest-flask's autouse request-context push for this module.
-
-    The plugin holds one request/app context open per test, which makes all
-    requests within a test share `g` — Flask-Login caches `g._login_user`
-    there, so an authenticated login would leak into later "unauthenticated"
-    requests. Production pushes a fresh context per request; these tests
-    don't need the plugin's context (they use test clients directly).
-    """
-    yield
+# F56: this module used to carry its own autouse `_push_request_context`
+# override to neutralise pytest-flask's per-test context push, for the reason
+# described in tests/conftest.py: the shared application context made every
+# request in a test reuse one `g`, so Flask-Login's cached `g._login_user`
+# leaked between requests. That is now fixed once, centrally, by
+# `_RequestScopedClient` in tests/conftest.py, which gives each request its own
+# context. The per-module override is redundant and has been removed.
 
 
 class _FakeChunk:
