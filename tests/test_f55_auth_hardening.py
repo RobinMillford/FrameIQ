@@ -475,27 +475,85 @@ def test_d_concurrent_resets_only_one_wins(client, db, app):
 
 # ── cookie flags ──────────────────────────────────────────────────────────────
 
-def test_d_remember_cookie_flags_follow_production_mode(app, monkeypatch):
+_COOKIE_FLAG_KEYS = (
+    'SESSION_COOKIE_SECURE', 'REMEMBER_COOKIE_SECURE',
+    'REMEMBER_COOKIE_HTTPONLY', 'REMEMBER_COOKIE_SAMESITE',
+    'SESSION_COOKIE_HTTPONLY', 'SESSION_COOKIE_SAMESITE',
+)
+
+
+def _cookie_flags_under(monkeypatch, env):
+    """Build a real app with an explicit environment; return its cookie flags.
+
+    `create_app()` reads the mode markers ONCE, at call time, and bakes
+    SESSION_COOKIE_SECURE / REMEMBER_COOKIE_SECURE into the config it returns.
+    The only way to assert those flags is therefore to build an app per mode.
+
+    The previous version of this test asserted a literal `True` on the SHARED
+    suite app after monkeypatching `APP_ENV` — but that app had already been
+    constructed, so the env change could not reach its config. The assertion
+    was really testing whichever `.env` the machine happened to load. On a
+    developer box `.env` sets `RENDER`, so `_is_production_deployment()` was
+    True and the test passed; in CI there is no `.env`, so it was False and the
+    test failed. A test that passes or fails according to the shell it runs in
+    is not a test of the code.
+
+    Every marker is cleared first so the surrounding environment — the suite's
+    own, or the runner's — cannot leak into the result.
+    """
+    import app as app_module
+    for key in ('APP_ENV', 'RENDER', 'K_SERVICE', 'DATABASE_URL'):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    built = app_module.create_app()
+    return {key: built.config[key] for key in _COOKIE_FLAG_KEYS}
+
+
+# A local file DSN for both modes: the point of each case is the MODE marker,
+# not the database. `_has_remote_database()` would otherwise decide the answer
+# and make the case indistinguishable from the detection tests below.
+_PRODUCTION_MODE = {'APP_ENV': 'production',
+                    'DATABASE_URL': 'sqlite:////tmp/f55prod.db'}
+_DEVELOPMENT_MODE = {'APP_ENV': 'development',
+                     'DATABASE_URL': 'sqlite:////tmp/f55dev.db'}
+
+
+def test_d_remember_cookie_flags_follow_production_mode(monkeypatch):
     """REMEMBER_COOKIE_* must track SESSION_COOKIE_SECURE, not the defaults.
 
     Flask-Login's defaults are Secure=False and NO SameSite attribute, which is
     what F51 flagged.
     """
-    import app as app_module
-    monkeypatch.setenv('APP_ENV', 'production')
-    prod = app_module._is_production_deployment()
-    assert prod is True, 'precondition: detected as production'
+    config = _cookie_flags_under(monkeypatch, _PRODUCTION_MODE)
 
-    # The flags are set in the same update() call that sets
-    # SESSION_COOKIE_SECURE, so assert the app config they produce agrees.
-    config = app.config
     assert config['SESSION_COOKIE_SECURE'] is True
+    assert config['REMEMBER_COOKIE_SECURE'] is True
     assert config['REMEMBER_COOKIE_SECURE'] == config['SESSION_COOKIE_SECURE'], \
         'the remember cookie does not follow the session cookie'
     assert config['REMEMBER_COOKIE_HTTPONLY'] is True
     assert config['REMEMBER_COOKIE_SAMESITE'] == 'Lax'
     assert config['SESSION_COOKIE_HTTPONLY'] is True
     assert config['SESSION_COOKIE_SAMESITE'] == 'Lax'
+
+
+def test_d_cookie_secure_is_off_in_development_mode(monkeypatch):
+    """The other direction: development must not issue Secure cookies.
+
+    Asserting only the production case would leave a hardcoded
+    `SESSION_COOKIE_SECURE=True` — which breaks plain-HTTP local development
+    and the test client — completely undetected. Both directions are what makes
+    "follows the session cookie" a real invariant rather than a constant.
+    """
+    config = _cookie_flags_under(monkeypatch, _DEVELOPMENT_MODE)
+
+    assert config['SESSION_COOKIE_SECURE'] is False, (
+        'Secure cookies in development break plain-HTTP local use')
+    assert config['REMEMBER_COOKIE_SECURE'] == config['SESSION_COOKIE_SECURE'], \
+        'the remember cookie does not follow the session cookie'
+    # The flags that are not mode-dependent stay fixed in both modes.
+    assert config['REMEMBER_COOKIE_HTTPONLY'] is True
+    assert config['REMEMBER_COOKIE_SAMESITE'] == 'Lax'
 
 
 def test_d_cookie_defaults_are_not_relied_upon(app):
